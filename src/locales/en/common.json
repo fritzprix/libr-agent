@@ -936,11 +936,19 @@
       "userConfigHint": "These values are given to the plugin when it runs. A sensitive value is stored in this computer's secure storage and is never shown again.",
       "userConfigMissing": "Required: {{names}}",
       "pluginDisabledBadge": "disabled",
+      "pluginUpdateAria": "Update plugin",
+      "pluginOwnedBadge": "plugin",
+      "pluginOwnedTooltip": "Installed by a plugin. Remove the plugin to delete it.",
       "disablePlugin": "Disable plugin",
       "enablePlugin": "Enable plugin",
       "pluginDetails": "Details",
       "pluginSourceEnabled": "Plugin enabled.",
-      "pluginSourceDisabled": "Plugin disabled. It stays installed; restart a session or type /reload to apply."
+      "pluginSourceDisabled": "Plugin disabled. It stays installed; restart a session or type /reload to apply.",
+      "pluginUpdateNoticeTitle": "Update this plugin?",
+      "pluginUpdateNoticeBody": "An update re-downloads the plugin. It can change the plugin MCP servers and hooks, and those can run code on your machine. Agreeing approves this whole update, including any changed MCP servers and hooks.",
+      "pluginUpdateAgree": "Agree & update",
+      "pluginUpdateAvailable": "update available",
+      "pluginUpdatedReload": "Plugin updated. It applies when a session opens again; type /reload to apply it now."
     },
     "dev": {
       "devOnly": "DEV ONLY",

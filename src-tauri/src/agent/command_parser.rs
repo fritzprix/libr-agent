@@ -9,6 +9,12 @@ pub enum PluginCommand {
     Install {
         source: String,
     },
+    /// Re-downloads an installed plugin (#2927). Needs the D6 update notice
+    /// and the install-time approvals again, so like `Install` it is handled
+    /// by the desktop input, never here.
+    Update {
+        target: String,
+    },
     Uninstall {
         target: String,
     },
@@ -76,6 +82,9 @@ impl Command {
                     "uninstall" if !arg.is_empty() => {
                         Some(Command::Plugin(PluginCommand::Uninstall { target: arg }))
                     }
+                    "update" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Update { target: arg }))
+                    }
                     "enable" if !arg.is_empty() => {
                         Some(Command::Plugin(PluginCommand::Enable { target: arg }))
                     }
@@ -99,6 +108,7 @@ impl Command {
                 ExecutionMode::Normal => "/permission normal".to_string(),
             },
             Command::Plugin(PluginCommand::Install { .. }) => "/plugin install".to_string(),
+            Command::Plugin(PluginCommand::Update { .. }) => "/plugin update".to_string(),
             Command::Plugin(PluginCommand::Uninstall { .. }) => "/plugin uninstall".to_string(),
             Command::Plugin(PluginCommand::Enable { .. }) => "/plugin enable".to_string(),
             Command::Plugin(PluginCommand::Disable { .. }) => "/plugin disable".to_string(),
@@ -127,6 +137,9 @@ impl Command {
             },
             Command::Plugin(PluginCommand::Install { .. }) => {
                 "Install a plugin (git URL) for this session only".to_string()
+            }
+            Command::Plugin(PluginCommand::Update { .. }) => {
+                "Re-download an installed plugin by name or git URL".to_string()
             }
             Command::Plugin(PluginCommand::Uninstall { .. }) => {
                 "Remove a session plugin by git URL or name".to_string()
@@ -250,5 +263,40 @@ mod tests {
         assert_eq!(Command::parse("/plugin enable"), None);
         assert_eq!(Command::parse("/plugin disable"), None);
         assert_eq!(Command::parse("/plugin enable   "), None);
+    }
+
+    // #2927 item 4: `/plugin update <name|url>` parses like enable/disable;
+    // the argument keeps its casing (URLs) and a missing one is rejected.
+    #[test]
+    fn test_parse_plugin_update() {
+        assert_eq!(
+            Command::parse("/plugin update superpowers"),
+            Some(Command::Plugin(PluginCommand::Update {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("  /plugin UPDATE https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Update {
+                target: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Update {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin update"
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Update {
+                target: "x".to_string()
+            })
+            .description(),
+            "Re-download an installed plugin by name or git URL"
+        );
+
+        assert_eq!(Command::parse("/plugin update"), None);
+        assert_eq!(Command::parse("/plugin update   "), None);
     }
 }

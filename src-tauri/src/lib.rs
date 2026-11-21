@@ -125,11 +125,11 @@ use commands::skill_commands::{
     get_skill_content, open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
-    copy_global_to_assistant, delete_assistant_skill, delete_plugin_source, delete_user_skill,
-    import_assistant_skills, import_user_skills, install_github_skills, install_session_plugin,
-    list_plugin_sources, list_session_plugins, preview_github_skill_install,
-    preview_session_plugin_install, preview_user_skill_import, reset_assistant_skills,
-    reset_user_skills, set_plugin_source_enabled,
+    check_plugin_source_updates, copy_global_to_assistant, delete_assistant_skill,
+    delete_plugin_source, delete_user_skill, import_assistant_skills, import_user_skills,
+    install_github_skills, install_session_plugin, list_plugin_sources, list_session_plugins,
+    preview_github_skill_install, preview_session_plugin_install, preview_user_skill_import,
+    reset_assistant_skills, reset_user_skills, resolve_plugin_target, set_plugin_source_enabled,
 };
 use commands::url_commands::{open_external_url, open_path_with_default_app};
 use commands::workspace_commands::{
@@ -419,6 +419,8 @@ pub(crate) fn configure_tauri_builder(
             install_session_plugin,
             list_session_plugins,
             set_plugin_source_enabled,
+            check_plugin_source_updates,
+            resolve_plugin_target,
             delete_user_skill,
             reset_user_skills,
             reset_assistant_skills,

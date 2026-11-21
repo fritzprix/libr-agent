@@ -5,6 +5,11 @@ use tempfile::TempDir;
 use super::plugin_agents::PluginAgentPreview;
 
 pub const SKILL_FILE_NAME: &str = "SKILL.md";
+/// Hidden file a plugin writes into each skill directory it installs
+/// (#2927 D2). Its content is the owning plugin's `source_id`; its presence
+/// makes the skill read-only for every non-plugin path (delete, update,
+/// import overwrite), and uninstall is the only thing that removes it.
+pub const PLUGIN_SKILL_OWNER_FILE: &str = ".libragent-plugin-owner";
 pub const USER_SKILLS_DIR_NAME: &str = "user_skills";
 pub const SYSTEM_SKILLS_DIR_NAME: &str = "system_skills";
 pub const SYSTEM_SKILLS_ALIAS_PREFIX: &str = "@system-skills";
@@ -28,6 +33,15 @@ pub struct SkillMetadata {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// Source id of the plugin that owns this skill directory (#2927 D2).
+    /// Set when the skill root carries the `PLUGIN_SKILL_OWNER_FILE` marker;
+    /// such skills are read-only and go only with the plugin.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "pluginOwner",
+        default
+    )]
+    pub plugin_owner: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +72,16 @@ pub struct PluginSourceOverview {
     /// Source commit recorded at install (#2927), when GitHub exposed one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed_commit: Option<String>,
+}
+
+/// Whether a global plugin has a newer source on GitHub (#2927 D6). Only
+/// plugins with a recorded `installed_commit` can report `update_available:
+/// true`; without a recorded commit there is nothing to compare.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUpdateStatus {
+    pub source_id: String,
+    pub update_available: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

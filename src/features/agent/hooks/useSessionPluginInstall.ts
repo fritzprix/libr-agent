@@ -4,13 +4,18 @@ import { toast } from 'sonner';
 import { useSWRConfig } from 'swr';
 import { getLogger } from '@/lib/logger';
 import {
+  installGitHubSkills,
   installSessionPlugin,
+  previewGitHubSkillInstall,
   previewSessionPluginInstall,
+  resolvePluginTarget,
 } from '@/lib/backend/skills';
 import type { PendingInstall } from '@/features/skills/skills-management-types';
+import type { PluginScope } from '@/types/skills';
 import {
   defaultPluginOptions,
   formatImportSuccess,
+  notifyImportWarnings,
   shouldPromptSkillInstall,
 } from '@/features/skills/skills-management-utils';
 import type { SkillImportConflict } from '@/types/skills';
@@ -211,6 +216,115 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     }
   }, []);
 
+  // --- `/plugin update` (#2927 item 4, D6) -------------------------------
+  // Resolve the target -> D6 notice -> ONE Agree -> re-download with the
+  // install-time approvals already given. User-data conflicts still get the
+  // review dialog; hooks/MCP are covered by the Agree.
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    sourceUrl: string;
+    scope: PluginScope;
+  } | null>(null);
+
+  /** Resolves true when the command was consumed (notice opened or error). */
+  const startUpdate = useCallback(
+    async (target: string): Promise<boolean> => {
+      if (!sessionId || isInstalling) {
+        return false;
+      }
+      try {
+        const entry = await resolvePluginTarget(sessionId, target);
+        setPendingUpdate({ sourceUrl: entry.sourceUrl, scope: entry.scope });
+        return true;
+      } catch (error) {
+        logger.error('Failed to resolve plugin update target', error);
+        toast.error(errorMessage(error));
+        return false;
+      }
+    },
+    [isInstalling, sessionId],
+  );
+
+  const runUpdateAfterAgree = useCallback(async () => {
+    if (!sessionId || !pendingUpdate || isInstalling) {
+      return;
+    }
+    const { sourceUrl, scope } = pendingUpdate;
+    setIsInstalling(true);
+    const toastId = toast.loading(
+      t('settings.skills.githubInspecting', 'Inspecting GitHub repository...'),
+    );
+    try {
+      const preview =
+        scope === 'session'
+          ? await previewSessionPluginInstall(sessionId, sourceUrl)
+          : await previewGitHubSkillInstall(sourceUrl);
+      toast.dismiss(toastId);
+      const system = preview.conflicts.filter(
+        (conflict) => conflict.existingOrigin === 'system',
+      );
+      const overwritable = preview.conflicts.filter(
+        (conflict) => conflict.existingOrigin !== 'system',
+      );
+      setPendingUpdate(null);
+      if (overwritable.length > 0) {
+        // The D6 Agree already covers hooks and MCP servers; this dialog is
+        // only for skills that belong to the user, not to the plugin.
+        setPendingInstall({
+          kind: 'github',
+          sourceValue: sourceUrl,
+          preview,
+          selectedOverwriteNames: overwritable.map((c) => c.name),
+          approveHooks: true,
+          pluginOptions: defaultPluginOptions(preview),
+        });
+        return;
+      }
+      if (scope === 'session') {
+        await runInstall(sourceUrl, [], true, [], system);
+      } else {
+        const result = await installGitHubSkills(
+          sourceUrl,
+          true,
+          system.map((conflict) => conflict.name),
+          true,
+          {},
+        );
+        toast.success(
+          t(
+            'settings.skills.pluginUpdatedReload',
+            'Plugin updated. It applies when a session opens again; type /reload to apply it now.',
+          ),
+        );
+        notifyImportWarnings(result);
+        await refreshAfterChange();
+      }
+    } catch (error) {
+      logger.error('Failed to update plugin', error);
+      toast.error(errorMessage(error), { id: toastId });
+    } finally {
+      setIsInstalling(false);
+    }
+  }, [
+    isInstalling,
+    pendingUpdate,
+    refreshAfterChange,
+    runInstall,
+    sessionId,
+    t,
+  ]);
+
+  /** Props for `PluginUpdateNoticeDialog` (#2927 D6). */
+  const updateNoticeProps = {
+    pendingUpdateUrl: pendingUpdate?.sourceUrl ?? null,
+    isBusy: isInstalling,
+    onOpenChange: (open: boolean) => {
+      if (!open) {
+        setPendingUpdate(null);
+      }
+    },
+    onAgree: runUpdateAfterAgree,
+  };
+
   /** Props for `SkillsConflictDialog`. */
   const dialogProps = {
     pendingInstall,
@@ -226,5 +340,5 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     onConfirmWithoutHooks: () => confirm(false),
   };
 
-  return { startInstall, dialogProps };
+  return { startInstall, startUpdate, dialogProps, updateNoticeProps };
 }

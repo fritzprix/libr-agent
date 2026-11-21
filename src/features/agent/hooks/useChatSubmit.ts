@@ -11,7 +11,10 @@ import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgent
 import { safeInvoke } from '@/lib/backend/core';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { isExecutionMode } from '@/lib/generated/execution-mode';
-import { parsePluginInstallCommand } from '../lib/plugin-command';
+import {
+  parsePluginInstallCommand,
+  parsePluginUpdateCommand,
+} from '../lib/plugin-command';
 
 const logger = getLogger('useChatSubmit');
 const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
@@ -53,6 +56,12 @@ interface UseChatSubmitProps {
    */
   onPluginInstall?: (repoUrl: string) => Promise<boolean>;
   /**
+   * Handles `/plugin update <name|git-url>` (#2927 item 4): needs the D6
+   * update notice and the install-time approvals again, so it is consumed
+   * here like install. Resolves true when the command was consumed.
+   */
+  onPluginUpdate?: (target: string) => Promise<boolean>;
+  /**
    * Notified after a command that can change the plugin command list
    * (`/plugin install|uninstall`, `/reload`) succeeds (#2922).
    */
@@ -72,6 +81,7 @@ export function useChatSubmit({
   onClearSession,
   onExecutionModeChange,
   onPluginInstall,
+  onPluginUpdate,
   onPluginCommandsChanged,
 }: UseChatSubmitProps) {
   const { t } = useTranslation();
@@ -253,14 +263,26 @@ export function useChatSubmit({
         return;
       }
 
+      // `/plugin install` and `/plugin update` both need the desktop
+      // approval dialogs, so both are consumed here and never reach the
+      // generic `agent_execute_command` path (#2922, #2927).
       const pluginInstallUrl = parsePluginInstallCommand(messageText);
-      if (pluginInstallUrl && onPluginInstall) {
+      const pluginUpdateTarget = pluginInstallUrl
+        ? null
+        : parsePluginUpdateCommand(messageText);
+      const pluginHandler = pluginInstallUrl
+        ? onPluginInstall
+        : pluginUpdateTarget
+          ? onPluginUpdate
+          : undefined;
+      const pluginTarget = pluginInstallUrl ?? pluginUpdateTarget;
+      if (pluginTarget && pluginHandler) {
         isSubmittingRef.current = true;
         setIsSubmitting(true);
         const currentInput = input;
         setInput('');
         try {
-          const consumed = await onPluginInstall(pluginInstallUrl);
+          const consumed = await pluginHandler(pluginTarget);
           if (consumed) {
             clearPendingFiles();
             onPluginCommandsChanged?.();
@@ -348,6 +370,7 @@ export function useChatSubmit({
       onClearSession,
       onExecutionModeChange,
       onPluginInstall,
+      onPluginUpdate,
       onPluginCommandsChanged,
       sendChatText,
     ],

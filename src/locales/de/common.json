@@ -912,11 +912,19 @@
       "userConfigHint": "Diese Werte erhält das Plugin bei der Ausführung. Ein sensibler Wert wird im sicheren Speicher dieses Computers abgelegt und nie wieder angezeigt.",
       "userConfigMissing": "Erforderlich: {{names}}",
       "pluginDisabledBadge": "deaktiviert",
+      "pluginUpdateAria": "Plugin aktualisieren",
+      "pluginOwnedBadge": "Plugin",
+      "pluginOwnedTooltip": "Von einem Plugin installiert. Entfernen Sie das Plugin, um es zu löschen.",
       "disablePlugin": "Plugin deaktivieren",
       "enablePlugin": "Plugin aktivieren",
       "pluginDetails": "Details",
       "pluginSourceEnabled": "Plugin aktiviert.",
-      "pluginSourceDisabled": "Plugin deaktiviert. Es bleibt installiert; starte eine Sitzung neu oder tippe /reload, um es anzuwenden."
+      "pluginSourceDisabled": "Plugin deaktiviert. Es bleibt installiert; starte eine Sitzung neu oder tippe /reload, um es anzuwenden.",
+      "pluginUpdateNoticeTitle": "Dieses Plugin aktualisieren?",
+      "pluginUpdateNoticeBody": "Ein Update lädt das Plugin neu herunter. Es kann die MCP-Server und Hooks des Plugins ändern, und diese können Code auf Ihrem Computer ausführen. Ihre Zustimmung genehmigt das gesamte Update, einschließlich geänderter MCP-Server und Hooks.",
+      "pluginUpdateAgree": "Zustimmen & aktualisieren",
+      "pluginUpdateAvailable": "Update verfügbar",
+      "pluginUpdatedReload": "Plugin aktualisiert. Es greift, wenn eine Sitzung neu geöffnet wird; geben Sie /reload ein, um es sofort anzuwenden."
     },
     "dev": {
       "devOnly": "NUR ENTWICKLUNG",

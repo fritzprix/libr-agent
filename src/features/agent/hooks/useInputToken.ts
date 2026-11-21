@@ -261,6 +261,12 @@ export function useInputToken(
           'Install a plugin from a git URL for this session only (/plugin install <git-url>)',
       },
       {
+        id: '/plugin update',
+        label: '/plugin update',
+        description:
+          'Re-download an installed plugin by name or git URL (/plugin update <name|git-url>)',
+      },
+      {
         id: '/plugin uninstall',
         label: '/plugin uninstall',
         description:

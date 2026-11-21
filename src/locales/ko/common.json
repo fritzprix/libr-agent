@@ -936,11 +936,19 @@
       "userConfigHint": "이 값은 플러그인이 실행될 때 전달됩니다. 민감한 값은 이 컴퓨터의 보안 저장소에 보관되며 다시 표시되지 않습니다.",
       "userConfigMissing": "필수: {{names}}",
       "pluginDisabledBadge": "비활성",
+      "pluginUpdateAria": "플러그인 업데이트",
+      "pluginOwnedBadge": "플러그인",
+      "pluginOwnedTooltip": "플러그인이 설치한 스킬입니다. 삭제하려면 플러그인을 제거하세요.",
       "disablePlugin": "플러그인 끄기",
       "enablePlugin": "플러그인 켜기",
       "pluginDetails": "자세히",
       "pluginSourceEnabled": "플러그인을 켰습니다.",
-      "pluginSourceDisabled": "플러그인을 껐습니다. 설치된 상태로 남으며, 세션을 다시 열거나 /reload를 입력하면 적용됩니다."
+      "pluginSourceDisabled": "플러그인을 껐습니다. 설치된 상태로 남으며, 세션을 다시 열거나 /reload를 입력하면 적용됩니다.",
+      "pluginUpdateNoticeTitle": "이 플러그인을 업데이트할까요?",
+      "pluginUpdateNoticeBody": "업데이트는 플러그인을 다시 내려받습니다. 플러그인의 MCP 서버와 훅이 바뀔 수 있고, 이들은 내 컴퓨터에서 코드를 실행할 수 있습니다. 동의하면 바뀐 MCP 서버와 훅을 포함해 이 업데이트 전체를 승인합니다.",
+      "pluginUpdateAgree": "동의하고 업데이트",
+      "pluginUpdateAvailable": "업데이트 있음",
+      "pluginUpdatedReload": "플러그인이 업데이트되었습니다. 세션을 다시 열 때 적용되며, 지금 적용하려면 /reload를 입력하세요."
     },
     "dev": {
       "devOnly": "DEV ONLY",

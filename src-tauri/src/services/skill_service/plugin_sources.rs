@@ -1,5 +1,6 @@
-use super::contracts::PluginSourceOverview;
+use super::contracts::{PluginSourceOverview, PluginUpdateStatus};
 use super::directories::get_user_skills_directory;
+use super::github::parse_github_repo_url;
 use super::importing::remove_skill_names_from_user_skills;
 use crate::services::hooks::registry::{
     delete_source, get_source, hook_config_for_record, list_sources, list_sources_in,
@@ -66,7 +67,7 @@ pub(super) fn hook_events_for_record(record: &PluginSourceRecord) -> Vec<String>
 pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
     let record = get_source(&source_id)?;
     let user_dir = get_user_skills_directory()?;
-    remove_skill_names_from_user_skills(&user_dir, &record.manifest.skill_names)?;
+    remove_skill_names_from_user_skills(&user_dir, &record.manifest.skill_names, &source_id)?;
     // #2924: removing the plugin also stops and removes the global MCP
     // servers it owned. Session-scoped servers never entered the global
     // store; their session plugin dir (and proxy) is torn down separately.
@@ -163,6 +164,96 @@ pub fn set_plugin_enabled(source_id: &str, enabled: bool) -> Result<(), String> 
     // a disabled plugin wrote is stale in every open session's prompt slot.
     on_plugin_source_uninstalled();
     Ok(())
+}
+
+/// Whether the GitHub commits API answers "is there a newer commit?" for one
+/// installed plugin (#2927 D6). A pinned branch/tag is compared with its own
+/// ref; a plain URL with the commit recorded at install is compared with the
+/// repository default branch.
+pub(crate) fn github_head_commits_url(spec: &super::contracts::GitHubRepoSpec) -> String {
+    let base = format!("https://api.github.com/repos/{}/{}", spec.owner, spec.repo);
+    match spec.branch.as_deref() {
+        Some(branch) => format!("{base}/commits/{branch}"),
+        None => format!("{base}/commits?per_page=1"),
+    }
+}
+
+/// First commit sha of a GitHub `/commits` response: an array of commits for
+/// the list form, a single commit object for the `/{ref}` form (#2927 D6).
+pub(crate) fn head_sha_from_commits_json(raw: &serde_json::Value) -> Option<String> {
+    let entry = match raw.get(0) {
+        Some(first) => first,
+        None => raw,
+    };
+    entry
+        .get("sha")
+        .and_then(|sha| sha.as_str())
+        .map(|sha| sha.to_ascii_lowercase())
+}
+
+/// An update is available only when a recorded install commit differs from
+/// the remote head (#2927 D6). Without a recorded commit there is nothing
+/// to compare, so the indicator stays off rather than guessing.
+pub(crate) fn update_available(installed_commit: Option<&str>, remote_head: Option<&str>) -> bool {
+    match (installed_commit, remote_head) {
+        (Some(installed), Some(remote)) => !installed.eq_ignore_ascii_case(remote),
+        _ => false,
+    }
+}
+
+async fn fetch_remote_head(url: &str) -> Result<Option<String>, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(
+            super::contracts::GITHUB_DOWNLOAD_CONNECT_TIMEOUT_SECS,
+        ))
+        .timeout(std::time::Duration::from_secs(
+            super::contracts::GITHUB_DOWNLOAD_TIMEOUT_SECS,
+        ))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let response = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, "libragent-plugin-update-check")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("GitHub commits API: HTTP {}", response.status()));
+    }
+    let raw: serde_json::Value = response.json().await.map_err(|error| error.to_string())?;
+    Ok(head_sha_from_commits_json(&raw))
+}
+
+/// Check every global plugin for a newer source (#2927 D6 indicator). Only
+/// plugins with a recorded `installed_commit` are queried; a remote failure
+/// reports `update_available: false` — the indicator must never claim an
+/// update it cannot show.
+pub async fn check_plugin_source_updates() -> Result<Vec<PluginUpdateStatus>, String> {
+    let records = list_sources()?;
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        let source_id = record.manifest.source_id.clone();
+        let installed = record.manifest.installed_commit.clone();
+        let spec = parse_github_repo_url(&record.manifest.source_url).ok();
+        let remote = match (&installed, spec) {
+            (Some(_), Some(spec)) => {
+                match fetch_remote_head(&github_head_commits_url(&spec)).await {
+                    Ok(remote) => remote,
+                    Err(error) => {
+                        log::warn!("plugin update check for {source_id} failed: {error}");
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+        out.push(PluginUpdateStatus {
+            source_id,
+            update_available: update_available(installed.as_deref(), remote.as_deref()),
+        });
+    }
+    Ok(out)
 }
 
 /// Skill names that only disabled plugins provide for one session (#2927).
@@ -267,5 +358,62 @@ mod tests {
             get_hook_context(sid).is_none(),
             "delete_plugin_source must clear hook contexts via on_plugin_source_uninstalled"
         );
+    }
+
+    // #2927 D6: the update-check decision is pure (URL shape, response
+    // parsing, comparison) so the indicator is testable without network.
+    #[test]
+    fn update_check_urls_and_comparison() {
+        use super::super::contracts::GitHubRepoSpec;
+        use super::{github_head_commits_url, head_sha_from_commits_json, update_available};
+
+        let plain = GitHubRepoSpec {
+            owner: "obra".into(),
+            repo: "superpowers".into(),
+            branch: None,
+            subpath: None,
+        };
+        let pinned = GitHubRepoSpec {
+            branch: Some("dev/1.0".into()),
+            ..plain.clone()
+        };
+        assert_eq!(
+            github_head_commits_url(&plain),
+            "https://api.github.com/repos/obra/superpowers/commits?per_page=1"
+        );
+        assert_eq!(
+            github_head_commits_url(&pinned),
+            "https://api.github.com/repos/obra/superpowers/commits/dev/1.0"
+        );
+
+        let array = serde_json::json!([{"sha": "ABCDEF0123456789"}]);
+        assert_eq!(
+            head_sha_from_commits_json(&array).as_deref(),
+            Some("abcdef0123456789"),
+            "the list form carries an array; the sha is lower-cased for comparison"
+        );
+        let single = serde_json::json!({ "sha": "deadbeef" });
+        assert_eq!(
+            head_sha_from_commits_json(&single).as_deref(),
+            Some("deadbeef"),
+            "the ref form returns a single commit object"
+        );
+        assert_eq!(
+            head_sha_from_commits_json(&serde_json::json!({ "message": "Not Found" })),
+            None
+        );
+        assert_eq!(head_sha_from_commits_json(&serde_json::json!([])), None);
+
+        assert!(update_available(Some("aaa"), Some("bbb")));
+        assert!(
+            !update_available(Some("aaa"), Some("AAA")),
+            "shas compare case-insensitively"
+        );
+        assert!(!update_available(Some("aaa"), Some("aaa")));
+        assert!(
+            !update_available(None, Some("aaa")),
+            "no recorded commit means nothing to compare: never claim an update"
+        );
+        assert!(!update_available(Some("aaa"), None));
     }
 }
