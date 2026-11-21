@@ -289,11 +289,15 @@ impl SecurityValidator {
                     self.ensure_not_sensitive_path(&canon, user_path)?;
                 }
 
+                // The target does not exist yet, so compare the canonical form of its
+                // existing prefix (the same form the allowed roots are stored in) against
+                // the roots. The raw path misses links like macOS `/var` -> `/private/var`
+                // and would refuse a legitimate first write into an allowed temp root.
+                let prefix_canonical = canonicalize_existing_prefix(&absolute_path);
                 tracing::debug!(
-                    "File doesn't exist yet, using non-canonical path: '{:?}'",
-                    absolute_path
+                    "File doesn't exist yet, using existing-prefix canonical path: '{prefix_canonical:?}'"
                 );
-                absolute_path.clone()
+                prefix_canonical
             }
         };
 
@@ -501,5 +505,40 @@ mod parent_traversal_tests {
             .validate_path_for_write(&outside.display().to_string())
             .expect_err("an unrelated outside path stays refused");
         assert!(matches!(error, SecurityError::OutsideWorkspaceRoot(_)));
+    }
+
+    // The final containment check must compare the canonical form of the target's
+    // existing prefix against the roots, not the raw path. On macOS `tempdir()` is
+    // `/var/folders/…` while roots are stored canonicalized (`/private/var/…`); a
+    // `link -> real` symlink root reproduces the same mismatch on any unix job for
+    // a file that does not exist yet (#2953 G3.1).
+    #[cfg(unix)]
+    #[test]
+    fn new_file_through_an_allowed_symlink_root_is_accepted() {
+        use std::os::unix::fs::symlink;
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        let real = parent.path().join("real");
+        std::fs::create_dir_all(&real).expect("real dir");
+        let link = parent.path().join("link");
+        symlink(&real, &link).expect("symlink link -> real");
+
+        let manager = file_tool_manager(repo.clone(), true).with_extra_roots(vec![link.clone()]);
+        let validator = manager.get_security_validator();
+
+        // The target does not exist yet and its raw form goes through the symlink.
+        validator
+            .validate_path_for_write(&link.join("new.txt").display().to_string())
+            .expect("a new file through an allowed symlink root must be writable");
+
+        // A workspace symlink pointing somewhere unrelated is still refused.
+        let unrelated = parent.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).expect("unrelated dir");
+        let evil = repo.join("evil");
+        symlink(&unrelated, &evil).expect("symlink evil -> unrelated");
+        let error = validator
+            .validate_path_for_write(&evil.join("x.txt").display().to_string())
+            .expect_err("a workspace symlink to an unrelated target stays refused");
+        assert!(matches!(error, SecurityError::PathTraversal(_)));
     }
 }
