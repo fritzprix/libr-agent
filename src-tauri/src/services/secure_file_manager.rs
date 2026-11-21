@@ -67,6 +67,14 @@ impl SecureFileManager {
         }
     }
 
+    /// Also accept paths under `extra_roots` besides the base directory (#2946 keeps
+    /// this manager scoped while allowing the OS temp directory). Roots that cannot be
+    /// canonicalized are dropped.
+    pub fn with_extra_roots(mut self, extra_roots: Vec<std::path::PathBuf>) -> Self {
+        self.security = self.security.with_extra_roots(extra_roots);
+        self
+    }
+
     /// Refuses writes into git metadata; see
     /// [`SecurityValidator::with_git_metadata_write_guard`].
     pub fn with_git_metadata_write_guard(mut self, git_dirs: Vec<std::path::PathBuf>) -> Self {

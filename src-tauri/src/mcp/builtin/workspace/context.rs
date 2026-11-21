@@ -275,6 +275,7 @@ pub async fn build_context_prompt(
     let platform = ExecutionPlatform::for_session(session_id, state.is_docker);
     let platform_info = platform.platform_line();
     let shell_info = platform.shell_line();
+    let temp_line = temp_files_line(session_id, state.is_docker);
 
     format!(
         "## Workspace
@@ -285,9 +286,39 @@ pub async fn build_context_prompt(
 {platform_info}
 {shell_info}
 - Running Processes: {running_processes_text}{recently_finished_line}
-- Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.",
+{temp_line}- Internal Paths: `.libragent/tmp/` (process I/O), `.libragent/exports/` (exported files) are hidden from listing to keep workspace clean.",
         workspace_dir = state.workspace_dir,
         shell_cwd = state.shell_cwd,
+    )
+}
+
+/// One prompt line naming where temp files belong (#2946).
+///
+/// The shell's `TMPDIR` / `TEMP` / `TMP` already point at the session scratch
+/// directory, so the agent is told to use that variable rather than a literal
+/// path: the same instruction then holds on Windows and inside a container.
+fn temp_files_line(session_id: &str, is_docker: bool) -> String {
+    let location = if is_docker {
+        "`/tmp` inside the container, bound to the session scratch directory"
+    } else {
+        "the session scratch directory"
+    };
+    let path = if is_docker {
+        String::new()
+    } else {
+        match crate::session::get_session_manager() {
+            Ok(manager) => format!(
+                " (`{}`)",
+                manager
+                    .get_session_scratch_dir_unverified(session_id)
+                    .display()
+            ),
+            Err(_) => String::new(),
+        }
+    };
+    format!(
+        "- Temp Files: `$TMPDIR` (`%TEMP%` in cmd) is {location}{path}; write temporary files there. \
+         The OS temp directory is also writable.\n"
     )
 }
 

@@ -131,13 +131,16 @@ impl SecurityValidator {
         self
     }
 
-    /// Also accept paths under `roots` in the containment checks. Roots that cannot be
-    /// canonicalized are dropped.
+    /// Also accept paths under `roots` in the containment checks, on top of any roots
+    /// already accepted (#2946 adds the OS temp directory beside linked worktrees).
+    /// Roots that cannot be canonicalized are dropped.
     pub fn with_extra_roots(mut self, roots: Vec<PathBuf>) -> Self {
-        self.extra_roots = roots
+        let accepted: Vec<PathBuf> = roots
             .into_iter()
             .filter_map(|root| root.canonicalize().ok())
+            .filter(|root| !self.extra_roots.contains(root))
             .collect();
+        self.extra_roots.extend(accepted);
         self
     }
 
@@ -454,5 +457,48 @@ mod parent_traversal_tests {
             .validate_path_for_write("a/../../x")
             .expect_err("relative path that climbs out is rejected");
         assert!(matches!(climbing, SecurityError::PathTraversal(_)));
+    }
+
+    // #2946: the write guard also allows the OS temp directory (the shell runs
+    // with the user's permissions and writes there; remapping it would make a
+    // script and `readFile` see different files) and the session scratch
+    // directory. Roots added later stack on the ones already accepted.
+    #[test]
+    fn temp_and_scratch_roots_are_writable_beside_the_workspace() {
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        add_worktree(&repo, "w");
+        let os_temp = tempdir().expect("tempdir");
+        let scratch = tempdir().expect("tempdir");
+        let unrelated = tempdir().expect("tempdir");
+
+        let manager = file_tool_manager(repo.clone(), true).with_extra_roots(vec![
+            os_temp.path().to_path_buf(),
+            scratch.path().to_path_buf(),
+        ]);
+        let validator = manager.get_security_validator();
+
+        for dir in [os_temp.path(), scratch.path()] {
+            let target = dir.join("note.txt");
+            let path = target.display().to_string();
+            let accepted = validator
+                .validate_path_for_write(&path)
+                .unwrap_or_else(|error| panic!("{dir:?} must be writable: {error}"));
+            assert!(accepted.ends_with("note.txt"));
+        }
+
+        // The linked worktree root accepted earlier is not lost by the second call.
+        let repo_path = repo.display().to_string();
+        let base = crate::mcp::builtin::utils::strip_windows_verbatim_prefix(&repo_path);
+        validator
+            .validate_path_for_write(&format!("{base}/../repo.worktrees/w/a.rs"))
+            .expect("linked worktree root survives with_extra_roots");
+
+        // A directory nobody allowed is still refused.
+        let outside = unrelated.path().join("note.txt");
+        let error = validator
+            .validate_path_for_write(&outside.display().to_string())
+            .expect_err("an unrelated outside path stays refused");
+        assert!(matches!(error, SecurityError::OutsideWorkspaceRoot(_)));
     }
 }

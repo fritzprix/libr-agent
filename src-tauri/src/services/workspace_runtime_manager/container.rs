@@ -155,8 +155,25 @@ pub(super) async fn ensure_bash_image_contract(
             None
         };
 
+        // #2946: the session scratch directory is the container's /tmp, so temp
+        // files inside the container land in the session's own directory.
+        let scratch_dir = session_manager
+            .get_directory_service()
+            .get_scratch_dir_unverified(session_id);
+        if let Err(error) = tokio::fs::create_dir_all(&scratch_dir).await {
+            log::warn!(
+                "Could not create session scratch directory {}: {error}",
+                scratch_dir.display()
+            );
+        }
+
         let workdir = session_docker_workdir(session);
-        let mut volume_args = build_docker_volume_args(host_workspace, &workdir, tw_dir_arg)?;
+        let mut volume_args = build_docker_volume_args(
+            host_workspace,
+            &workdir,
+            tw_dir_arg,
+            scratch_dir.is_dir().then_some(scratch_dir.as_path()),
+        )?;
         let (system_skills_dir, user_skills_dir) = host_skill_dirs();
         if let Some(dir) = &user_skills_dir {
             let _ = tokio::fs::create_dir_all(dir).await;

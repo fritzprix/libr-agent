@@ -138,6 +138,7 @@ impl WorkspaceServer {
             return Ok(result);
         }
         utils::add_wake_url_env(&session_id, &mut env_vars).await;
+        utils::add_session_temp_env(&session_id, is_docker, &mut env_vars);
 
         let reported_cwd = working_directory
             .as_ref()

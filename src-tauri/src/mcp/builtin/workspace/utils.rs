@@ -179,6 +179,54 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
     session_docker_root(session_id).await.0
 }
 
+/// Temp-directory variables every shell command gets (#2946). `TMPDIR` is the
+/// POSIX name, `TEMP` and `TMP` the Windows ones; a tool that asks the OS for a
+/// temp directory then writes inside the session instead of the shared one.
+pub const SESSION_TEMP_ENV_KEYS: [&str; 3] = ["TMPDIR", "TEMP", "TMP"];
+
+/// Point the temp-directory variables at `dir` (#2946).
+///
+/// A value the call itself passed in `env` wins: the agent asked for that path
+/// explicitly, and the shell must not silently redirect it. Everything else
+/// gets the session scratch directory.
+pub fn set_session_temp_env(env_vars: &mut std::collections::HashMap<String, String>, dir: &str) {
+    for key in SESSION_TEMP_ENV_KEYS {
+        env_vars
+            .entry(key.to_string())
+            .or_insert_with(|| dir.to_string());
+    }
+}
+
+/// Add this session's scratch directory as its temp directory (#2946).
+///
+/// Host sessions get the real path (`{data_dir}/workspaces/<session_id>/.libragent/tmp`).
+/// Docker sessions get `/tmp`, which the runtime binds to the same scratch
+/// directory, so a container path never leaks to the host and both scopes see
+/// the same files. A session without a workspace directory still runs; it just
+/// keeps the OS default.
+pub fn add_session_temp_env(
+    session_id: &str,
+    is_docker: bool,
+    env_vars: &mut std::collections::HashMap<String, String>,
+) {
+    if is_docker {
+        set_session_temp_env(env_vars, "/tmp");
+        return;
+    }
+    match crate::session::get_session_manager() {
+        Ok(manager) => {
+            let dir = manager
+                .get_session_scratch_dir_unverified(session_id)
+                .display()
+                .to_string();
+            set_session_temp_env(env_vars, &dir);
+        }
+        Err(error) => log::warn!(
+            "No session scratch directory for {session_id} ({error}); shell keeps the OS temp directory"
+        ),
+    }
+}
+
 /// Adds this session's wake URL to a shell environment.
 ///
 /// Host sessions get the loopback URL. Managed Docker sessions get the
@@ -435,6 +483,37 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::tempdir;
+
+    // #2946: every temp-directory variable points at the session scratch
+    // directory, so a tool that asks the OS for a temp dir stays in the session.
+    #[test]
+    fn temp_env_vars_point_at_the_scratch_dir() {
+        let mut env = std::collections::HashMap::new();
+        set_session_temp_env(&mut env, "/data/workspaces/s1/.libragent/tmp");
+        for key in SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                env.get(key).map(String::as_str),
+                Some("/data/workspaces/s1/.libragent/tmp"),
+                "{key} must point at the session scratch directory"
+            );
+        }
+
+        // An explicit `env` value from the call wins: the agent asked for that
+        // path, and the shell must not silently redirect it.
+        let mut env = std::collections::HashMap::from([(
+            "TMPDIR".to_string(),
+            "/workspace/.cache".to_string(),
+        )]);
+        set_session_temp_env(&mut env, "/data/workspaces/s1/.libragent/tmp");
+        assert_eq!(
+            env.get("TMPDIR").map(String::as_str),
+            Some("/workspace/.cache")
+        );
+        assert_eq!(
+            env.get("TEMP").map(String::as_str),
+            Some("/data/workspaces/s1/.libragent/tmp")
+        );
+    }
 
     #[test]
     fn docker_cwd_accepts_root_relative_and_absolute_under_root() {
