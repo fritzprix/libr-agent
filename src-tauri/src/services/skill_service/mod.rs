@@ -22,9 +22,9 @@ pub use contracts::{
     PluginSourceOverview, PluginUpdateStatus, SkillAliasRoot, SkillImportCandidate,
     SkillImportConflict, SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
     ASSISTANT_SKILLS_ALIAS_PREFIX, LEGACY_SYSTEM_SKILLS_DIR_NAME,
-    MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_ALIAS_PREFIX,
-    SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_ALIAS_PREFIX, USER_SKILLS_DIR_NAME,
-    WORKSPACE_SKILLS_ALIAS_PREFIX,
+    MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, PLUGIN_SKILL_OWNER_FILE, SKILL_FILE_NAME,
+    SYSTEM_SKILLS_ALIAS_PREFIX, SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_ALIAS_PREFIX,
+    USER_SKILLS_DIR_NAME, WORKSPACE_SKILLS_ALIAS_PREFIX,
 };
 pub use directories::{
     build_skill_alias_path, collect_allowed_skill_roots, collect_skill_alias_roots,

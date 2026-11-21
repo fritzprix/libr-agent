@@ -75,7 +75,7 @@ fn import_conflicts_prefer_system_skills_over_user_skills() {
     )];
     let user_skills = vec![metadata("teamwork", "user", "/data/user/teamwork/SKILL.md")];
 
-    let conflicts = build_skill_import_conflicts(&discovered, &system_skills, &user_skills);
+    let conflicts = build_skill_import_conflicts(&discovered, &system_skills, &user_skills, None);
 
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].name, "teamwork");
@@ -100,7 +100,7 @@ fn import_conflicts_use_user_origin_when_no_system_skill_exists() {
         "/data/user/custom-helper/SKILL.md",
     )];
 
-    let conflicts = build_skill_import_conflicts(&discovered, &system_skills, &user_skills);
+    let conflicts = build_skill_import_conflicts(&discovered, &system_skills, &user_skills, None);
 
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].name, "custom-helper");
@@ -108,6 +108,50 @@ fn import_conflicts_use_user_origin_when_no_system_skill_exists() {
     assert_eq!(
         conflicts[0].existing_path,
         "/data/user/custom-helper/SKILL.md"
+    );
+}
+
+#[test]
+fn re_preview_of_installed_plugin_does_not_conflict_with_its_own_skills() {
+    // #2927 D2/D6 (#2954 G1.2): an update preview must not report the
+    // plugin's own marked skills as user-data conflicts — an update replaces
+    // what its plugin owns.
+    let owner = "src-a1b2c3";
+    let mut owned = metadata("alpha", "user", "/data/user/alpha/SKILL.md");
+    owned.plugin_owner = Some(owner.to_string());
+    let discovered = vec![SkillImportCandidate {
+        name: "alpha".to_string(),
+        description: "Updated alpha".to_string(),
+    }];
+
+    let conflicts = build_skill_import_conflicts(&discovered, &[], &[owned.clone()], Some(owner));
+    assert!(
+        conflicts.is_empty(),
+        "the plugin's own skill is replaced by its update, not a conflict: {conflicts:?}"
+    );
+
+    // A user skill of the same name (no marker) still conflicts.
+    let plain = metadata("alpha", "user", "/data/user/alpha/SKILL.md");
+    assert_eq!(
+        build_skill_import_conflicts(&discovered, &[], &[plain], Some(owner)).len(),
+        1,
+        "user data must still be reviewed before overwrite"
+    );
+
+    // A skill owned by a different plugin still conflicts.
+    let mut foreign = metadata("alpha", "user", "/data/user/alpha/SKILL.md");
+    foreign.plugin_owner = Some("src-other".to_string());
+    assert_eq!(
+        build_skill_import_conflicts(&discovered, &[], &[foreign], Some(owner)).len(),
+        1,
+        "another plugin's skill is not ours to replace"
+    );
+
+    // Without an owning source (user imports), marked skills still conflict.
+    assert_eq!(
+        build_skill_import_conflicts(&discovered, &[], &[owned], None).len(),
+        1,
+        "user imports never own skills (D2)"
     );
 }
 

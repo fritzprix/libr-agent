@@ -4,9 +4,7 @@ import { toast } from 'sonner';
 import { useSWRConfig } from 'swr';
 import { getLogger } from '@/lib/logger';
 import {
-  installGitHubSkills,
   installSessionPlugin,
-  previewGitHubSkillInstall,
   previewSessionPluginInstall,
   resolvePluginTarget,
 } from '@/lib/backend/skills';
@@ -18,6 +16,13 @@ import {
   notifyImportWarnings,
   shouldPromptSkillInstall,
 } from '@/features/skills/skills-management-utils';
+import {
+  planPluginUpdate,
+  pendingInstallForUpdate,
+  installPluginUpdate,
+  toastPluginUpdated,
+  notifyPluginUpdated,
+} from '@/features/skills/plugin-update-flow';
 import type { SkillImportConflict } from '@/types/skills';
 import { isScopedSkillsKey } from './useScopedSkills';
 import { isSessionPluginsKey } from './useSessionPlugins';
@@ -250,57 +255,46 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     }
     const { sourceUrl, scope } = pendingUpdate;
     setIsInstalling(true);
-    const toastId = toast.loading(
-      t('settings.skills.githubInspecting', 'Inspecting GitHub repository...'),
-    );
     try {
-      const preview =
-        scope === 'session'
-          ? await previewSessionPluginInstall(sessionId, sourceUrl)
-          : await previewGitHubSkillInstall(sourceUrl);
-      toast.dismiss(toastId);
-      const system = preview.conflicts.filter(
-        (conflict) => conflict.existingOrigin === 'system',
+      const plan = await planPluginUpdate(
+        sourceUrl,
+        scope,
+        sessionId,
+        t,
       );
-      const overwritable = preview.conflicts.filter(
-        (conflict) => conflict.existingOrigin !== 'system',
-      );
+      if (!plan) {
+        return;
+      }
       setPendingUpdate(null);
-      if (overwritable.length > 0) {
+      if (plan.userConflictNames.length > 0) {
         // The D6 Agree already covers hooks and MCP servers; this dialog is
         // only for skills that belong to the user, not to the plugin.
-        setPendingInstall({
-          kind: 'github',
-          sourceValue: sourceUrl,
-          preview,
-          selectedOverwriteNames: overwritable.map((c) => c.name),
-          approveHooks: true,
-          pluginOptions: defaultPluginOptions(preview),
-        });
+        setPendingInstall(pendingInstallForUpdate(plan, sourceUrl));
         return;
       }
       if (scope === 'session') {
-        await runInstall(sourceUrl, [], true, [], system);
-      } else {
-        const result = await installGitHubSkills(
+        const result = await installSessionPlugin(
+          sessionId,
           sourceUrl,
-          true,
-          system.map((conflict) => conflict.name),
+          false,
+          plan.systemConflictNames,
           true,
           {},
         );
-        toast.success(
-          t(
-            'settings.skills.pluginUpdatedReload',
-            'Plugin updated. It applies when a session opens again; type /reload to apply it now.',
-          ),
-        );
+        notifyImportWarnings(result);
+        await refreshAfterChange();
+      } else {
+        const result = await installPluginUpdate(plan, sourceUrl);
         notifyImportWarnings(result);
         await refreshAfterChange();
       }
+      toastPluginUpdated(t);
+      // #2954 G1.3: the install commit changed, so the D6 badge in the
+      // Skills panel must re-check (this hook cannot touch its state).
+      notifyPluginUpdated();
     } catch (error) {
       logger.error('Failed to update plugin', error);
-      toast.error(errorMessage(error), { id: toastId });
+      toast.error(errorMessage(error));
     } finally {
       setIsInstalling(false);
     }
@@ -308,7 +302,6 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
     isInstalling,
     pendingUpdate,
     refreshAfterChange,
-    runInstall,
     sessionId,
     t,
   ]);

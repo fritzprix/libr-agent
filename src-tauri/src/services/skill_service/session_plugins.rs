@@ -168,6 +168,9 @@ pub async fn preview_session_plugin_install(
         "workspace",
         &get_system_skills_directory()?,
         &same_source,
+        // Session plugin skills carry no owner marker (D2), so there is no
+        // owning source id to exempt here.
+        None,
     )
     .await
 }
@@ -193,6 +196,8 @@ pub async fn install_session_plugin(
         "workspace",
         &get_system_skills_directory()?,
         &same_source,
+        // Session plugin skills carry no owner marker (D2).
+        None,
     )
     .await?;
     // #2926: check the values the user entered before anything is written, so a

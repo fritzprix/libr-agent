@@ -13,7 +13,7 @@ use super::directories::{
 use super::github::parse_github_repo_url;
 use super::plugin_manifest::{self, PluginManifest};
 use super::plugin_mcp::collect_plugin_mcp_servers;
-use super::scanning::{copy_dir_recursive, parse_skill_metadata};
+use super::scanning::{copy_dir_recursive, parse_skill_metadata, plugin_owner_marker_of_dir};
 use crate::services::hooks::registry::{
     get_source, get_user_plugins_directory, save_source_in, PluginMetadata, PluginSourceManifest,
     PluginSourceRecord,
@@ -172,7 +172,7 @@ pub async fn delete_user_skill(skill_name: String) -> Result<String, String> {
     // #2927 D2: a plugin-owned skill is read-only for the user. It goes only
     // with its plugin, so a lone delete is rejected with the owner named.
     if let Some(root) = find_skill_root_by_name(&user_dir, &skill_name)? {
-        if let Some(owner) = read_skill_owner_marker(&root) {
+        if let Some(owner) = plugin_owner_marker_of_dir(&root) {
             return Err(format!(
                 "Skill '{skill_name}' is owned by plugin {owner}. Disable or uninstall the \
                  plugin to remove it."
@@ -225,8 +225,19 @@ pub async fn copy_global_to_assistant(
     invalidate_skill_cache_after_success(copy_dir_recursive(&source_root, &target_path))?;
     // #2927 D2: a copy into an assistant is the user's own skill; the
     // plugin-owner marker must not travel with it, or the assistant copy
-    // would inherit the plugin's read-only rule.
-    let _ = fs::remove_file(target_path.join(PLUGIN_SKILL_OWNER_FILE));
+    // would inherit the plugin's read-only rule. A missing marker (plain
+    // skill) is fine; any other failure would leave an undeletable
+    // assistant copy, so it is reported and the copy is rolled back
+    // (#2954 G1.4).
+    if let Err(error) = fs::remove_file(target_path.join(PLUGIN_SKILL_OWNER_FILE)) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            let _ = fs::remove_dir_all(&target_path);
+            invalidate_skill_scan_cache();
+            return Err(format!(
+                "strip plugin-owner marker from assistant copy of '{skill_name}': {error}"
+            ));
+        }
+    }
 
     Ok(format!(
         "Successfully copied skill '{}' to assistant '{}'",
@@ -456,6 +467,11 @@ async fn build_user_import_preview(
     let user_dir = get_user_skills_directory()?;
     let system_dir = get_system_skills_directory()?;
     let same_source = same_source_skill_names(&prepared.source_key);
+    // #2927 D2/D6: global plugin installs mark their skills with this source
+    // id, so the preview must treat the plugin's own skills as replaceable,
+    // not as user-data conflicts (#2954 G1.2). A skill bundle without the
+    // marker never matches, so passing the id unconditionally is safe.
+    let owner_source_id = plugin_source_id(&prepared.source_key);
     build_import_preview(
         prepared,
         &user_dir,
@@ -463,6 +479,7 @@ async fn build_user_import_preview(
         "user",
         &system_dir,
         &same_source,
+        Some(&owner_source_id),
     )
     .await
 }
@@ -498,6 +515,10 @@ pub(super) async fn build_import_preview(
     origin_tag: &str,
     system_skills_dir: &Path,
     same_source_skills: &[String],
+    // #2927 D2/D6: source id of the plugin being installed/previewed. An
+    // existing user skill whose owner marker equals it is the plugin's own
+    // skill — an update replaces it, so it is not a conflict (#2954 G1.2).
+    owner_source_id: Option<&str>,
 ) -> Result<SkillImportPreview, String> {
     wait_for_managed_skills_sync().await;
 
@@ -541,8 +562,12 @@ pub(super) async fn build_import_preview(
             description: skill.metadata.description.clone(),
         })
         .collect::<Vec<_>>();
-    let conflicts =
-        build_skill_import_conflicts(&discovered_candidates, &system_skills, &user_skills);
+    let conflicts = build_skill_import_conflicts(
+        &discovered_candidates,
+        &system_skills,
+        &user_skills,
+        owner_source_id,
+    );
 
     let hooks_config = try_load_plugin_hooks(&prepared.scan_root, manifest.as_ref())?;
     let hooks = hooks_config
@@ -614,6 +639,7 @@ pub fn build_skill_import_conflicts(
     discovered_skills: &[SkillImportCandidate],
     system_skills: &[SkillMetadata],
     user_skills: &[SkillMetadata],
+    owner_source_id: Option<&str>,
 ) -> Vec<SkillImportConflict> {
     let system_by_name = system_skills
         .iter()
@@ -640,6 +666,20 @@ pub fn build_skill_import_conflicts(
 
             user_by_name
                 .get(&skill.name.to_lowercase())
+                // #2927 D2/D6: a skill this same plugin owns (marker ==
+                // owner_source_id) is not a conflict — an update replaces
+                // its own skills (#2954 G1.2). User imports and other
+                // plugins' skills still conflict. The exemption applies
+                // only when both ids are known: a `None` owner id (session
+                // previews) never exempts, and an unmarked existing skill
+                // is always ordinary user data.
+                .filter(|existing| {
+                    !matches!(
+                        (existing.plugin_owner.as_deref(), owner_source_id),
+                        (Some(existing_owner), Some(pending_owner))
+                            if existing_owner == pending_owner
+                    )
+                })
                 .map(|existing| SkillImportConflict {
                     name: skill.name.clone(),
                     existing_origin: existing
@@ -1014,14 +1054,6 @@ pub(super) fn write_skill_owner_marker(skill_dir: &Path, source_id: &str) -> Res
     })
 }
 
-/// Read the plugin-owner marker of a skill directory (#2927 D2). `None` when
-/// the skill is not plugin-owned (no marker, or an unreadable one).
-pub(super) fn read_skill_owner_marker(skill_dir: &Path) -> Option<String> {
-    let raw = fs::read_to_string(skill_dir.join(PLUGIN_SKILL_OWNER_FILE)).ok()?;
-    let owner = raw.trim().to_string();
-    (!owner.is_empty()).then_some(owner)
-}
-
 /// Reject overwriting a skill directory another plugin owns (#2927 D2). The
 /// owning plugin itself may re-install over its own skills (that is exactly
 /// what an update is), and a user-owned directory is always replaceable.
@@ -1030,7 +1062,7 @@ fn check_overwrite_allowed(
     skill_name: &str,
     owner: Option<&str>,
 ) -> Result<(), String> {
-    if let Some(existing_owner) = read_skill_owner_marker(existing_root) {
+    if let Some(existing_owner) = plugin_owner_marker_of_dir(existing_root) {
         if Some(existing_owner.as_str()) != owner {
             return Err(format!(
                 "Skill '{skill_name}' is owned by plugin {existing_owner}. Update or uninstall \
@@ -1540,7 +1572,7 @@ pub(super) fn remove_skill_names_from_user_skills(
         // a plugin-owned skill), so it still goes by name — which is exactly
         // what those installs could only ever have had.
         if let Some(root) = find_skill_root_by_name(user_dir, name)? {
-            if let Some(owner) = read_skill_owner_marker(&root) {
+            if let Some(owner) = plugin_owner_marker_of_dir(&root) {
                 if owner != plugin_id {
                     continue;
                 }
@@ -1600,7 +1632,7 @@ mod hook_preview_tests {
             .path()
             .join(skill_storage_directory_name("alpha").unwrap());
         assert_eq!(
-            read_skill_owner_marker(&installed).as_deref(),
+            plugin_owner_marker_of_dir(&installed).as_deref(),
             Some("plugin-acme"),
             "every skill the plugin installs carries its owner marker"
         );
@@ -1613,7 +1645,7 @@ mod hook_preview_tests {
         )
         .unwrap();
         assert_eq!(
-            read_skill_owner_marker(&installed).as_deref(),
+            plugin_owner_marker_of_dir(&installed).as_deref(),
             Some("plugin-acme"),
             "an update replaces the plugin's own skill and re-marks it"
         );
@@ -1629,7 +1661,7 @@ mod hook_preview_tests {
             assert!(error.contains("owned by plugin plugin-acme"), "{error}");
         }
         assert_eq!(
-            read_skill_owner_marker(&installed).as_deref(),
+            plugin_owner_marker_of_dir(&installed).as_deref(),
             Some("plugin-acme"),
             "rejected installs must leave the owned skill intact"
         );
@@ -2060,6 +2092,7 @@ mod hook_preview_tests {
             "user",
             system.path(),
             &["alpha".to_string()],
+            None,
         )
         .await
         .unwrap();
@@ -2087,6 +2120,7 @@ mod hook_preview_tests {
             "user",
             system.path(),
             &[],
+            None,
         )
         .await
         .unwrap();
@@ -2116,6 +2150,7 @@ mod hook_preview_tests {
             "user",
             system.path(),
             &[],
+            None,
         )
         .await
         .unwrap();
@@ -2143,6 +2178,7 @@ mod hook_preview_tests {
             "user",
             system.path(),
             &[],
+            None,
         )
         .await
         .unwrap_err();

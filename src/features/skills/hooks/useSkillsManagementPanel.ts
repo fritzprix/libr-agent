@@ -25,6 +25,13 @@ import {
   notifyImportWarnings,
   shouldPromptSkillInstall,
 } from '../skills-management-utils';
+import {
+  installPluginUpdate,
+  pendingInstallForUpdate,
+  planPluginUpdate,
+  PLUGIN_UPDATED_EVENT,
+  toastPluginUpdated,
+} from '../plugin-update-flow';
 import type {
   PendingInstall,
   SkillsDirectoryScope,
@@ -418,8 +425,23 @@ export function useSkillsManagementPanel() {
   // cannot show. The effect keys on the id list, not the array object:
   // `pluginSources` is a fresh `[]` on every render while the overview is
   // loading, and an array identity would re-run this effect in a loop
-  // (each run sets a new state object and re-renders).
+  // (each run sets a new state object and re-renders). `updatesRefreshTick`
+  // (#2954 G1.3) forces a re-check after a completed update, where the id
+  // list is unchanged but the recorded commits are not.
   const pluginSourceIds = pluginSources.map((source) => source.id).join(',');
+  const [updatesRefreshTick, setUpdatesRefreshTick] = useState(0);
+  /** Re-run the update check (after an update changed an install commit). */
+  const refreshUpdates = useCallback(() => {
+    setUpdatesRefreshTick((tick) => tick + 1);
+  }, []);
+  // #2954 G1.3: updates also run from `/plugin update` in a session
+  // (different hook), so the shared flow signals completion via event.
+  useEffect(() => {
+    window.addEventListener(PLUGIN_UPDATED_EVENT, refreshUpdates);
+    return () => {
+      window.removeEventListener(PLUGIN_UPDATED_EVENT, refreshUpdates);
+    };
+  }, [refreshUpdates]);
   useEffect(() => {
     if (pluginSourceIds === '') {
       setUpdatesAvailable((current) =>
@@ -450,7 +472,7 @@ export function useSkillsManagementPanel() {
     return () => {
       cancelled = true;
     };
-  }, [pluginSourceIds]);
+  }, [pluginSourceIds, updatesRefreshTick]);
 
   // #2927 D6: the Update button opens the update notice; the actual
   // re-download runs only after the single Agree (confirmPluginUpdate).
@@ -470,56 +492,38 @@ export function useSkillsManagementPanel() {
       return;
     }
     setIsInstallingGithub(true);
-    const toastId = toast.loading(
-      t(
-        'settings.skills.githubInspecting',
-        'Inspecting GitHub repository...',
-      ),
-    );
     try {
-      const preview = await previewGitHubSkillInstall(sourceUrl);
-      toast.dismiss(toastId);
-      const userConflicts = preview.conflicts.filter(
-        (c) => c.existingOrigin === 'user',
-      );
-      setPendingUpdateUrl(null);
-      if (userConflicts.length > 0) {
-        // The D6 Agree already approved hooks and MCP servers for this
-        // update; the dialog now only reviews user-data collisions.
-        setPendingInstall({
-          kind: 'github',
-          sourceValue: sourceUrl,
-          preview,
-          selectedOverwriteNames: userConflicts.map((c) => c.name),
-          approveHooks: true,
-          pluginOptions: defaultPluginOptions(preview),
-        });
+      const plan = await planPluginUpdate(sourceUrl, 'global', undefined, t);
+      if (!plan) {
         return;
       }
-      await installGitHubSkills(
-        sourceUrl,
-        true,
-        preview.conflicts
-          .filter((c) => c.existingOrigin === 'system')
-          .map((c) => c.name),
-        true,
-      );
-      toast.success(
-        t(
-          'settings.skills.pluginUpdatedReload',
-          'Plugin updated. It applies when a session opens again; type /reload to apply it now.',
-        ),
-      );
+      setPendingUpdateUrl(null);
+      if (plan.userConflictNames.length > 0) {
+        // The D6 Agree already approved hooks and MCP servers for this
+        // update; the dialog now only reviews user-data collisions.
+        setPendingInstall(pendingInstallForUpdate(plan, sourceUrl));
+        return;
+      }
+      await installPluginUpdate(plan, sourceUrl);
+      toastPluginUpdated(t);
       await refresh();
+      // #2954 G1.3: the install commit changed, so re-check for updates —
+      // the D6 badge must clear even though the source id list did not.
+      refreshUpdates();
     } catch (error) {
       logger.error('Failed to update plugin source', error);
-      toast.error(error instanceof Error ? error.message : String(error), {
-        id: toastId,
-      });
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setIsInstallingGithub(false);
     }
-  }, [isInstallingGithub, isInstallingLocal, pendingUpdateUrl, refresh, t]);
+  }, [
+    isInstallingGithub,
+    isInstallingLocal,
+    pendingUpdateUrl,
+    refresh,
+    refreshUpdates,
+    t,
+  ]);
 
   const handleTogglePluginSourceEnabled = useCallback(
     async (sourceId: string, enabled: boolean) => {
