@@ -462,3 +462,63 @@ impl BuiltinMCPServer for UiServer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn first_text(result: MCPResult) -> String {
+        result
+            .content
+            .expect("content")
+            .into_iter()
+            .find_map(|item| match item {
+                MCPContent::Text { text } => Some(text),
+                _ => None,
+            })
+            .expect("warning text content")
+    }
+
+    #[test]
+    fn circuit_break_uses_caller_reason_when_provided() {
+        // Callers other than the identical-call loop guard (for example, the
+        // invalid tool-call arguments guard) pass their own reason.
+        let text = first_text(
+            UiServer::new()
+                .circuit_break(json!({
+                    "toolName": "workspace__writeFile",
+                    "repetitionCount": 4,
+                    "args": "{}",
+                    "reason": "The model sent invalid arguments for the tool \"x\".",
+                }))
+                .expect("resource response"),
+        );
+        assert!(text.starts_with("⚠️ Circuit Breaker Triggered"));
+        assert!(text.contains("The model sent invalid arguments for the tool \"x\"."));
+        assert!(!text.contains("identical parameters"));
+    }
+
+    #[test]
+    fn circuit_break_falls_back_to_identical_call_text() {
+        // Missing or blank reason keeps the loop-guard wording.
+        for args in [
+            json!({ "toolName": "workspace__writeFile", "repetitionCount": 5, "args": "{}" }),
+            json!({
+                "toolName": "workspace__writeFile",
+                "repetitionCount": 5,
+                "args": "{}",
+                "reason": "   ",
+            }),
+        ] {
+            let text = first_text(
+                UiServer::new()
+                    .circuit_break(args)
+                    .expect("resource response"),
+            );
+            assert!(text.starts_with("⚠️ Circuit Breaker Triggered"));
+            assert!(
+                text.contains("has been called 5 times consecutively with identical parameters")
+            );
+        }
+    }
+}

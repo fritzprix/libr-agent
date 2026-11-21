@@ -8,17 +8,21 @@
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicBool, Arc};
 
+use sea_orm::Database;
 use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::llm::{
-    apply_invalid_tool_args_policy_for_testing, InvalidToolArgsOutcome,
+    apply_invalid_tool_args_policy_for_testing, handle_llm_response, InvalidToolArgsOutcome,
     INVALID_TOOL_ARGS_MAX_RESAMPLES,
 };
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
-use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
+use tauri_mcp_agent_lib::repositories::{
+    InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
+};
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
@@ -323,5 +327,63 @@ async fn invalid_tool_args_after_all_resamples_trip_the_circuit_breaker() {
     assert!(!has_invalid_tool_args(std::slice::from_ref(&last)));
 
     // The budget starts again for the next turn.
+    assert_eq!(retry_count(&sessions, session_id).await, 0);
+}
+
+/// A cancelled session must not be resampled. `handle_llm_response` runs
+/// response admission first, and the guard rejects a reply whose session has
+/// a cancelled cancellation token (`WORKFLOW_CANCELLED_ERROR`) before the
+/// invalid tool-call-args policy runs. So an invalid reply on a cancelled
+/// session is dropped: history is unchanged, the resample counter is not
+/// consumed, and no new completion is requested (the early `Err` return).
+#[tokio::test]
+async fn cancelled_session_with_invalid_tool_args_is_not_resampled() {
+    let session_id = "invalid-tool-args-cancelled";
+    let sessions = session_with_history(session_id).await;
+    let before = history(&sessions, session_id).await;
+
+    let token = sessions
+        .read()
+        .await
+        .get(session_id)
+        .expect("session")
+        .cancellation_token
+        .clone();
+    token.cancel();
+
+    // These exist only to satisfy the signature. Admission rejects before any
+    // of them is used, so the session is never persisted nor a completion sent.
+    let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+    let db = Database::connect("sqlite::memory:")
+        .await
+        .expect("in-memory database");
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager));
+    let mock_app = tauri::test::mock_app();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_app.handle() as *const tauri::AppHandle<tauri::test::MockRuntime>
+            as *const tauri::AppHandle)
+    };
+
+    let result = handle_llm_response(
+        &session_repo,
+        &sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+        reply("assistant-cancelled", &truncated_arguments()),
+    )
+    .await;
+
+    assert_eq!(result, Err("Workflow was cancelled".to_string()));
+    // The invalid reply never enters history…
+    assert_eq!(history(&sessions, session_id).await.len(), before.len());
+    // …and the resample counter stays untouched.
     assert_eq!(retry_count(&sessions, session_id).await, 0);
 }
