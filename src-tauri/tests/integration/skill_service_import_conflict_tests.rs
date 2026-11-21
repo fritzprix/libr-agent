@@ -16,6 +16,7 @@ fn metadata(name: &str, origin: &str, path: &str) -> SkillMetadata {
         alias_path: None,
         source: Some("global".to_string()),
         origin: Some(origin.to_string()),
+        plugin_owner: None,
     }
 }
 
