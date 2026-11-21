@@ -263,7 +263,7 @@ pub const PLUGIN_ENV_DIR_NAME: &str = "plugin_env";
 /// manifest's own approval fields are scrubbed at install and ignored at
 /// load (#2942 S3.2 carries `mcp_approved` here too, so the store moving
 /// into the agent-writable workspace cannot weaken #2924 D3).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionPluginTrust {
     #[serde(default)]
     pub hooks_approved: bool,
@@ -275,6 +275,29 @@ pub struct SessionPluginTrust {
     /// install and ignored at load; only this record can approve.
     #[serde(default)]
     pub mcp_approved: bool,
+    /// Whether the user turned this session plugin off (#2927). The state
+    /// lives here for the same reason as the approvals: the workspace
+    /// manifest is agent-writable, so a plugin the user disabled could
+    /// otherwise be turned back on by an edit (`"enabled": true`) and its
+    /// hooks, commands and MCP servers would start again. Missing from
+    /// records written before this field existed, and a plugin is then
+    /// enabled — the state it had before #2927.
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
+}
+
+impl Default for SessionPluginTrust {
+    /// No record means no approvals, but still enabled: being enabled is the
+    /// plugin's starting state, not a privilege that approval grants, and a
+    /// missing or unreadable record must not silently turn a plugin off.
+    fn default() -> Self {
+        Self {
+            hooks_approved: false,
+            approval_hashes: BTreeMap::new(),
+            mcp_approved: false,
+            enabled: true,
+        }
+    }
 }
 
 fn trust_file_path(trust_dir: &Path, source_id: &str) -> PathBuf {
@@ -332,6 +355,10 @@ pub fn move_session_approval_to_trust(
         hooks_approved: record.manifest.hooks_approved,
         approval_hashes: record.manifest.approval_hashes.clone(),
         mcp_approved: record.manifest.mcp_approved,
+        // #2927: the install computed the state the user wants (kept on
+        // update, `defaultEnabled` on a fresh install); the trust record
+        // becomes its only authority from here on.
+        enabled: record.manifest.enabled,
     };
     record_session_plugin_trust(trust_dir, source_id, &trust)?;
     let mut scrubbed = record.manifest;
@@ -436,6 +463,10 @@ pub fn list_session_store_sources(
                 record.manifest.hooks_approved = trust.hooks_approved;
                 record.manifest.approval_hashes = trust.approval_hashes;
                 record.manifest.mcp_approved = trust.mcp_approved;
+                // #2927: the enabled state is trust data too, so a workspace
+                // manifest edited to `"enabled": true` cannot turn a plugin
+                // the user disabled back on.
+                record.manifest.enabled = trust.enabled;
                 Some(record)
             }
             Err(error) => {
@@ -770,9 +801,12 @@ pub fn list_approved_plugin_roots() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Turn one installed plugin on or off (#2927). The files stay in place, so
-/// enabling again needs no download; loaders read `manifest.enabled` and skip
-/// a disabled plugin. Returns the saved record.
+/// Turn one installed global plugin on or off (#2927). The files stay in
+/// place, so enabling again needs no download; loaders read
+/// `manifest.enabled` and skip a disabled plugin. The global store lives in
+/// the app data directory, outside every workspace, so the manifest is safe
+/// to read as-is here (session plugins use
+/// [`set_session_source_enabled_in`]). Returns the saved record.
 pub fn set_source_enabled_in(
     base: &Path,
     source_id: &str,
@@ -784,6 +818,33 @@ pub fn set_source_enabled_in(
     }
     record.manifest.enabled = enabled;
     save_source_in(base, record.manifest)
+}
+
+/// Turn one session plugin on or off (#2927). The state is written to the
+/// out-of-workspace trust record, which is the only authority
+/// ([`list_session_store_sources`] overlays it); the workspace manifest keeps
+/// a copy only so a later reinstall still knows the state the user chose.
+/// The returned record already carries the new state.
+pub fn set_session_source_enabled_in(
+    trust_dir: &Path,
+    plugins_dir: &Path,
+    source_id: &str,
+    enabled: bool,
+) -> Result<PluginSourceRecord, String> {
+    let mut record = get_source_in(plugins_dir, source_id)?;
+    let mut trust = read_session_plugin_trust(trust_dir, source_id);
+    if trust.enabled != enabled {
+        trust.enabled = enabled;
+        record_session_plugin_trust(trust_dir, source_id, &trust)?;
+    }
+    record.manifest.enabled = enabled;
+    // Best effort: a stale copy only affects the state a reinstall starts
+    // from, never what the current session loads, so it must not fail a
+    // request the user can see succeed.
+    if let Err(error) = save_source_in(plugins_dir, record.manifest.clone()) {
+        warn!("Could not refresh the reinstall state of session plugin {source_id}: {error}");
+    }
+    Ok(record)
 }
 
 #[cfg(test)]
@@ -1075,6 +1136,89 @@ mod tests {
             !list_session_store_sources(None, base.path())[0]
                 .manifest
                 .mcp_approved
+        );
+    }
+
+    #[test]
+    fn tampered_workspace_enabled_flag_is_ignored() {
+        // #2927 gatekeeper G1.1: the enabled state of a session plugin lives
+        // in the trust record, so a workspace manifest edited to
+        // `"enabled": true` must not turn a plugin the user disabled back on.
+        let base = tempfile::tempdir().unwrap();
+        let trust_dir = tempfile::tempdir().unwrap().path().join("s1");
+        let id = format!("plugin-{}", "d".repeat(16));
+        save_source_in(base.path(), test_manifest(&id, true)).unwrap();
+        upsert_session_store_entry(base.path(), entry(&id)).unwrap();
+        move_session_approval_to_trust(&trust_dir, base.path(), &id).unwrap();
+
+        let disabled = set_session_source_enabled_in(&trust_dir, base.path(), &id, false).unwrap();
+        assert!(!disabled.manifest.enabled);
+        assert!(
+            !read_session_plugin_trust(&trust_dir, &id).enabled,
+            "the trust record is where the state is kept"
+        );
+
+        // Tamper: rewrite the workspace manifest as if the user had enabled
+        // it again.
+        let manifest_path = base.path().join(&id).join(MANIFEST_FILE);
+        let raw = fs::read_to_string(&manifest_path).unwrap();
+        let mut json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        json["enabled"] = serde_json::Value::Bool(true);
+        fs::write(&manifest_path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+
+        let records = list_session_store_sources(Some(&trust_dir), base.path());
+        assert_eq!(records.len(), 1);
+        assert!(
+            !records[0].manifest.enabled,
+            "a workspace edit must not re-enable a disabled plugin"
+        );
+        assert!(
+            records[0].manifest.hooks_approved,
+            "the approval overlay still comes from the trust record"
+        );
+        // ... so its approved hooks still do not run.
+        let no_global = tempfile::tempdir().unwrap();
+        assert!(
+            list_effective_approved_sources_in(
+                no_global.path(),
+                Some(base.path()),
+                Some(&trust_dir)
+            )
+            .is_empty(),
+            "a disabled plugin contributes no hooks"
+        );
+
+        // Only the trust record enables it again.
+        set_session_source_enabled_in(&trust_dir, base.path(), &id, true).unwrap();
+        assert!(
+            list_session_store_sources(Some(&trust_dir), base.path())[0]
+                .manifest
+                .enabled
+        );
+    }
+
+    #[test]
+    fn session_plugin_without_trust_record_stays_enabled() {
+        // #2927: a plugin installed before the trust record carried `enabled`
+        // (or with no trust store at all) must load enabled — the state it
+        // had before this field existed — while remaining unapproved.
+        let base = tempfile::tempdir().unwrap();
+        let trust_root = tempfile::tempdir().unwrap();
+        let id = format!("plugin-{}", "e".repeat(16));
+        save_source_in(base.path(), test_manifest(&id, true)).unwrap();
+        upsert_session_store_entry(base.path(), entry(&id)).unwrap();
+
+        let record = list_session_store_sources(None, base.path());
+        assert_eq!(record.len(), 1);
+        assert!(record[0].manifest.enabled);
+        assert!(!record[0].manifest.hooks_approved);
+
+        let empty_trust = trust_root.path().join("s1");
+        assert!(
+            list_session_store_sources(Some(&empty_trust), base.path())[0]
+                .manifest
+                .enabled,
+            "a missing trust file must not disable a plugin"
         );
     }
 }

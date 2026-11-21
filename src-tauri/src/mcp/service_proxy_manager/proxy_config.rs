@@ -109,6 +109,27 @@ pub(super) async fn load_requested_server_configs(
     tool_ids: &[String],
     session_id: &str,
 ) -> LoadedServerConfigs {
+    // #2927: global plugins the user disabled contribute no MCP servers.
+    let disabled_source_ids = crate::services::skill_service::disabled_global_plugin_source_ids();
+    load_requested_server_configs_excluding_disabled(
+        mcp_server_ids,
+        tool_ids,
+        session_id,
+        &disabled_source_ids,
+    )
+    .await
+}
+
+/// [`load_requested_server_configs`] with the disabled-plugin set supplied by
+/// the caller: the whole loader runs, only this one input is injected, so a
+/// test can drive it against a temporary plugin store instead of the real app
+/// data directory (gatekeeper G1.2).
+pub(super) async fn load_requested_server_configs_excluding_disabled(
+    mcp_server_ids: &[String],
+    tool_ids: &[String],
+    session_id: &str,
+    disabled_source_ids: &HashSet<String>,
+) -> LoadedServerConfigs {
     let mut stdio_configs = HashMap::new();
     let mut http_configs = HashMap::new();
     let mut server_name_to_id = HashMap::new();
@@ -148,9 +169,6 @@ pub(super) async fn load_requested_server_configs(
                 .as_ref()
                 .map(|dir| session_store_source_ids(dir.as_path()))
                 .unwrap_or_default();
-            // #2927: a disabled global plugin contributes no MCP servers.
-            let disabled_source_ids =
-                crate::services::skill_service::disabled_global_plugin_source_ids();
 
             let mut taken_session_names = HashSet::new();
             for model in models {
@@ -163,7 +181,7 @@ pub(super) async fn load_requested_server_configs(
                     .as_deref()
                     .and_then(|o| o.strip_prefix(PLUGIN_SOURCE_PREFIX))
                     .unwrap_or_default();
-                if plugin_owned && skip_disabled_plugin_server(owner_source, &disabled_source_ids) {
+                if plugin_owned && skip_disabled_plugin_server(owner_source, disabled_source_ids) {
                     log::debug!(
                         "Skipping plugin MCP server '{}' (ID: {}) - plugin {} is disabled",
                         model.name,
@@ -425,5 +443,95 @@ mod tests {
         let empty = session_store_source_ids(&store.path().join("nope"));
         assert!(empty.is_empty());
         assert!(!skip_shadowed_plugin_server(source_id, &empty));
+    }
+
+    // #2927 gatekeeper G1.2: drive the real loader — DB rows, the plugin
+    // store scan and the skip decision — and prove a disabled global
+    // plugin's MCP server is not loaded while an enabled neighbour still is.
+    #[tokio::test]
+    async fn disabled_global_plugin_servers_are_not_loaded() {
+        use crate::services::hooks::registry::{save_source_in, PluginSourceManifest};
+        use sea_orm_migration::MigratorTrait;
+
+        let _guard = crate::state::lock_test_global_state().await;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_mcp_server_repository(
+            crate::repositories::mcp_server_repository::SqliteMCPServerRepository::new(db.clone()),
+        );
+
+        let store = tempfile::tempdir().unwrap();
+        let kept_id = "plugin-aa00000000000001";
+        let dropped_id = "plugin-bb00000000000002";
+        for (source_id, enabled) in [(kept_id, true), (dropped_id, false)] {
+            save_source_in(
+                store.path(),
+                PluginSourceManifest {
+                    source_url: format!("https://example.com/{source_id}"),
+                    source_id: source_id.to_string(),
+                    skill_names: vec![],
+                    hooks: None,
+                    hooks_approved: false,
+                    approval_hashes: Default::default(),
+                    created_at: 0,
+                    hook_files: vec![],
+                    plugin: None,
+                    mcp_servers: vec![],
+                    mcp_approved: true,
+                    enabled,
+                    installed_commit: None,
+                },
+            )
+            .unwrap();
+        }
+
+        let repo = crate::state::get_mcp_server_repository();
+        for (source_id, name) in [(kept_id, "kept"), (dropped_id, "dropped")] {
+            let config = crate::services::skill_service::entry_to_mcp_config_json(
+                name,
+                &serde_json::json!({ "command": "true" }),
+                source_id,
+            )
+            .unwrap();
+            repo.create(name, config).await.unwrap();
+        }
+
+        let disabled = crate::services::skill_service::disabled_source_ids_in(store.path());
+        assert_eq!(disabled.len(), 1);
+        assert!(disabled.contains(dropped_id));
+
+        let loaded = load_requested_server_configs_excluding_disabled(
+            &[],
+            &[],
+            "sess-proxy-test",
+            &disabled,
+        )
+        .await;
+        assert!(
+            loaded.stdio_configs.contains_key("kept"),
+            "an enabled plugin's server still loads: {:?}",
+            loaded.stdio_configs.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !loaded.stdio_configs.contains_key("dropped"),
+            "a disabled plugin's server must not load: {:?}",
+            loaded.stdio_configs.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(loaded.stdio_configs.len(), 1);
+
+        // The skip is what removes it: with nothing disabled, both load.
+        let loaded = load_requested_server_configs_excluding_disabled(
+            &[],
+            &[],
+            "sess-proxy-test",
+            &HashSet::new(),
+        )
+        .await;
+        assert_eq!(loaded.stdio_configs.len(), 2);
     }
 }

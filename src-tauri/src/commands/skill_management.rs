@@ -139,13 +139,3 @@ pub async fn list_session_plugins(session_id: String) -> Result<SessionPluginsOv
 pub async fn set_plugin_source_enabled(source_id: String, enabled: bool) -> Result<(), String> {
     skill_service::set_plugin_enabled(&source_id, enabled)
 }
-
-/// Turn a session plugin on or off (#2927), same rule as the global setter.
-#[tauri::command]
-pub async fn set_session_plugin_source_enabled(
-    session_id: String,
-    source_id: String,
-    enabled: bool,
-) -> Result<(), String> {
-    skill_service::set_session_plugin_enabled(&session_id, &source_id, enabled)
-}

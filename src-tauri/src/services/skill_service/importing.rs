@@ -2004,4 +2004,82 @@ mod hook_preview_tests {
             "overview lists manifest-declared events"
         );
     }
+
+    // #2927 gatekeeper G1.2: a fresh install starts in the manifest's
+    // `defaultEnabled` state, and an update keeps the state the user chose
+    // instead of falling back to the manifest default.
+    #[test]
+    fn install_honours_default_enabled_and_keeps_the_user_choice() {
+        use crate::services::hooks::registry::{
+            get_source_in, list_approved_sources_in, set_source_enabled_in,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let scan_root = temp.path().join("plugin");
+        let plugins_dir = temp.path().join("store");
+        fs::create_dir_all(&scan_root).unwrap();
+        write_valid_skill(&scan_root, "alpha");
+        write_manifest(
+            &scan_root,
+            r#"{ "name": "opt-in", "defaultEnabled": false }"#,
+        );
+        let source_id = plugin_source_id("test://opt-in");
+        let skills = ["alpha".to_string()];
+
+        // Fresh install: the manifest asks to start disabled, and the loaders
+        // skip it at once.
+        install_plugin_source(&scan_root, "test://opt-in", &skills, false, &plugins_dir).unwrap();
+        assert!(
+            !get_source_in(&plugins_dir, &source_id)
+                .unwrap()
+                .manifest
+                .enabled,
+            "defaultEnabled: false must install disabled"
+        );
+        assert!(list_approved_sources_in(&plugins_dir).is_empty());
+
+        // The user turns it on; a later update of the same source keeps that.
+        set_source_enabled_in(&plugins_dir, &source_id, true).unwrap();
+        install_plugin_source(&scan_root, "test://opt-in", &skills, false, &plugins_dir).unwrap();
+        assert!(
+            get_source_in(&plugins_dir, &source_id)
+                .unwrap()
+                .manifest
+                .enabled,
+            "an update must keep the state the user chose"
+        );
+
+        // The same holds for a plugin the user turned off.
+        set_source_enabled_in(&plugins_dir, &source_id, false).unwrap();
+        install_plugin_source(&scan_root, "test://opt-in", &skills, false, &plugins_dir).unwrap();
+        assert!(
+            !get_source_in(&plugins_dir, &source_id)
+                .unwrap()
+                .manifest
+                .enabled,
+            "an update must not re-enable a plugin the user disabled"
+        );
+    }
+
+    // #2927: `defaultEnabled: true` and an absent field both install enabled,
+    // so every plugin written before this spec keeps working.
+    #[test]
+    fn absent_default_enabled_installs_enabled() {
+        use crate::services::hooks::registry::get_source_in;
+
+        let temp = tempfile::tempdir().unwrap();
+        let scan_root = temp.path().join("plugin");
+        let plugins_dir = temp.path().join("store");
+        fs::create_dir_all(&scan_root).unwrap();
+        write_valid_skill(&scan_root, "alpha");
+        write_manifest(&scan_root, r#"{ "name": "plain" }"#);
+
+        install_plugin_source(&scan_root, "test://plain", &[], false, &plugins_dir).unwrap();
+        assert!(
+            get_source_in(&plugins_dir, &plugin_source_id("test://plain"))
+                .unwrap()
+                .manifest
+                .enabled
+        );
+    }
 }

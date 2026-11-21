@@ -5,6 +5,7 @@ use crate::services::hooks::registry::{
     delete_source, get_source, hook_config_for_record, list_sources, list_sources_in,
     PluginSourceRecord,
 };
+use std::path::Path;
 
 pub fn list_plugin_source_overviews() -> Result<Vec<PluginSourceOverview>, String> {
     let records = list_sources()?;
@@ -134,14 +135,21 @@ pub(crate) fn on_plugin_source_uninstalled() {
 /// enabling again needs no re-creation.
 pub fn disabled_global_plugin_source_ids() -> std::collections::HashSet<String> {
     match crate::services::hooks::registry::get_user_plugins_directory() {
-        Ok(base) => list_sources_in(&base)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|r| !r.manifest.enabled)
-            .map(|r| r.manifest.source_id)
-            .collect(),
+        Ok(base) => disabled_source_ids_in(&base),
         Err(_) => std::collections::HashSet::new(),
     }
+}
+
+/// The store scan behind [`disabled_global_plugin_source_ids`], split out so
+/// the MCP loader can be driven in a test against a temporary store instead
+/// of the real app data directory (gatekeeper G1.2).
+pub(crate) fn disabled_source_ids_in(base: &Path) -> std::collections::HashSet<String> {
+    list_sources_in(base)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| !r.manifest.enabled)
+        .map(|r| r.manifest.source_id)
+        .collect()
 }
 
 /// Turn one global plugin on or off (#2927). The plugin keeps its files,
@@ -154,20 +162,6 @@ pub fn set_plugin_enabled(source_id: &str, enabled: bool) -> Result<(), String> 
     // Hooks stop now rather than at the next session open: the bootstrap text
     // a disabled plugin wrote is stale in every open session's prompt slot.
     on_plugin_source_uninstalled();
-    Ok(())
-}
-
-/// Turn one session plugin on or off (#2927). Same rule as the global setter:
-/// files stay, loaders skip, and the running session applies it on `/reload`
-/// or when it opens again (D5 keeps the prompt cache intact).
-pub fn set_session_plugin_enabled(
-    session_id: &str,
-    source_id: &str,
-    enabled: bool,
-) -> Result<(), String> {
-    let plugins_dir = crate::services::hooks::registry::get_session_plugins_directory(session_id)?;
-    crate::services::hooks::registry::set_source_enabled_in(&plugins_dir, source_id, enabled)?;
-    crate::services::hooks::clear_hook_context(session_id);
     Ok(())
 }
 

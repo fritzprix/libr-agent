@@ -59,7 +59,7 @@ pub use plugin_options::{
 };
 pub use plugin_sources::{
     delete_plugin_source, disabled_global_plugin_source_ids, disabled_plugin_skill_names,
-    list_plugin_source_overviews, set_plugin_enabled, set_session_plugin_enabled,
+    list_plugin_source_overviews, set_plugin_enabled,
 };
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,
@@ -73,4 +73,8 @@ pub use session_plugins::{
 };
 
 pub(crate) use cache::scan_skills_internal_cached;
+#[cfg(test)]
+pub(crate) use plugin_mcp::entry_to_mcp_config_json;
 pub(crate) use plugin_mcp::{build_session_plugin_server_configs, SessionPluginServerConfig};
+#[cfg(test)]
+pub(crate) use plugin_sources::disabled_source_ids_in;

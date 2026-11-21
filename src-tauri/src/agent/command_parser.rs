@@ -213,4 +213,42 @@ mod tests {
         assert_eq!(Command::parse("/plugin list extra"), None);
         assert_eq!(Command::parse("/plugin bogus x"), None);
     }
+
+    // #2927 gatekeeper G1.2: `/plugin enable|disable` parse, keep the
+    // argument as typed, and reject a missing one.
+    #[test]
+    fn test_parse_plugin_enable_and_disable() {
+        assert_eq!(
+            Command::parse("/plugin enable superpowers"),
+            Some(Command::Plugin(PluginCommand::Enable {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("  /plugin DISABLE https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Disable {
+                target: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Enable {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin enable"
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Disable {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin disable"
+        );
+
+        // No plugin named: nothing to enable, so the command is not parsed and
+        // the user is not told a plugin was switched.
+        assert_eq!(Command::parse("/plugin enable"), None);
+        assert_eq!(Command::parse("/plugin disable"), None);
+        assert_eq!(Command::parse("/plugin enable   "), None);
+    }
 }

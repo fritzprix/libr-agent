@@ -883,14 +883,14 @@ mod tests {
         .unwrap();
     }
 
-    /// #2927 fixture: flip the store manifest's `enabled` flag the way
-    /// `/plugin disable` does, without re-running an install.
-    fn disable_store_source(base: &Path, source_id: &str) {
-        let path = base.join(source_id).join("manifest.json");
-        let raw = fs::read_to_string(&path).unwrap();
-        let mut value: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        value["enabled"] = serde_json::Value::Bool(false);
-        fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+    /// #2927 fixture: turn one session plugin off the way `/plugin disable`
+    /// does — through the trust record, which is the only authority
+    /// (gatekeeper G1.1) — without re-running an install.
+    fn disable_store_source(trust_dir: &Path, base: &Path, source_id: &str) {
+        crate::services::hooks::registry::set_session_source_enabled_in(
+            trust_dir, base, source_id, false,
+        )
+        .unwrap();
     }
 
     /// #2927: a disabled session plugin contributes no MCP servers even when
@@ -919,7 +919,7 @@ mod tests {
         add_store_entry(store.path(), disabled_id);
         record_mcp_trust(&trust_dir, enabled_id, true);
         record_mcp_trust(&trust_dir, disabled_id, true);
-        disable_store_source(store.path(), disabled_id);
+        disable_store_source(&trust_dir, store.path(), disabled_id);
 
         let (servers, roots) = session_plugin_mcp_records(store.path(), Some(&trust_dir));
         let names: Vec<&str> = servers

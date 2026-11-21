@@ -1529,6 +1529,7 @@ mod tests {
                 hooks_approved: approved,
                 approval_hashes: hashes,
                 mcp_approved: false,
+                enabled: true,
             },
         )
         .unwrap();
