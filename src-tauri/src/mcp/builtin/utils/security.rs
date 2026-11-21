@@ -217,10 +217,11 @@ impl SecurityValidator {
 
         // Prefer a canonical path for the early containment check. On macOS, tempfile and
         // file:// URLs often use `/var/folders/...` while `base_dir` is stored as the
-        // canonical `/private/var/folders/...` form after construction.
-        let early_containment_path = absolute_path
-            .canonicalize()
-            .unwrap_or_else(|_| absolute_path.clone());
+        // canonical `/private/var/folders/...` form after construction. A write target
+        // usually does not exist yet, so resolve the longest existing prefix instead of
+        // falling back to the raw path (which would miss the `/var` -> `/private/var` link
+        // and report a legitimate temp-dir write as outside every allowed root).
+        let early_containment_path = canonicalize_existing_prefix(&absolute_path);
 
         // Only paths whose raw and canonical forms both lie outside `base_dir` are direct
         // external paths (`OutsideWorkspaceRoot`); paths inside `base_dir` that resolve outside
