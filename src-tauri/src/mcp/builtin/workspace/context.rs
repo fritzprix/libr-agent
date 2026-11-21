@@ -318,7 +318,7 @@ fn temp_files_line(session_id: &str, is_docker: bool) -> String {
     };
     format!(
         "- Temp Files: `$TMPDIR` (`%TEMP%` in cmd) is {location}{path}; write temporary files there. \
-         The OS temp directory is also writable.\n"
+         The OS temp directory is also writable. Files written there are not listed by `listDir` or search.\n"
     )
 }
 
@@ -341,5 +341,45 @@ pub fn detect_shell(os: &str) -> String {
                 .unwrap_or_else(|| "bash".to_string())
         }
         _ => "unknown".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::temp_files_line;
+
+    // #2946: the prompt names the variable (portable across shells) and, for a
+    // host session, the real scratch path so the agent can copy it. It also
+    // warns that scratch files do not appear in listings (#2946 S1.1).
+    #[test]
+    fn temp_files_line_for_a_host_session_names_the_scratch_path() {
+        let session_id = "prompt-session";
+        let line = temp_files_line(session_id, false);
+        assert!(
+            line.starts_with("- Temp Files: `$TMPDIR` (`%TEMP%` in cmd)"),
+            "{line}"
+        );
+        assert!(line.contains("is the session scratch directory"), "{line}");
+        assert!(line.contains("not listed by `listDir` or search"), "{line}");
+        assert!(!line.contains("inside the container"), "{line}");
+
+        let scratch = crate::session::get_session_manager()
+            .expect("session manager")
+            .get_session_scratch_dir_unverified(session_id)
+            .display()
+            .to_string();
+        assert!(line.contains(&scratch), "{line}");
+    }
+
+    #[test]
+    fn temp_files_line_for_a_docker_session_names_the_container_tmp() {
+        let line = temp_files_line("prompt-session", true);
+        assert!(
+            line.contains("`/tmp` inside the container, bound to the session scratch directory"),
+            "{line}"
+        );
+        // No host path may leak into a command that runs inside the container.
+        assert!(!line.contains("workspaces"), "{line}");
+        assert!(line.contains("not listed by `listDir` or search"), "{line}");
     }
 }

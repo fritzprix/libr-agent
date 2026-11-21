@@ -515,6 +515,49 @@ mod tests {
         );
     }
 
+    // #2946: the shell's temp variables follow the session scope. Host sessions
+    // get the real scratch path, Docker sessions `/tmp` (the runtime binds it to
+    // the same directory), and an explicit `env` value from the call still wins.
+    #[test]
+    fn add_session_temp_env_chooses_the_session_scope() {
+        let session_id = "temp-env-session";
+
+        let mut docker_env = std::collections::HashMap::new();
+        add_session_temp_env(session_id, true, &mut docker_env);
+        for key in SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                docker_env.get(key).map(String::as_str),
+                Some("/tmp"),
+                "{key} must stay inside the container"
+            );
+        }
+
+        // A container path never reaches the host: the host value is the scratch path.
+        let mut host_env = std::collections::HashMap::new();
+        add_session_temp_env(session_id, false, &mut host_env);
+        let scratch = crate::session::get_session_manager()
+            .expect("session manager")
+            .get_session_scratch_dir_unverified(session_id)
+            .display()
+            .to_string();
+        assert_ne!(scratch, "/tmp");
+        for key in SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                host_env.get(key).map(String::as_str),
+                Some(scratch.as_str()),
+                "{key} must point at the session scratch directory"
+            );
+        }
+
+        let mut explicit =
+            std::collections::HashMap::from([("TMP".to_string(), "/workspace/.cache".to_string())]);
+        add_session_temp_env(session_id, false, &mut explicit);
+        assert_eq!(
+            explicit.get("TMP").map(String::as_str),
+            Some("/workspace/.cache")
+        );
+    }
+
     #[test]
     fn docker_cwd_accepts_root_relative_and_absolute_under_root() {
         let root = "/testbed";

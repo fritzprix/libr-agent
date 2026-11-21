@@ -53,16 +53,14 @@ pub(crate) fn file_tool_manager(
 /// The session scratch directory is added for the same reason: with a workspace
 /// override it is outside the current workspace, yet the shell's `TMPDIR` points
 /// at it, so file tools must be able to reach it too.
-pub(crate) fn file_tool_extra_roots(session_id: &str) -> Vec<std::path::PathBuf> {
-    let mut roots = vec![std::env::temp_dir()];
-    match crate::session::get_session_manager() {
-        Ok(manager) => roots.push(manager.get_session_scratch_dir_unverified(session_id)),
-        Err(error) => tracing::warn!(
-            "No session scratch directory for {session_id} ({error}); file tools keep the \
-             workspace and the OS temp directory only"
-        ),
-    }
-    roots
+pub(crate) fn file_tool_extra_roots(
+    session_manager: &SessionManager,
+    session_id: &str,
+) -> Vec<std::path::PathBuf> {
+    vec![
+        std::env::temp_dir(),
+        session_manager.get_session_scratch_dir_unverified(session_id),
+    ]
 }
 
 /// Clear the workspace context cache. Safe to call from background process tasks.
@@ -184,7 +182,7 @@ impl WorkspaceServer {
             .await
             .allow_linked_worktrees;
         file_tool_manager(self.get_workspace_dir(session_id), allow)
-            .with_extra_roots(file_tool_extra_roots(session_id))
+            .with_extra_roots(file_tool_extra_roots(&self.session_manager, session_id))
     }
 
     #[allow(dead_code)]
