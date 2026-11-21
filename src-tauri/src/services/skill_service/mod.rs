@@ -64,8 +64,9 @@ pub use scanning::{
 };
 pub use session_plugins::{
     install_session_plugin, list_session_plugins, load_session_plugins,
-    preview_session_plugin_install, uninstall_session_plugin, PluginScope, SessionPluginAction,
-    SessionPluginEntry, SessionPluginHistoryEntry, SessionPluginsOverview,
+    preview_session_plugin_install, purge_session_plugin_state, uninstall_session_plugin,
+    PluginScope, SessionPluginAction, SessionPluginEntry, SessionPluginHistoryEntry,
+    SessionPluginsOverview,
 };
 
 pub(crate) use cache::scan_skills_internal_cached;

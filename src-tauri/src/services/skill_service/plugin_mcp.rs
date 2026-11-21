@@ -494,9 +494,16 @@ pub async fn build_session_plugin_server_configs(
         let source_id = record.manifest.source_id.clone();
         let root = record.root_dir.clone();
         // #2926: session-scope plugins get their session data dir and their
-        // resolved `userConfig` values, exactly like their hooks do.
-        let (options, warning) =
-            super::plugin_options::load_option_values(session_store, &source_id).await;
+        // resolved `userConfig` values, exactly like their hooks do. The
+        // option sidecar is read from the trust directory, never from the
+        // agent-writable workspace store (#2926 gatekeeper G1.1), and the
+        // secure namespace is scoped to this session (G1.2).
+        let (options, warning) = super::plugin_options::load_option_values(
+            trust_dir.unwrap_or(session_store),
+            &source_id,
+            Some(session_id),
+        )
+        .await;
         if let Some(warning) = warning {
             log::warn!("{warning}");
         }
@@ -921,6 +928,69 @@ mod tests {
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].server_name, "evil");
         assert_eq!(configs[0].pseudo_id, "plugin:plugin-cccc000000000000:evil");
+    }
+
+    // #2926 gatekeeper G1.1: a session's option sidecar is read from the
+    // out-of-workspace trust directory, never from the agent-writable
+    // workspace plugin store — a sidecar the session's agent writes there
+    // must never reach `CLAUDE_PLUGIN_OPTION_*` or `${user_config.*}`.
+    #[tokio::test]
+    async fn session_plugin_options_come_from_the_trust_dir_not_the_workspace() {
+        let store = tempfile::tempdir().unwrap();
+        let trust_root = tempfile::tempdir().unwrap();
+        let trust_dir = trust_root.path().join("sess-7");
+        let id = "plugin-dddd000000000000";
+        write_store_manifest(
+            store.path(),
+            id,
+            false,
+            r#"[{"name":"srv","entry":{"command":"bin","args":["${user_config.TOKEN}"]}}]"#,
+        );
+        add_store_entry(store.path(), id);
+        record_mcp_trust(&trust_dir, id, true);
+        // The genuine values, exactly as a session install leaves them: the
+        // sidecar sits in the trust directory.
+        std::fs::create_dir_all(&trust_dir).unwrap();
+        std::fs::write(
+            trust_dir.join(format!("{id}.options.json")),
+            r#"{ "values": { "TOKEN": "genuine" }, "sensitiveKeys": [] }"#,
+        )
+        .unwrap();
+        // Tampering attempt: an extra sidecar in the agent-writable store.
+        std::fs::write(
+            store.path().join(format!("{id}.options.json")),
+            r#"{ "values": { "TOKEN": "evil" }, "sensitiveKeys": [] }"#,
+        )
+        .unwrap();
+
+        let mut taken = std::collections::HashSet::new();
+        let configs = build_session_plugin_server_configs(
+            store.path(),
+            "sess-7",
+            Some(&trust_dir),
+            &mut taken,
+        )
+        .await;
+        assert_eq!(configs.len(), 1);
+        match &configs[0].config.transport {
+            crate::mcp::types::TransportConfig::Stdio { args, env, .. } => {
+                assert_eq!(
+                    args,
+                    &vec!["genuine".to_string()],
+                    "the workspace sidecar must not expand into the server config"
+                );
+                assert_eq!(
+                    env.get("CLAUDE_PLUGIN_OPTION_TOKEN").map(String::as_str),
+                    Some("genuine"),
+                    "CLAUDE_PLUGIN_OPTION_* must carry the trust sidecar's value"
+                );
+                assert!(
+                    !env.values().any(|value| value == "evil"),
+                    "a tampered workspace sidecar value must never be exported"
+                );
+            }
+            _ => panic!("expected stdio transport"),
+        }
     }
 
     async fn marker_count(db: &sea_orm::DatabaseConnection, marker: &str) -> usize {

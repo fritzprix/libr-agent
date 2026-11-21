@@ -84,7 +84,8 @@ pub async fn delete_plugin_source(source_id: String) -> Result<(), String> {
         log::warn!("plugin {source_id}: could not remove stored options: {error}");
     }
     if let Err(error) =
-        super::plugin_options::delete_sensitive_options(&source_id, &saved.sensitive_keys).await
+        super::plugin_options::delete_sensitive_options(&source_id, None, &saved.sensitive_keys)
+            .await
     {
         log::warn!("plugin {source_id}: could not delete secure option values: {error}");
     }

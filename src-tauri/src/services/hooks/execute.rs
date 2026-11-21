@@ -315,21 +315,29 @@ pub async fn dispatch_hook_event_with_sources(
             continue;
         };
         // #2926: the variables this plugin's hooks run with. `userConfig`
-        // values live in the plugin store's option sidecar (plain values) and
-        // secure storage (sensitive values); a secure-store read failure warns
-        // and leaves that option absent rather than skipping the hook.
+        // values live in the option sidecar (plain values) and secure storage
+        // (sensitive values); a secure-store read failure warns and leaves
+        // that option absent rather than skipping the hook. A session-scope
+        // sidecar is read from that session's trust directory, never from the
+        // agent-writable workspace store (#2926 gatekeeper G1.1), and its
+        // secure namespace is scoped to the session (G1.2).
         let session_scope =
             session_plugins_dir.is_some_and(|base| record.root_dir.starts_with(base));
-        let store_dir = if session_scope {
-            session_plugins_dir.unwrap_or(plugins_dir)
+        let (options, warning) = if session_scope {
+            crate::services::skill_service::load_plugin_option_values(
+                session_trust_dir.unwrap_or(session_plugins_dir.unwrap_or(plugins_dir)),
+                &record.manifest.source_id,
+                Some(session_id),
+            )
+            .await
         } else {
-            plugins_dir
+            crate::services::skill_service::load_plugin_option_values(
+                plugins_dir,
+                &record.manifest.source_id,
+                None,
+            )
+            .await
         };
-        let (options, warning) = crate::services::skill_service::load_plugin_option_values(
-            store_dir,
-            &record.manifest.source_id,
-        )
-        .await;
         if let Some(warning) = warning {
             log::warn!("{warning}");
         }
@@ -768,6 +776,10 @@ mod tests {
             r#"{ "values": { "greeting": "hello" }, "sensitiveKeys": [] }"#,
         )
         .unwrap();
+        // The session's workspace: the directory the session works in, which
+        // is a different place from the plugin's install root.
+        let workspace = temp.path().join("session-workspace");
+        fs::create_dir_all(&workspace).unwrap();
 
         let sid = format!("hook-env-{}", uuid::Uuid::new_v4());
         crate::services::hooks::plugin_env::clear_session_plugin_env(&sid);
@@ -775,7 +787,7 @@ mod tests {
             temp.path(),
             &sid,
             SessionStartSource::Startup,
-            Some(root.clone()),
+            Some(workspace.clone()),
         )
         .await;
 
@@ -793,8 +805,15 @@ mod tests {
             "kept"
         );
 
-        // `CLAUDE_PROJECT_DIR` is the session workspace directory.
-        assert_eq!(std::path::PathBuf::from(parts[1]), root);
+        // AC2 (#2926 gatekeeper G1.4): `CLAUDE_PROJECT_DIR` is the session's
+        // workspace — the directory the session works in — and must be
+        // distinct from the plugin's install root.
+        assert_eq!(std::path::PathBuf::from(parts[1]), workspace);
+        assert_ne!(
+            std::path::PathBuf::from(parts[1]),
+            root,
+            "CLAUDE_PROJECT_DIR must be the session workspace, not the plugin root"
+        );
 
         // `CLAUDE_ENV_FILE` is a real file the hook appended to.
         assert!(!parts[2].is_empty(), "CLAUDE_ENV_FILE was not set");

@@ -108,15 +108,32 @@ pub(super) fn prepare_plugin_user_config(
 /// Persist resolved `userConfig` values for an installed plugin (#2926): the
 /// non-sensitive ones in the store's option sidecar, the sensitive ones in
 /// secure storage. The sidecar sits next to the store entry so a plugin update
-/// (which replaces the installed directory) keeps its options.
+/// (which replaces the installed directory) keeps its options; for a session
+/// install that "store entry" lives in the session's out-of-workspace trust
+/// directory (#2926 gatekeeper G1.1), and `session_id` scopes the secure
+/// namespace (G1.2). `None` is the global install.
 pub(super) async fn save_plugin_user_config(
     store_dir: &Path,
     source_id: &str,
+    session_id: Option<&str>,
     manifest: &PluginManifest,
     values: &BTreeMap<String, String>,
 ) -> Result<(), String> {
-    let saved = super::plugin_options::persist_options(source_id, manifest, values).await?;
-    super::plugin_options::write_saved_options(store_dir, source_id, &saved)
+    let saved =
+        super::plugin_options::persist_options(source_id, session_id, manifest, values).await?;
+    if let Err(error) = super::plugin_options::write_saved_options(store_dir, source_id, &saved) {
+        // #2926 gatekeeper S1.2: the sidecar write failed after the secure
+        // values were already stored — roll them back so a failed install
+        // leaves nothing behind in secure storage.
+        super::plugin_options::discard_persisted_options(
+            source_id,
+            session_id,
+            &saved.sensitive_keys,
+        )
+        .await;
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn invalidate_skill_cache_after_success<T>(result: Result<T, String>) -> Result<T, String> {
@@ -678,6 +695,7 @@ async fn install_user_prepared_skills(
                 match save_plugin_user_config(
                     &store_dir,
                     &plugin_source_id(&source_key),
+                    None,
                     &manifest,
                     &values,
                 )
@@ -779,7 +797,9 @@ pub(super) async fn sync_plugin_mcp_rows_from_record(
     // `userConfig` values, exactly like its hooks may.
     let data_dir = crate::services::hooks::registry::get_user_plugin_data_dir(source_id).ok();
     let (options, warning) = match crate::services::hooks::registry::get_user_plugins_directory() {
-        Ok(store_dir) => super::plugin_options::load_option_values(&store_dir, source_id).await,
+        Ok(store_dir) => {
+            super::plugin_options::load_option_values(&store_dir, source_id, None).await
+        }
         Err(_) => (BTreeMap::new(), None),
     };
     if let Some(warning) = warning {
