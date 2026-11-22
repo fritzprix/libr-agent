@@ -150,4 +150,45 @@ describe('PendingApprovalWidget', () => {
 
     expect(onRespond).not.toHaveBeenCalled();
   });
+
+  // #2968: the backend masks secret values in the arguments it sends for MCP
+  // server mutations (literal query values, fragments, env and header values);
+  // the card must render that payload with the `{{secret:NAME}}` templates
+  // still visible and no literal secret anywhere on screen.
+  it('shows masked URL values and keeps secret templates in the arguments block', () => {
+    const maskedArguments = JSON.stringify({
+      name: 'svc',
+      transport: {
+        type: 'http',
+        url: 'http://127.0.0.1:9001/mcp?token=***&key={{secret:URLKEY}}#***',
+        headers: { Authorization: '***', 'X-Key': '{{secret:HDRKEY}}' },
+      },
+    });
+
+    const { container } = render(
+      <PendingApprovalWidget
+        approvals={[
+          {
+            toolCallId: 'call-register',
+            toolName: 'tool__registerServer',
+            arguments: maskedArguments,
+            approvalKind: 'hard',
+            requestId: 'req-register',
+            description: 'Hard approval',
+            inputPreview: '[svc] http: http://127.0.0.1:9001/mcp?token=***',
+          },
+        ]}
+        executionMode="normal"
+        onRespond={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const card = container.textContent ?? '';
+    expect(card).toContain('token=***');
+    expect(card).toContain('key={{secret:URLKEY}}');
+    expect(card).toContain('#***');
+    expect(card).toContain('"X-Key": "{{secret:HDRKEY}}"');
+    expect(card).not.toContain('literal-secret');
+    expect(card).not.toContain('literal-header');
+  });
 });

@@ -321,6 +321,85 @@ async fn update_server_http_preview_masks_query_values() {
     );
 }
 
+/// #2968: the arguments shown on the approval card must not carry literal
+/// secrets. A URL keeps its shape but loses userinfo, literal query values
+/// and the fragment; an exact `{{secret:NAME}}` template stays visible; env
+/// and header values are hidden the same way.
+#[test]
+fn masked_mcp_server_arguments_hides_literals_and_keeps_templates() {
+    let masked = masked_mcp_server_arguments(&serde_json::json!({
+        "name": "svc",
+        "transport": {
+            "type": "http",
+            "url": "http://127.0.0.1:9001/mcp?token=literal-secret&key={{secret:URLKEY}}#frag",
+            "headers": {
+                "Authorization": "Bearer literal-header",
+                "X-Key": "{{secret:HDRKEY}}",
+            },
+            "env": {
+                "API_TOKEN": "literal-env",
+                "STORED": "{{secret:ENVKEY}}",
+            },
+        }
+    }));
+    let value: serde_json::Value = serde_json::from_str(&masked).expect("masked args are JSON");
+    let transport = &value["transport"];
+    assert_eq!(
+        transport["url"].as_str().expect("url"),
+        "http://127.0.0.1:9001/mcp?token=***&key={{secret:URLKEY}}#***"
+    );
+    assert_eq!(transport["headers"]["Authorization"].as_str(), Some("***"));
+    assert_eq!(
+        transport["headers"]["X-Key"].as_str(),
+        Some("{{secret:HDRKEY}}")
+    );
+    assert_eq!(transport["env"]["API_TOKEN"].as_str(), Some("***"));
+    assert_eq!(
+        transport["env"]["STORED"].as_str(),
+        Some("{{secret:ENVKEY}}")
+    );
+    // The name and transport shape stay reviewable; nothing else is altered.
+    assert_eq!(value["name"].as_str(), Some("svc"));
+    assert_eq!(transport["type"].as_str(), Some("http"));
+    assert!(
+        !masked.contains("literal-secret")
+            && !masked.contains("literal-header")
+            && !masked.contains("literal-env")
+            && !masked.contains("frag\""),
+        "no literal secret or fragment survives: {masked}"
+    );
+}
+
+/// #2968: the hard-approval decision for a server mutation carries the masked
+/// arguments that the card renders, so the GUI shows `***` for literals and
+/// keeps `{{secret:NAME}}` templates.
+#[tokio::test]
+async fn register_server_hard_approval_carries_masked_arguments() {
+    let decision = evaluate_tool_execution_policy(
+        "tool__registerServer",
+        &serde_json::json!({
+            "name": "svc",
+            "transport": {
+                "type": "http",
+                "url": "http://127.0.0.1:9001/mcp?token=literal-secret&key={{secret:URLKEY}}#frag"
+            }
+        }),
+    )
+    .await;
+
+    let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+        panic!("expected hard approval, got {decision:?}");
+    };
+    let masked = request
+        .masked_arguments
+        .expect("mutations carry masked arguments");
+    assert!(masked.contains("token=***"), "{masked}");
+    assert!(masked.contains("key={{secret:URLKEY}}"), "{masked}");
+    assert!(masked.contains("#***"), "{masked}");
+    assert!(!masked.contains("literal-secret"), "{masked}");
+    assert!(!masked.contains("frag"), "{masked}");
+}
+
 #[test]
 fn transport_summary_lists_reused_secret_names() {
     let args = serde_json::json!({

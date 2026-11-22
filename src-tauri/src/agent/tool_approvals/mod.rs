@@ -21,7 +21,7 @@ use config::{
 };
 use mcp_server::{
     invalid_mcp_server_transport, is_catalog_preset_install, is_mcp_server_mutation,
-    mcp_server_transport_summary,
+    masked_mcp_server_arguments, mcp_server_transport_summary,
 };
 
 pub use channel::{
@@ -48,6 +48,9 @@ pub enum ToolExecutionPolicyDecision {
 pub struct ToolApprovalRequest {
     pub description: String,
     pub input_preview: String,
+    /// Display-safe arguments for the approval card when the raw arguments may
+    /// carry secrets (#2968). None keeps the raw arguments.
+    pub masked_arguments: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,12 +176,14 @@ pub async fn evaluate_tool_execution_policy(
                 ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
                     description: decision.description,
                     input_preview: decision.input_preview,
+                    masked_arguments: None,
                 })
             }
             ShellPolicyAction::RequireHardApproval => {
                 ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
                     description: decision.description,
                     input_preview: decision.input_preview,
+                    masked_arguments: None,
                 })
             }
             // A blocked root command stays blocked in Unsafe mode too.
@@ -214,6 +219,8 @@ pub async fn evaluate_tool_execution_policy(
         return ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
             description: build_channel_permission_description(tool_name, &preview_source),
             input_preview: build_channel_permission_input_preview(&preview_source),
+            masked_arguments: is_mcp_server_mutation(tool_name)
+                .then(|| masked_mcp_server_arguments(args)),
         });
     }
 
@@ -224,6 +231,8 @@ pub async fn evaluate_tool_execution_policy(
         return ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
             description: build_channel_permission_description(tool_name, &preview_source),
             input_preview: build_channel_permission_input_preview(&preview_source),
+            masked_arguments: is_mcp_server_mutation(tool_name)
+                .then(|| masked_mcp_server_arguments(args)),
         });
     }
 

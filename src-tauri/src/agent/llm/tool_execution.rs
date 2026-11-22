@@ -134,6 +134,13 @@ impl ToolExecutionContext<'_> {
             .then(crate::agent::tool_approvals::generate_channel_permission_request_id);
         let description = Some(approval_request.description.clone());
         let input_preview = Some(approval_request.input_preview.clone());
+        // #2968: the card shows these arguments, so a transport that may carry
+        // secrets is stored and emitted already masked; execution never reads
+        // them back, it runs the tool call's own arguments.
+        let display_arguments = approval_request
+            .masked_arguments
+            .as_deref()
+            .unwrap_or(args_str);
 
         {
             let active = self.active_sessions.read().await;
@@ -144,7 +151,7 @@ impl ToolExecutionContext<'_> {
                     crate::agent::state::PendingApprovalData {
                         sender: tx,
                         tool_name: tool_name.to_string(),
-                        arguments: args_str.to_string(),
+                        arguments: display_arguments.to_string(),
                         approval_kind,
                         request_id: request_id.clone(),
                         description: description.clone(),
@@ -174,7 +181,7 @@ impl ToolExecutionContext<'_> {
             session_id: self.session_id.to_string(),
             tool_call_id: tool_call_id.to_string(),
             tool_name: tool_name.to_string(),
-            arguments: args_str.to_string(),
+            arguments: display_arguments.to_string(),
             approval_kind,
             request_id: request_id.clone(),
             description: description.clone(),
@@ -851,6 +858,7 @@ pub(crate) fn apply_pre_tool_hook_decision(
                         format!("PreToolUse hook requested confirmation for {tool_name}")
                     }),
                     input_preview: args_str.to_string(),
+                    masked_arguments: None,
                 }
             });
             PreToolHookResolution::RequestApproval { request, kind }
@@ -880,6 +888,7 @@ mod pre_tool_hook_tests {
         ToolApprovalRequest {
             description: "policy requires approval".to_string(),
             input_preview: "{\"cmd\":\"rm\"}".to_string(),
+            masked_arguments: None,
         }
     }
 
@@ -968,6 +977,7 @@ mod pre_tool_hook_tests {
                 request: ToolApprovalRequest {
                     description: "confirm shell command".to_string(),
                     input_preview: "{\"cmd\":\"ls\"}".to_string(),
+                    masked_arguments: None,
                 },
                 kind: PendingApprovalKind::Standard,
             }

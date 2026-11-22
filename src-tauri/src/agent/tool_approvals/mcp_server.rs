@@ -51,6 +51,42 @@ pub(super) fn invalid_mcp_server_transport(
     }
 }
 
+/// The tool arguments with the same masking [`mcp_server_transport_summary`]
+/// applies, for the approval card's ARGUMENTS block (#2968, the GUI side of
+/// #2570's masking rules): a URL keeps its shape but loses userinfo, literal
+/// query values and the fragment; env and header values are hidden. An exact
+/// `{{secret:NAME}}` template stays visible — it names a stored secret instead
+/// of carrying one.
+pub(super) fn masked_mcp_server_arguments(args: &serde_json::Value) -> String {
+    let mut masked = args.clone();
+    let Some(transport) = masked.get_mut("transport").and_then(|t| t.as_object_mut()) else {
+        return masked.to_string();
+    };
+
+    if let Some(url) = transport
+        .get("url")
+        .and_then(|u| u.as_str())
+        .map(str::to_string)
+    {
+        transport.insert(
+            "url".to_string(),
+            serde_json::Value::String(crate::mcp::secret_templates::mask_url_secrets(&url)),
+        );
+    }
+    for field in ["headers", "env"] {
+        let Some(map) = transport.get_mut(field).and_then(|v| v.as_object_mut()) else {
+            continue;
+        };
+        for value in map.values_mut() {
+            let Some(text) = value.as_str() else { continue };
+            if !text.is_empty() && !crate::mcp::secret_templates::is_single_template(text) {
+                *value = serde_json::Value::String("***".to_string());
+            }
+        }
+    }
+    masked.to_string()
+}
+
 /// Leads with the launch command or URL so truncated relay previews still show
 /// what will run. Env and header values and URL query values are omitted because
 /// previews can be forwarded to external channels; `reused` names the stored secrets
