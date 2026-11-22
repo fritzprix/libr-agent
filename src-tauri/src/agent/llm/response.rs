@@ -312,14 +312,6 @@ async fn busy_session_awaits_reply(
     })
 }
 
-/// [`busy_session_awaits_reply`] exposed for the duplicate-reply tests.
-pub async fn busy_session_awaits_reply_for_testing(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-) -> bool {
-    busy_session_awaits_reply(active_sessions, session_id).await
-}
-
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
     session_repo: &Arc<dyn SessionRepository>,
@@ -358,6 +350,10 @@ pub async fn handle_llm_response(
     // pending). A matching reply on a Busy session with nothing pending is the
     // resample case and must be processed; the expected-response-id guard
     // still rejects a genuine double delivery of an already-consumed reply.
+    // Note the changed outcome for that genuine double delivery on a Busy
+    // session: it no longer returns Ok(()) silently here — it falls through
+    // to the expected-response-id guard, which returns an error the executor
+    // logs at error level. No state is damaged by the rejection.
     let is_duplicate =
         is_duplicate && !busy_session_awaits_reply(active_sessions, &session_id).await;
 

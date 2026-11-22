@@ -33,6 +33,7 @@ pub fn register_sqlite_vec() {
 /// `tempdir()` fixture can no longer stand in for "a directory nobody allowed";
 /// on macOS `tempdir()` is also the non-canonical `/var/folders/…` form of that
 /// root, which matches nothing). Unique per process; stale remnants are cleared.
+#[allow(dead_code)]
 pub fn outside_os_temp_dir(tag: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
