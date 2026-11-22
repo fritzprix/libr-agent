@@ -61,6 +61,8 @@ pub fn run_headless_with_hidden_webview(args: HeadlessArgs) -> i32 {
         if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         }
+        // Same NVIDIA DMA-BUF hang applies to this hidden WebView (#2964).
+        crate::utils::platform::apply_webkit_dmabuf_workaround();
     }
 
     let temp_dir_path = runtime.env.temp_dir.path().to_path_buf();

@@ -465,6 +465,12 @@ fn run_with_visibility(show_windows: bool) {
         previous_hook(panic_info);
     }));
 
+    // WebKitGTK's DMA-BUF renderer hangs on the NVIDIA proprietary driver
+    // (#2964). Must run before any WebView is created, so this is here rather
+    // than in the setup hook; covers both the GUI and the hidden-WebView TUI.
+    #[cfg(target_os = "linux")]
+    utils::platform::apply_webkit_dmabuf_workaround();
+
     // Configure Tauri builder with error handling
     let result = std::panic::catch_unwind(|| {
         let builder = tauri::Builder::default();
