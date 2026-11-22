@@ -265,6 +265,10 @@ struct FallbackModel {
     model: String,
 }
 
+/// Context key `runtime_error` writes the provider HTTP status under, and
+/// `fallback_notice_event` reads it back from (#2961).
+const HTTP_STATUS_CONTEXT_KEY: &str = "httpStatus";
+
 async fn read_fallback_model() -> Option<FallbackModel> {
     let value = read_setting("fallbackModel").await?;
     let provider = value.get("provider")?.as_str()?.trim();
@@ -290,7 +294,10 @@ fn runtime_error(error: LlmError) -> Box<AgentRuntimeError> {
     if let Some(status) = http_status {
         // The fallback notice (#2961) reads the HTTP status back from here.
         let mut context = serde_json::Map::new();
-        context.insert("httpStatus".to_string(), serde_json::json!(status));
+        context.insert(
+            HTTP_STATUS_CONTEXT_KEY.to_string(),
+            serde_json::json!(status),
+        );
         error = error.with_context(context);
     }
     Box::new(error)
@@ -475,7 +482,7 @@ fn fallback_notice_event(
         .details
         .as_ref()
         .and_then(|details| details.context.as_ref())
-        .and_then(|context| context.get("httpStatus"))
+        .and_then(|context| context.get(HTTP_STATUS_CONTEXT_KEY))
         .and_then(|status| Some(u16::try_from(status.as_u64()?).ok()?));
     AgentEvent::LlmFallbackNotice {
         session_id: request.session_id.clone(),
@@ -895,8 +902,9 @@ mod tests {
             model: "gpt-4o-mini".to_string(),
         };
 
-        let event = serde_json::to_value(fallback_notice_event(&request, &primary_error, &fallback))
-            .unwrap();
+        let event =
+            serde_json::to_value(fallback_notice_event(&request, &primary_error, &fallback))
+                .unwrap();
 
         assert_eq!(
             event,
@@ -923,15 +931,19 @@ mod tests {
             max_tokens: None,
             available_tools: None,
         };
-        let primary_error =
-            runtime_error(LlmError::new(ErrorKind::Network, "RUST_EXECUTOR_NETWORK", "down"));
+        let primary_error = runtime_error(LlmError::new(
+            ErrorKind::Network,
+            "RUST_EXECUTOR_NETWORK",
+            "down",
+        ));
         let fallback = FallbackModel {
             provider: "anthropic".to_string(),
             model: "claude-sonnet".to_string(),
         };
 
-        let event = serde_json::to_value(fallback_notice_event(&request, &primary_error, &fallback))
-            .unwrap();
+        let event =
+            serde_json::to_value(fallback_notice_event(&request, &primary_error, &fallback))
+                .unwrap();
 
         // The notice still carries the model name and the raw error.
         assert_eq!(event["type"], "llmFallbackNotice");

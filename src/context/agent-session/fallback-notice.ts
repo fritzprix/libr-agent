@@ -34,9 +34,11 @@ export function getFallbackNoticeMetadata(
 
 /**
  * Builds the chat notice shown when a completion falls back to the fallback
- * model (#2961). The text in `content` is the plain-text form (exports and
- * simple renderers); the bubble renders the localized notice and the
- * expandable raw server error from `metadata.fallbackNotice`.
+ * model (#2961). The bubble renders the localized line and the expandable
+ * raw server error from `metadata.fallbackNotice` — that is the user-visible
+ * text. The sentence in `content` is a plain-text form for exports and
+ * simple renderers only, so changing the wording means changing the locale
+ * keys (`agent.bubble.fallbackNotice*`), not this string.
  */
 export function buildFallbackNoticeMessage(
   payload: FallbackNoticePayload,
