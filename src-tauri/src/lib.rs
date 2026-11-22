@@ -434,7 +434,9 @@ pub(crate) fn configure_tauri_builder(
 /// - The Tauri application builder with all necessary plugins (dialog, logging, opener).
 /// - The full list of invoke handlers (Tauri commands) available to the frontend.
 /// - A setup hook to initialize managed state like `SecureFileManager` and `InteractiveBrowserServer`.
-/// - Linux-specific environment variables and checks for WebKit compatibility.
+/// - Linux-specific environment variables and checks for WebKit compatibility
+///   (e.g. the NVIDIA DMA-BUF renderer workaround, #2964, applied before the
+///   WebView exists and reported once the logger is up).
 /// - Graceful error handling for panics that may occur during application startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -464,6 +466,12 @@ fn run_with_visibility(show_windows: bool) {
         error!("🔄 Attempting graceful shutdown...");
         previous_hook(panic_info);
     }));
+
+    // WebKitGTK's DMA-BUF renderer hangs on the NVIDIA proprietary driver
+    // (#2964). Must run before any WebView is created, so this is here rather
+    // than in the setup hook; covers both the GUI and the hidden-WebView TUI.
+    #[cfg(target_os = "linux")]
+    utils::platform::apply_webkit_dmabuf_workaround();
 
     // Configure Tauri builder with error handling
     let result = std::panic::catch_unwind(|| {

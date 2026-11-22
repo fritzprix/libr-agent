@@ -199,6 +199,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     log::info!("🔥 Logger initialized - testing Rust log to file");
     info!("🚀 LibrAgent initializing...");
 
+    // The NVIDIA DMA-BUF workaround (#2964) fires long before this logger
+    // exists; report it now that its info line can actually land.
+    #[cfg(target_os = "linux")]
+    crate::utils::platform::log_webkit_dmabuf_workaround_if_applied();
+
     // Initialize SecureFileManager and add to managed state
     let app_data_dir = app.path().app_data_dir()?;
     let global_file_dir = app_data_dir.join("global_shared");
