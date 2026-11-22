@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 #[path = "build_support/bundled_skills.rs"]
 mod bundled_skills;
 
+#[path = "build_support/build_dirty.rs"]
+mod build_dirty;
+
 fn profile_output_dir(out_dir: &Path) -> Option<PathBuf> {
     out_dir
         .ancestors()
@@ -109,13 +112,6 @@ fn git_stdout(args: &[&str]) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-fn git_success(args: &[&str]) -> bool {
-    std::process::Command::new("git")
-        .args(args)
-        .status()
-        .is_ok_and(|s| s.success())
-}
-
 /// Embed the source commit and dirty flag for E2E build provenance (#2744).
 fn emit_build_provenance() {
     for name in ["HEAD", "index"] {
@@ -136,7 +132,7 @@ fn emit_build_provenance() {
     let dirty = if sha == "unknown" {
         false
     } else {
-        !git_success(&["diff-index", "--quiet", "HEAD", "--"])
+        build_dirty::worktree_is_dirty(Path::new(env!("CARGO_MANIFEST_DIR")))
     };
     println!("cargo:rustc-env=LIBRAGENT_BUILD_SHA={sha}");
     println!(
