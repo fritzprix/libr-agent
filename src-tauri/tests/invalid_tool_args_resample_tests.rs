@@ -11,8 +11,8 @@ use std::sync::{atomic::AtomicBool, Arc};
 use sea_orm::Database;
 use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::llm::{
-    apply_invalid_tool_args_policy_for_testing, handle_llm_response, InvalidToolArgsOutcome,
-    INVALID_TOOL_ARGS_MAX_RESAMPLES,
+    apply_invalid_tool_args_policy_for_testing, busy_session_awaits_reply_for_testing,
+    handle_llm_response, InvalidToolArgsOutcome, INVALID_TOOL_ARGS_MAX_RESAMPLES,
 };
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
@@ -438,4 +438,105 @@ async fn cancelled_session_with_invalid_tool_args_is_not_resampled() {
     assert_eq!(history(&sessions, session_id).await.len(), before.len());
     // …and the resample counter stays untouched.
     assert_eq!(retry_count(&sessions, session_id).await, 0);
+}
+
+/// #2967: a reply that duplicates the last cached message may only be dropped
+/// when another finisher will settle the turn. The three states split as:
+/// Idle → the previous turn already settled (redelivery, drop is safe);
+/// Busy with a pending tool execution → the tool path settles (drop is safe);
+/// Busy with nothing pending → the resample case, where the matching reply is
+/// the turn's only finisher and must be processed instead of dropped.
+#[tokio::test]
+async fn a_duplicate_reply_is_dropped_only_when_another_finisher_will_settle() {
+    let session_id = "duplicate-reply-settlement";
+    let sessions: Arc<RwLock<HashMap<String, AgentSession>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    sessions.write().await.insert(
+        session_id.to_string(),
+        build_active_session(session_id, Vec::new()),
+    );
+
+    // Idle: the previous turn settled; a matching reply is a redelivery.
+    assert!(!busy_session_awaits_reply_for_testing(&sessions, session_id).await);
+
+    // Busy, waiting on a tool result: the tool-result path settles the turn.
+    {
+        let mut active = sessions.write().await;
+        let session = active.get_mut(session_id).expect("session");
+        session.metadata.status = SessionStatus::Busy;
+        session.pending_execution = Some(tauri_mcp_agent_lib::agent::state::PendingToolExecution {
+            message_id: "assistant-calling".to_string(),
+            total_expected: 1,
+            tool_names: HashMap::from([("call-x".to_string(), "workspace__runShell".to_string())]),
+            expected_tool_call_ids: ["call-x".to_string()].into_iter().collect(),
+            completed_tool_call_ids: Default::default(),
+            deferred_history_append: Vec::new(),
+        });
+    }
+    assert!(!busy_session_awaits_reply_for_testing(&sessions, session_id).await);
+
+    // Busy with nothing pending: the invalid reply was discarded without
+    // caching anything, so only a processed reply can end the turn.
+    sessions
+        .write()
+        .await
+        .get_mut(session_id)
+        .expect("session")
+        .pending_execution = None;
+    assert!(busy_session_awaits_reply_for_testing(&sessions, session_id).await);
+}
+
+/// The duplicate drop keeps covering its real double-delivery case: a reply
+/// matching the last cached message of a settled (Idle) session is skipped
+/// before any side effect — it must not be cached again (#2967 must not widen
+/// the drop, it only narrows it to sessions nothing else will settle).
+#[tokio::test]
+async fn duplicate_reply_on_a_settled_session_is_skipped_without_side_effect() {
+    let session_id = "duplicate-reply-idle";
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+    let last = message("assistant-last", "assistant", None, "All done.");
+    sessions.write().await.insert(
+        session_id.to_string(),
+        build_active_session(session_id, vec![last]),
+    );
+
+    let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+    let db = Database::connect("sqlite::memory:")
+        .await
+        .expect("in-memory database");
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager));
+    let mock_app = tauri::test::mock_app();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_app.handle() as *const tauri::AppHandle<tauri::test::MockRuntime>
+            as *const tauri::AppHandle)
+    };
+
+    // Same signature as the last cached message, different id: a redelivery
+    // to a turn that already finished.
+    let duplicate = message("assistant-redelivered", "assistant", None, "All done.");
+    handle_llm_response(
+        &session_repo,
+        &sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+        duplicate,
+    )
+    .await
+    .expect("a skipped duplicate is not an error");
+
+    let messages = history(&sessions, session_id).await;
+    assert_eq!(
+        messages.len(),
+        1,
+        "the redelivered duplicate must not be cached again"
+    );
+    assert_eq!(messages[0].id, "assistant-last");
 }
