@@ -118,6 +118,17 @@ export type AgentEventPayload =
       sessionId: string;
       messages: RustMessage[];
     }
+  | {
+      /** The primary model failed; the fallback model is being tried (#2961). */
+      type: 'llmFallbackNotice';
+      sessionId: string;
+      /** HTTP status of the rejected primary request; absent for non-HTTP failures. */
+      statusCode?: number;
+      fallbackProvider: string;
+      fallbackModel: string;
+      /** Raw server error, shown in the notice's expandable detail. */
+      errorMessage: string;
+    }
   | LlmStreamDeltaPayload;
 
 /**

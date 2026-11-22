@@ -1697,6 +1697,10 @@
     },
     "bubble": {
       "toolError": "도구 실행 오류",
+      "fallbackNoticeLabel": "모델 폴백",
+      "fallbackNotice": "서버가 요청을 거부했습니다(HTTP {{status}}). 대체 모델 {{model}}(으)로 다시 시도합니다.",
+      "fallbackNoticeNoStatus": "기본 모델이 실패했습니다. 대체 모델 {{model}}(으)로 다시 시도합니다.",
+      "fallbackNoticeDetails": "서버 오류 보기",
       "notification": "알림",
       "channel": "채널",
       "assistant": "어시스턴트",

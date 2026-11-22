@@ -13,6 +13,7 @@ import {
   DOCUMENT_CONTENT_RAIL_CLASS,
   isDocumentMessageLayout,
 } from '@/features/agent/lib/message-layout';
+import { getFallbackNoticeMetadata } from '@/context/agent-session/fallback-notice';
 import { formatMessageTime } from '@/lib/date-utils';
 
 interface AgentMessageBubbleProps {
@@ -97,6 +98,12 @@ function AgentMessageBubbleImpl({
 
   const channelMetadata = useMemo(
     () => getChannelBubbleMetadata(msg.metadata),
+    [msg.metadata],
+  );
+
+  // Set when a completion fell back to the fallback model (#2961).
+  const fallbackNotice = useMemo(
+    () => getFallbackNoticeMetadata(msg.metadata),
     [msg.metadata],
   );
 
@@ -207,11 +214,13 @@ function AgentMessageBubbleImpl({
                 </>
               ) : (
                 <>
-                  {msg.role === 'assistant'
-                    ? assistantName || t('agent.bubble.assistant')
-                    : msg.role === 'user'
-                      ? t('agent.bubble.you')
-                      : msg.role.toUpperCase()}
+                  {fallbackNotice
+                    ? t('agent.bubble.fallbackNoticeLabel', 'Model fallback')
+                    : msg.role === 'assistant'
+                      ? assistantName || t('agent.bubble.assistant')
+                      : msg.role === 'user'
+                        ? t('agent.bubble.you')
+                        : msg.role.toUpperCase()}
                 </>
               )}
             </div>
@@ -265,10 +274,44 @@ function AgentMessageBubbleImpl({
                 </div>
               )}
 
-              {(displayContent && displayContent.length > 0) ||
-              (msg.content && msg.content.length > 0) ||
-              msg.thinking ||
-              msg.isStreaming ? (
+              {fallbackNotice ? (
+                <div
+                  data-testid="llm-fallback-notice"
+                  className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-secondary-foreground"
+                >
+                  <div className="flex items-start gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      {typeof fallbackNotice.statusCode === 'number'
+                        ? t('agent.bubble.fallbackNotice', {
+                            status: fallbackNotice.statusCode,
+                            model: fallbackNotice.fallbackModel,
+                            defaultValue:
+                              'The server rejected the request (HTTP {{status}}). Retrying with fallback model {{model}}.',
+                          })
+                        : t('agent.bubble.fallbackNoticeNoStatus', {
+                            model: fallbackNotice.fallbackModel,
+                            defaultValue:
+                              'The primary model failed. Retrying with fallback model {{model}}.',
+                          })}
+                    </span>
+                  </div>
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer select-none text-xs opacity-70 hover:opacity-100">
+                      {t(
+                        'agent.bubble.fallbackNoticeDetails',
+                        'Show server error',
+                      )}
+                    </summary>
+                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-background/40 p-2 text-xs">
+                      {fallbackNotice.errorMessage}
+                    </pre>
+                  </details>
+                </div>
+              ) : (displayContent && displayContent.length > 0) ||
+                (msg.content && msg.content.length > 0) ||
+                msg.thinking ||
+                msg.isStreaming ? (
                 <>
                   {/* Unified Rendering: AgentMessageRenderer handles all content types including thinking and tools */}
                   <AgentMessageRenderer

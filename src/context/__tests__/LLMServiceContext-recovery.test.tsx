@@ -1,7 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
@@ -15,6 +15,7 @@ import { sleep } from '@/lib/retry-utils';
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
+  emit: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -267,6 +268,18 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
     const getServiceCalls = (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mock.calls;
     expect(getServiceCalls[getServiceCalls.length - 1][0]).toBe('anthropic');
     expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+
+    // The chat got the same fallback notice the Rust executor emits (#2961).
+    expect(emit).toHaveBeenCalledWith(
+      'agent:event',
+      expect.objectContaining({
+        type: 'llmFallbackNotice',
+        sessionId: 'sp4-session',
+        fallbackProvider: 'anthropic',
+        fallbackModel: 'claude-3-5-sonnet-20241022',
+        errorMessage: 'api err',
+      }),
+    );
   });
 
   it('SP4: unmarked abort error is not retried and is reported to Rust', async () => {

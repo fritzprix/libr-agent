@@ -1681,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "ツール実行エラー",
+      "fallbackNoticeLabel": "モデルフォールバック",
+      "fallbackNotice": "サーバーがリクエストを拒否しました (HTTP {{status}})。フォールバックモデル {{model}} で再試行しています。",
+      "fallbackNoticeNoStatus": "プライマリモデルが失敗しました。フォールバックモデル {{model}} で再試行しています。",
+      "fallbackNoticeDetails": "サーバーエラーを表示",
       "notification": "通知",
       "channel": "チャンネル",
       "assistant": "アシスタント",

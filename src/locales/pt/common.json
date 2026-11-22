@@ -1681,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "Erro de execução da ferramenta",
+      "fallbackNoticeLabel": "Modelo alternativo",
+      "fallbackNotice": "O servidor rejeitou a solicitação (HTTP {{status}}). Tentando novamente com o modelo alternativo {{model}}.",
+      "fallbackNoticeNoStatus": "O modelo principal falhou. Tentando novamente com o modelo alternativo {{model}}.",
+      "fallbackNoticeDetails": "Mostrar erro do servidor",
       "notification": "Notificação",
       "channel": "CANAL",
       "assistant": "ASSISTENTE",

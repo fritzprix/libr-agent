@@ -1681,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "Erreur d'exécution de l'outil",
+      "fallbackNoticeLabel": "Repli de modèle",
+      "fallbackNotice": "Le serveur a rejeté la requête (HTTP {{status}}). Nouvelle tentative avec le modèle de repli {{model}}.",
+      "fallbackNoticeNoStatus": "Le modèle principal a échoué. Nouvelle tentative avec le modèle de repli {{model}}.",
+      "fallbackNoticeDetails": "Afficher l'erreur du serveur",
       "notification": "Notification",
       "channel": "CANAL",
       "assistant": "ASSISTANT",
