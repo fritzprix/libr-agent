@@ -1681,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "工具执行错误",
+      "fallbackNoticeLabel": "模型回退",
+      "fallbackNotice": "服务器拒绝了请求（HTTP {{status}}）。正在使用回退模型 {{model}} 重试。",
+      "fallbackNoticeNoStatus": "主模型失败。正在使用回退模型 {{model}} 重试。",
+      "fallbackNoticeDetails": "显示服务器错误",
       "notification": "通知",
       "channel": "频道",
       "assistant": "助手",

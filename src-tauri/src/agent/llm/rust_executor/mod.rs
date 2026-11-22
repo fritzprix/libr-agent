@@ -265,6 +265,10 @@ struct FallbackModel {
     model: String,
 }
 
+/// Context key `runtime_error` writes the provider HTTP status under, and
+/// `fallback_notice_event` reads it back from (#2961).
+const HTTP_STATUS_CONTEXT_KEY: &str = "httpStatus";
+
 async fn read_fallback_model() -> Option<FallbackModel> {
     let value = read_setting("fallbackModel").await?;
     let provider = value.get("provider")?.as_str()?.trim();
@@ -285,7 +289,18 @@ fn runtime_error(error: LlmError) -> Box<AgentRuntimeError> {
         ErrorKind::RateLimit => AgentRuntimeErrorType::RateLimitError,
         ErrorKind::Service => AgentRuntimeErrorType::AiServiceError,
     };
-    Box::new(AgentRuntimeError::new(error_type, error.message).with_code(error.code))
+    let http_status = error.status;
+    let mut error = AgentRuntimeError::new(error_type, error.message).with_code(error.code);
+    if let Some(status) = http_status {
+        // The fallback notice (#2961) reads the HTTP status back from here.
+        let mut context = serde_json::Map::new();
+        context.insert(
+            HTTP_STATUS_CONTEXT_KEY.to_string(),
+            serde_json::json!(status),
+        );
+        error = error.with_context(context);
+    }
+    Box::new(error)
 }
 
 /// The assistant message the agent loop expects back for `request`.
@@ -415,6 +430,8 @@ async fn run_completion(
                 fallback.provider,
                 fallback.model
             );
+            // Tell the chat before the retry, so the switch is not silent (#2961).
+            sink.llm_fallback_notice(fallback_notice_event(request, &primary_error, &fallback));
             complete_once(
                 &fallback.provider,
                 &fallback.model,
@@ -451,6 +468,31 @@ fn stream_delta_event(request: &CompletionRequest, delta: StreamDelta) -> AgentE
     }
 }
 
+/// The notice that the primary model failed and the fallback is being tried (#2961).
+///
+/// `status_code` is the HTTP status `runtime_error` stashed in the primary
+/// error's context; `None` for failures that never reached an HTTP response.
+/// `error_message` is the raw server error the user can expand in the chat.
+fn fallback_notice_event(
+    request: &CompletionRequest,
+    primary_error: &AgentRuntimeError,
+    fallback: &FallbackModel,
+) -> AgentEvent {
+    let status_code = primary_error
+        .details
+        .as_ref()
+        .and_then(|details| details.context.as_ref())
+        .and_then(|context| context.get(HTTP_STATUS_CONTEXT_KEY))
+        .and_then(|status| status.as_u64().and_then(|value| u16::try_from(value).ok()));
+    AgentEvent::LlmFallbackNotice {
+        session_id: request.session_id.clone(),
+        status_code,
+        fallback_provider: fallback.provider.clone(),
+        fallback_model: fallback.model.clone(),
+        error_message: primary_error.display_message.clone(),
+    }
+}
+
 /// Where an executor result is delivered: the session manager in the app.
 ///
 /// A trait so a test can deliver through the real session handlers without a
@@ -463,6 +505,12 @@ pub trait ResponseSink: Send + Sync {
     /// the final message still arrives through [`Self::llm_response`]. The
     /// default drops it, for a target that has no live view.
     fn llm_stream_delta(&self, _event: AgentEvent) {}
+
+    /// The primary model failed and the fallback model is being tried (#2961).
+    ///
+    /// Sync and best effort like [`Self::llm_stream_delta`]: a lost notice only
+    /// hides the explanation; the fallback answer still arrives.
+    fn llm_fallback_notice(&self, _event: AgentEvent) {}
 
     async fn llm_response(&self, session_id: String, message: Message) -> Result<(), String>;
     async fn llm_error(&self, session_id: String, error: AgentRuntimeError) -> Result<(), String>;
@@ -486,6 +534,13 @@ impl ResponseSink for AgentSessionManager {
         let dispatcher = TauriEventDispatcher::from_handle(self.app_handle());
         if let Err(error) = dispatcher.emit_agent_event(event) {
             log::debug!("Rust LLM executor: could not emit a stream delta: {error}");
+        }
+    }
+
+    fn llm_fallback_notice(&self, event: AgentEvent) {
+        let dispatcher = TauriEventDispatcher::from_handle(self.app_handle());
+        if let Err(error) = dispatcher.emit_agent_event(event) {
+            log::debug!("Rust LLM executor: could not emit the fallback notice: {error}");
         }
     }
 
@@ -824,6 +879,77 @@ mod tests {
             message.usage,
             Some(json!({ "promptTokens": 7, "completionTokens": 1, "totalTokens": 8 }))
         );
+    }
+
+    #[test]
+    fn a_fallback_notice_names_the_status_the_model_and_the_raw_error() {
+        let request = CompletionRequest {
+            session_id: "s1".to_string(),
+            response_message_id: "resp-1".to_string(),
+            messages: Vec::new(),
+            model: "big".to_string(),
+            provider: "custom:llama".to_string(),
+            system_prompt: None,
+            max_tokens: None,
+            available_tools: None,
+        };
+        let primary_error = runtime_error(LlmError::from_http_status(
+            400,
+            "context length exceeded: request is too large",
+        ));
+        let fallback = FallbackModel {
+            provider: "openai".to_string(),
+            model: "gpt-4o-mini".to_string(),
+        };
+
+        let event =
+            serde_json::to_value(fallback_notice_event(&request, &primary_error, &fallback))
+                .unwrap();
+
+        assert_eq!(
+            event,
+            json!({
+                "type": "llmFallbackNotice",
+                "sessionId": "s1",
+                "statusCode": 400,
+                "fallbackProvider": "openai",
+                "fallbackModel": "gpt-4o-mini",
+                "errorMessage": "LLM provider returned HTTP 400: context length exceeded: request is too large",
+            })
+        );
+    }
+
+    #[test]
+    fn a_fallback_notice_without_an_http_status_omits_the_status() {
+        let request = CompletionRequest {
+            session_id: "s1".to_string(),
+            response_message_id: "resp-1".to_string(),
+            messages: Vec::new(),
+            model: "big".to_string(),
+            provider: "openai".to_string(),
+            system_prompt: None,
+            max_tokens: None,
+            available_tools: None,
+        };
+        let primary_error = runtime_error(LlmError::new(
+            ErrorKind::Network,
+            "RUST_EXECUTOR_NETWORK",
+            "down",
+        ));
+        let fallback = FallbackModel {
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet".to_string(),
+        };
+
+        let event =
+            serde_json::to_value(fallback_notice_event(&request, &primary_error, &fallback))
+                .unwrap();
+
+        // The notice still carries the model name and the raw error.
+        assert_eq!(event["type"], "llmFallbackNotice");
+        assert!(event.get("statusCode").is_none());
+        assert_eq!(event["fallbackModel"], "claude-sonnet");
+        assert_eq!(event["errorMessage"], "down");
     }
 
     #[test]

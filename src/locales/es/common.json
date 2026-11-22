@@ -1681,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "Error de ejecución de herramienta",
+      "fallbackNoticeLabel": "Modelo de reserva",
+      "fallbackNotice": "El servidor rechazó la solicitud (HTTP {{status}}). Reintentando con el modelo de reserva {{model}}.",
+      "fallbackNoticeNoStatus": "El modelo principal falló. Reintentando con el modelo de reserva {{model}}.",
+      "fallbackNoticeDetails": "Mostrar error del servidor",
       "notification": "Notificación",
       "channel": "CANAL",
       "assistant": "ASISTENTE",

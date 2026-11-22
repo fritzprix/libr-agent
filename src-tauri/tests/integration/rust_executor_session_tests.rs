@@ -98,7 +98,7 @@ fn empty_reply() -> Vec<Value> {
 }
 
 /// First `fail_count` POSTs get `status`; later ones get `reply` as SSE.
-async fn fail_then_sse(fail_count: usize, reply: Vec<Value>) -> MockProvider {
+async fn fail_then_sse(fail_count: usize, status: u16, reply: Vec<Value>) -> MockProvider {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let seen = requests.clone();
     let counter = Arc::new(AtomicUsize::new(0));
@@ -110,7 +110,7 @@ async fn fail_then_sse(fail_count: usize, reply: Vec<Value>) -> MockProvider {
             let index = counter.fetch_add(1, Ordering::SeqCst);
             if index < fail_count {
                 return warp::http::Response::builder()
-                    .status(500)
+                    .status(status)
                     .header("content-type", "text/plain")
                     .body("provider exploded".to_string())
                     .unwrap();
@@ -202,6 +202,9 @@ struct RecordingSink {
     llm_errors: Mutex<Vec<AgentRuntimeError>>,
     compactions: Mutex<Vec<(String, CompactStreamMeta)>>,
     compact_errors: Mutex<Vec<String>>,
+    fallback_notices: Mutex<Vec<AgentEvent>>,
+    /// Names in delivery order, so a test can check what was emitted first.
+    events: Mutex<Vec<String>>,
 }
 
 #[async_trait::async_trait]
@@ -209,7 +212,15 @@ impl ResponseSink for RecordingSink {
     fn llm_stream_delta(&self, event: AgentEvent) {
         self.stream_events.lock().unwrap().push(event);
     }
+    fn llm_fallback_notice(&self, event: AgentEvent) {
+        self.fallback_notices.lock().unwrap().push(event);
+        self.events
+            .lock()
+            .unwrap()
+            .push("llm_fallback_notice".to_string());
+    }
     async fn llm_response(&self, _session_id: String, message: Message) -> Result<(), String> {
+        self.events.lock().unwrap().push("llm_response".to_string());
         self.responses.lock().unwrap().push(message);
         Ok(())
     }
@@ -668,7 +679,7 @@ async fn fallback_model_answers_when_primary_fails() {
     ])
     .await;
     // Primary attempt fails once; fallback (RetryPolicy::NONE) then succeeds.
-    let provider = fail_then_sse(1, text_reply("from fallback")).await;
+    let provider = fail_then_sse(1, 500, text_reply("from fallback")).await;
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-ok", "u1", "user", "hi", 1_000);
@@ -689,6 +700,137 @@ async fn fallback_model_answers_when_primary_fails() {
     assert_eq!(provider.requests.lock().unwrap().len(), 2);
 }
 
+/// #2961 G1.1: a rejected primary request (HTTP 400) reaches the chat as
+/// exactly one notice — before the fallback answer — naming the status and
+/// the fallback model, with the raw server error.
+#[tokio::test]
+async fn a_rejected_primary_emits_one_fallback_notice_before_the_fallback_answer() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": "openai", "model": "fallback-model" }),
+        ),
+    ])
+    .await;
+    let provider = fail_then_sse(1, 400, text_reply("from fallback")).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-fb-notice", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-notice", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the fallback answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let notices = sink.fallback_notices.lock().unwrap();
+    assert_eq!(notices.len(), 1, "one fallback must be one notice");
+    match &notices[0] {
+        AgentEvent::LlmFallbackNotice {
+            session_id,
+            status_code,
+            fallback_provider,
+            fallback_model,
+            error_message,
+        } => {
+            assert_eq!(session_id, "s-fb-notice");
+            assert_eq!(*status_code, Some(400));
+            assert_eq!(fallback_provider, "openai");
+            assert_eq!(fallback_model, "fallback-model");
+            assert!(
+                error_message.contains("HTTP 400"),
+                "the raw server error names the status: {error_message}"
+            );
+        }
+        other => panic!("not a fallback notice: {other:?}"),
+    }
+    // The notice arrives before the answer settles the session.
+    let events = sink.events.lock().unwrap();
+    assert_eq!(
+        events.first().map(String::as_str),
+        Some("llm_fallback_notice")
+    );
+    assert_eq!(events.last().map(String::as_str), Some("llm_response"));
+}
+
+/// #2961 acceptance: when no fallback runs, no notice appears.
+#[tokio::test]
+async fn a_succeeded_primary_emits_no_fallback_notice() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        (
+            "advancedSettings",
+            json!({ "maxRetries": 0, "retryDelay": 1 }),
+        ),
+        (
+            "fallbackModel",
+            json!({ "provider": "openai", "model": "fallback-model" }),
+        ),
+    ])
+    .await;
+    let provider = mock_provider(vec![text_reply("from primary")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-fb-none", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-none", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the primary answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "from primary");
+    assert!(sink.fallback_notices.lock().unwrap().is_empty());
+}
+
+/// #2961: a primary failure with no fallback configured errors out with no notice.
+#[tokio::test]
+async fn no_fallback_configured_emits_no_fallback_notice() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[(
+        "advancedSettings",
+        json!({ "maxRetries": 0, "retryDelay": 1 }),
+    )])
+    .await;
+    let provider = fail_then_sse(1, 400, text_reply("unused")).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-fb-nocfg", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request("s-fb-nocfg", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the primary failure", || {
+        !sink.llm_errors.lock().unwrap().is_empty()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert!(sink.responses.lock().unwrap().is_empty());
+    assert!(sink.fallback_notices.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn fallback_skipped_when_same_provider_and_model() {
     let _guard = TEST_GUARD.lock().await;
@@ -703,7 +845,7 @@ async fn fallback_skipped_when_same_provider_and_model() {
         ),
     ])
     .await;
-    let provider = fail_then_sse(1, text_reply("unused")).await;
+    let provider = fail_then_sse(1, 500, text_reply("unused")).await;
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-same", "u1", "user", "hi", 1_000);
@@ -723,6 +865,7 @@ async fn fallback_skipped_when_same_provider_and_model() {
 
     assert_eq!(provider.requests.lock().unwrap().len(), 1);
     assert!(sink.responses.lock().unwrap().is_empty());
+    assert!(sink.fallback_notices.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -739,7 +882,7 @@ async fn fallback_skipped_when_unsupported() {
         ),
     ])
     .await;
-    let provider = fail_then_sse(1, text_reply("unused")).await;
+    let provider = fail_then_sse(1, 500, text_reply("unused")).await;
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-unsup", "u1", "user", "hi", 1_000);
@@ -759,6 +902,7 @@ async fn fallback_skipped_when_unsupported() {
 
     assert_eq!(provider.requests.lock().unwrap().len(), 1);
     assert!(sink.responses.lock().unwrap().is_empty());
+    assert!(sink.fallback_notices.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

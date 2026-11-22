@@ -1707,6 +1707,10 @@
     },
     "bubble": {
       "toolError": "Tool Execution Error",
+      "fallbackNoticeLabel": "Model fallback",
+      "fallbackNotice": "The server rejected the request (HTTP {{status}}). Retrying with fallback model {{model}}.",
+      "fallbackNoticeNoStatus": "The primary model failed. Retrying with fallback model {{model}}.",
+      "fallbackNoticeDetails": "Show server error",
       "notification": "Notification",
       "channel": "CHANNEL",
       "assistant": "ASSISTANT",

@@ -224,6 +224,22 @@ pub enum AgentEvent {
         max_tokens: Option<u32>,
         delta: llm_client::StreamDelta,
     },
+
+    /// A completion fell back from the primary model to the fallback model (#2961).
+    ///
+    /// Emitted right before the fallback attempt so the chat can show the user
+    /// that the primary server rejected the request. `status_code` is the HTTP
+    /// status when the provider sent one; `error_message` is the raw server
+    /// error, shown in an expandable detail.
+    #[serde(rename_all = "camelCase")]
+    LlmFallbackNotice {
+        session_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status_code: Option<u16>,
+        fallback_provider: String,
+        fallback_model: String,
+        error_message: String,
+    },
 }
 
 pub trait AgentEventDispatcher: Send + Sync {
@@ -411,6 +427,17 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
             response_message_id,
             ..
         } => format!("LlmStreamDelta(session={session_id}, response={response_message_id})"),
+        AgentEvent::LlmFallbackNotice {
+            session_id,
+            status_code,
+            fallback_model,
+            ..
+        } => format!(
+            "LlmFallbackNotice(session={session_id}, status={}, fallback_model={fallback_model})",
+            status_code
+                .map(|status| status.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        ),
     }
 }
 

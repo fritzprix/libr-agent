@@ -1681,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "Werkzeugausführungsfehler",
+      "fallbackNoticeLabel": "Modell-Fallback",
+      "fallbackNotice": "Der Server hat die Anfrage abgelehnt (HTTP {{status}}). Erneuter Versuch mit dem Fallback-Modell {{model}}.",
+      "fallbackNoticeNoStatus": "Das primäre Modell ist fehlgeschlagen. Erneuter Versuch mit dem Fallback-Modell {{model}}.",
+      "fallbackNoticeDetails": "Serverfehler anzeigen",
       "notification": "Benachrichtigung",
       "channel": "KANAL",
       "assistant": "ASSISTENT",
