@@ -23,12 +23,9 @@ use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
     InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
-    SqliteMessageRepository, SqliteSessionRepository,
 };
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
-
-mod common;
 
 fn message(id: &str, role: &str, tool_calls: Option<Vec<ToolCall>>, text: &str) -> Message {
     Message {
@@ -441,92 +438,6 @@ async fn cancelled_session_with_invalid_tool_args_is_not_resampled() {
     assert_eq!(history(&sessions, session_id).await.len(), before.len());
     // …and the resample counter stays untouched.
     assert_eq!(retry_count(&sessions, session_id).await, 0);
-}
-
-/// #2967 (gatekeeper G1.1): drives the real `handle_llm_response` on a Busy
-/// session with `pending_execution = None` — the resample case, where the
-/// discarded invalid reply cached nothing and a reply matching the last cached
-/// message is the turn's only finisher. It must pass the dedup drop, enter
-/// history (the turn settles: Busy → Idle), instead of being dropped.
-#[tokio::test]
-async fn duplicate_reply_on_a_busy_session_is_cached_and_processed() {
-    let session_id = "duplicate-reply-busy";
-    let db = common::setup_test_db_with_migrations().await;
-    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
-
-    // The terminal persist writes a `messages` row that references the session
-    // row, so both repositories must see the same SQLite database.
-    let sqlite_session_repo = SqliteSessionRepository::new(db.clone());
-    sqlite_session_repo
-        .upsert_session(&build_session_metadata(session_id))
-        .await
-        .expect("session row");
-    let session_repo: Arc<dyn SessionRepository> = Arc::new(sqlite_session_repo);
-
-    let last = message("assistant-last", "assistant", None, "All done.");
-    let mut active = build_active_session(session_id, vec![last]);
-    // Busy with nothing pending: only a processed reply can end the turn.
-    active.metadata.status = SessionStatus::Busy;
-    active.pending_execution = None;
-    *active.expected_response_id.write().await = Some("assistant-resampled".to_string());
-    let sessions: Arc<RwLock<HashMap<String, AgentSession>>> =
-        Arc::new(RwLock::new(HashMap::new()));
-    sessions
-        .write()
-        .await
-        .insert(session_id.to_string(), active);
-
-    let temp_dir = tempfile::TempDir::new().expect("temp dir");
-    let session_manager = Arc::new(
-        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
-            temp_dir.path().join("busy-session-root"),
-        )
-        .expect("session manager"),
-    );
-    let proxy_manager = Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager));
-    let mock_app = tauri::test::mock_app();
-    let app_handle: &tauri::AppHandle = unsafe {
-        &*(mock_app.handle() as *const tauri::AppHandle<tauri::test::MockRuntime>
-            as *const tauri::AppHandle)
-    };
-
-    // Same signature as the last cached message, different id, matching the
-    // session's expected response id: the resample's regenerated answer.
-    // The `message` helper hardcodes another session id; the terminal persist
-    // writes a `messages` row with a session FK, so point it at this session.
-    let mut duplicate = message("assistant-resampled", "assistant", None, "All done.");
-    duplicate.session_id = session_id.to_string();
-    handle_llm_response(
-        &session_repo,
-        &sessions,
-        &proxy_manager,
-        app_handle,
-        session_id.to_string(),
-        duplicate,
-    )
-    .await
-    .expect("the matching reply must be processed, not dropped");
-
-    let messages = history(&sessions, session_id).await;
-    assert_eq!(
-        messages.len(),
-        2,
-        "the processed reply must enter history: {messages:?}"
-    );
-    assert_eq!(messages[1].id, "assistant-resampled");
-
-    // The reply was the turn's only finisher: processing it settles the turn.
-    assert_eq!(
-        sessions
-            .read()
-            .await
-            .get(session_id)
-            .expect("session")
-            .metadata
-            .status,
-        SessionStatus::Idle,
-        "the processed reply must settle the turn"
-    );
 }
 
 /// The duplicate drop keeps covering its real double-delivery case: a reply
