@@ -8,7 +8,9 @@
 //!   exported as `SUDO_ASKPASS`.
 //! - `sudo` runs the real sudo with `-A` when `$SUDO_PASSWORD` is set. Without it,
 //!   `SUDO_ASKPASS` is unset first: with `DISPLAY` set and no tty, sudo would run
-//!   the askpass helper even without `-A`.
+//!   the askpass helper even without `-A`. Both calls force `LC_ALL=C` so sudo's
+//!   own messages are English on any host locale — `password_hint` matches that
+//!   text to add the `storeAs` guidance (#2970).
 //! - `pkexec`, `su`, `doas` fail at once with a hint instead of hanging.
 //!
 //! The agent stores the password with `requireUserInput` + `storeAs=SUDO_PASSWORD`.
@@ -41,10 +43,10 @@ if [ -n "$__lr_sudo" ]; then
 cat > "$__lr_bin/sudo" <<__LR_EOF
 #!/bin/sh
 if [ -n "\$SUDO_PASSWORD" ]; then
-  exec "$__lr_sudo" -A "\$@"
+  exec env LC_ALL=C "$__lr_sudo" -A "\$@"
 fi
 unset SUDO_ASKPASS
-exec "$__lr_sudo" "\$@"
+exec env LC_ALL=C "$__lr_sudo" "\$@"
 __LR_EOF
 fi
 "#,
@@ -191,5 +193,82 @@ rm -rf "$__fake""#,
         );
         assert_eq!(lines[1], "args=true askpass=unset", "stdout: {stdout}");
         assert_eq!(lines[2], "askpass_code=1", "stdout: {stdout}");
+    }
+
+    /// Runs `run` with the shims installed and a fake real `sudo` whose stderr is
+    /// returned. `fake_sudo_body` is the body of that fake sudo script.
+    #[cfg(unix)]
+    fn run_with_fake_sudo(fake_sudo_body: &str, run: &str) -> String {
+        let script = format!(
+            r#"__fake=$(mktemp -d)
+cat > "$__fake/sudo" <<'__FAKE_EOF'
+#!/bin/sh
+{fake_sudo_body}
+__FAKE_EOF
+chmod 700 "$__fake/sudo"
+PATH="$__fake:$PATH"
+{install}
+{run}
+rm -rf "$__fake""#,
+            fake_sudo_body = fake_sudo_body,
+            install = build_install_script(),
+            run = run,
+        );
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .expect("run sh");
+        String::from_utf8_lossy(&output.stderr).to_string()
+    }
+
+    /// A stand-in for a gettext-localized sudo: it answers in Korean unless the
+    /// locale category says C, like sudo on a ko_KR host (#2970).
+    #[cfg(unix)]
+    const LOCALIZED_SUDO_BODY: &str = r#"if [ "$LC_ALL" = C ]; then
+  echo "sudo: a terminal is required to read the password" >&2
+else
+  echo "sudo: 암호를 읽으려면 터미널이 필요합니다" >&2
+fi
+exit 1"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn sudo_wrapper_forces_english_messages_on_a_non_english_host_locale() {
+        let stderr = run_with_fake_sudo(LOCALIZED_SUDO_BODY, "SUDO_PASSWORD= sudo whoami");
+        assert!(
+            stderr.contains("a terminal is required"),
+            "sudo must answer in English: {stderr}"
+        );
+        assert!(
+            !stderr.contains("암호를"),
+            "localized text leaked: {stderr}"
+        );
+        assert_eq!(password_hint("", &stderr), Some(PASSWORD_PROMPT_HINT));
+    }
+
+    /// Localized sudo on the wrong-stored-password path: `sudo -A` reports the
+    /// failed attempt in Korean unless forced to English (#2970).
+    #[cfg(unix)]
+    const LOCALIZED_WRONG_PASSWORD_SUDO_BODY: &str = r#"if [ "$LC_ALL" = C ]; then
+  echo "sudo: 1 incorrect password attempt" >&2
+else
+  echo "sudo: 인증 시도 1회 실패" >&2
+fi
+exit 1"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn wrong_stored_password_is_reported_in_english_on_a_non_english_host_locale() {
+        let stderr = run_with_fake_sudo(
+            LOCALIZED_WRONG_PASSWORD_SUDO_BODY,
+            "SUDO_PASSWORD=stale sudo whoami",
+        );
+        assert!(
+            stderr.contains("1 incorrect password attempt"),
+            "sudo must answer in English: {stderr}"
+        );
+        assert!(!stderr.contains("인증"), "localized text leaked: {stderr}");
+        assert_eq!(password_hint("", &stderr), Some(WRONG_SUDO_PASSWORD_HINT));
     }
 }
