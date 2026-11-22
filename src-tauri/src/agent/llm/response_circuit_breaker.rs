@@ -19,6 +19,7 @@ use crate::agent::tools::{
     tool_result_preview_content_limit_bytes,
 };
 use crate::agent::types::{ToolCall, ToolCallFunction};
+use crate::mcp::builtin::ui::CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
 use std::collections::HashMap;
@@ -447,7 +448,8 @@ pub(crate) async fn preprocess_assistant_tool_calls(
                 emit_circuit_breaker_triggered(session_id, &tool_name, count, "hardBreak");
 
                 if ui_alias_enabled(session_metadata.as_ref(), session_id).await {
-                    tool_calls[index] = circuit_break_tool_call(&tool_name, count, &args, None);
+                    tool_calls[index] =
+                        circuit_break_tool_call(&tool_name, count, &args, None, None);
                     tool_calls.truncate(index + 1);
                 } else {
                     log::warn!(
@@ -569,12 +571,16 @@ async fn ui_alias_enabled(
 }
 
 /// The `ui__circuitBreak` call that stops the workflow. `reason`, when set,
-/// replaces the default "identical parameters" warning text.
+/// replaces the default "identical parameters" warning text. `kind`, when set
+/// (`invalidToolArgs`), travels to the Resume path (#2957) so
+/// `ui__resumeCircuitBreak` can give cause-specific guidance instead of the
+/// identical-parameters loop text.
 fn circuit_break_tool_call(
     tool_name: &str,
     count: usize,
     args: &str,
     reason: Option<&str>,
+    kind: Option<&str>,
 ) -> ToolCall {
     let mut arguments = serde_json::json!({
         "toolName": tool_name,
@@ -583,6 +589,9 @@ fn circuit_break_tool_call(
     });
     if let Some(reason) = reason {
         arguments["reason"] = serde_json::json!(reason);
+    }
+    if let Some(kind) = kind {
+        arguments["kind"] = serde_json::json!(kind);
     }
     ToolCall {
         id: uuid::Uuid::new_v4().to_string(),
@@ -692,7 +701,12 @@ pub(crate) async fn apply_invalid_tool_args_policy(
         attempts,
         kind.as_error_kind()
     );
-    emit_circuit_breaker_triggered(session_id, &tool_name, attempts as usize, "invalidToolArgs");
+    emit_circuit_breaker_triggered(
+        session_id,
+        &tool_name,
+        attempts as usize,
+        CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS,
+    );
 
     let args_marker = if kind.is_truncated() {
         crate::agent::llm::tool_args_validation::redact_tool_call_arguments(raw_len)
@@ -712,6 +726,8 @@ pub(crate) async fn apply_invalid_tool_args_policy(
             attempts as usize,
             &args_marker,
             Some(&reason),
+            // #2957: the Resume text must match the cause.
+            Some(CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS),
         )]);
     } else {
         assistant_message.tool_calls = None;
