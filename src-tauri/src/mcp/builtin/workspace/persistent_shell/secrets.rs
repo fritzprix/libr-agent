@@ -67,6 +67,38 @@ pub fn forget_log_secrets(session_id: &str) {
     });
 }
 
+/// Log-mask source for values resolved from `{{secret:NAME}}` templates in MCP
+/// server configs (#2969). Registered under a separate key so they neither clobber
+/// the session's shell secrets nor are dropped when the shell map is re-registered.
+pub const MCP_SECRET_MASK_SOURCE: &str = "mcp";
+
+fn log_mask_key(session_id: &str, source: &str) -> String {
+    format!("{session_id}#{source}")
+}
+
+/// Makes the logger mask `values` in every log line until they are forgotten,
+/// without touching values registered by other sources for the same session. The
+/// caller passes every form the value can take in a log line (for example the raw
+/// and the percent-encoded form of a secret filled into a URL).
+pub fn register_log_secret_values(session_id: &str, source: &str, values: &[String]) {
+    let key = log_mask_key(session_id, source);
+    let map: SecretMap = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| (format!("value-{index}"), value.clone()))
+        .collect();
+    update_log_secrets(|sessions| {
+        sessions.insert(key, map);
+    });
+}
+
+/// Stops masking the values `source` contributed for `session_id` in logs.
+pub fn forget_log_secret_values(session_id: &str, source: &str) {
+    update_log_secrets(|sessions| {
+        sessions.remove(&log_mask_key(session_id, source));
+    });
+}
+
 /// The raw value plus the escaped copies a log line can carry: JSON string content
 /// (webview lines forward tool arguments as JSON), `{:?}` content, and each of those
 /// escaped once more (serialized args inside JSON, or a JSON string printed with `{:?}`).
@@ -344,5 +376,38 @@ mod tests {
         forget_log_secrets("log-mask-a");
         forget_log_secrets("log-mask-b");
         assert_eq!(mask_log_line(line), line);
+    }
+
+    #[test]
+    fn mcp_values_and_shell_values_mask_side_by_side_without_clobbering() {
+        let shell_value = "shellmask-7f3c";
+        let mcp_value = "mcpmask-91d2";
+        let mcp_encoded = "mcpmask%2D91d2";
+        register_log_secrets(
+            "merge-mask-a",
+            &SecretMap::from([("DEMO_TOKEN".to_string(), shell_value.to_string())]),
+        );
+        register_log_secret_values(
+            "merge-mask-a",
+            MCP_SECRET_MASK_SOURCE,
+            &[mcp_value.to_string(), mcp_encoded.to_string()],
+        );
+        let line = format!("line {shell_value} {mcp_value} {mcp_encoded}");
+        assert_eq!(mask_log_line(&line), "line *** *** ***");
+
+        // The shell re-registering its full map must not drop the MCP values.
+        register_log_secrets(
+            "merge-mask-a",
+            &SecretMap::from([("DEMO_TOKEN".to_string(), shell_value.to_string())]),
+        );
+        assert_eq!(mask_log_line(&line), "line *** *** ***");
+
+        forget_log_secret_values("merge-mask-a", MCP_SECRET_MASK_SOURCE);
+        assert_eq!(
+            mask_log_line(&line),
+            format!("line *** {mcp_value} {mcp_encoded}")
+        );
+        forget_log_secrets("merge-mask-a");
+        assert_eq!(mask_log_line(&line), line);
     }
 }

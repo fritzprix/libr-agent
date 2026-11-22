@@ -456,6 +456,78 @@ mod tests {
         }
     }
 
+    // #2969: the rmcp transport worker (a crate outside LibrAgent) logs the full
+    // URL of a failed HTTP connection, which carries the secret values filled
+    // from `{{secret:NAME}}` templates. Emitted lines must mask them.
+    #[tokio::test]
+    async fn emitted_lines_mask_mcp_secrets_filled_into_a_server_url() {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            forget_log_secret_values, MCP_SECRET_MASK_SOURCE,
+        };
+        use crate::mcp::secret_templates::{fill_secrets, secret_store, SecretStore};
+        use crate::mcp::service_proxy_manager::register_session_mcp_log_masks;
+        use crate::mcp::types::{MCPServerConfig, TransportConfig};
+
+        let server_id = "logger-mcp-mask-server";
+        secret_store()
+            .set(server_id, "DEMO_TOKEN", "logger-mcp-secret 42")
+            .await
+            .expect("store secret");
+        let config = MCPServerConfig {
+            name: Some("demo".to_string()),
+            transport: TransportConfig::Http {
+                url: "https://api.example.test/mcp?key={{secret:DEMO_TOKEN}}".to_string(),
+                protocol_version: "2025-06-18".to_string(),
+                session_id: None,
+                headers: None,
+                enable_sse: None,
+                security: None,
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        };
+        let (filled, values) = fill_secrets(secret_store(), server_id, &config)
+            .await
+            .expect("fill secret")
+            .into_parts();
+        let TransportConfig::Http { url, .. } = &filled.transport else {
+            panic!("http transport expected");
+        };
+
+        let session_id = "logger-mcp-mask-session";
+        register_session_mcp_log_masks(
+            session_id,
+            &std::collections::HashMap::from([("demo".to_string(), values)]),
+        );
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        let (_, logger) = formatted_dispatch().chain(sender).into_log();
+
+        emit(
+            logger.as_ref(),
+            "rmcp::transport::worker",
+            &format!(
+                "Transport channel failed: HTTP request failed with status 404 Not Found for url {url}"
+            ),
+        );
+        forget_log_secret_values(session_id, MCP_SECRET_MASK_SOURCE);
+        emit(logger.as_ref(), "after", &format!("forgotten {url}"));
+
+        let lines: Vec<String> = receiver.try_iter().collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(!lines[0].contains("logger-mcp-secret"), "{}", lines[0]);
+        assert!(!lines[0].contains("%2042"), "{}", lines[0]);
+        assert!(
+            lines[0].contains("404 Not Found"),
+            "the failure itself must stay visible: {}",
+            lines[0]
+        );
+        assert!(
+            lines[1].contains("logger-mcp-secret"),
+            "a forgotten value is no longer known"
+        );
+    }
+
     fn write_archive(dir: &Path, name: &str, bytes: usize, age_secs: u64) {
         let path = dir.join(name);
         fs::write(&path, vec![b'x'; bytes]).unwrap();

@@ -352,6 +352,11 @@ pub(super) async fn load_requested_server_configs_excluding_disabled(
             }),
     );
 
+    // #2969: the rmcp transport worker logs the full URL of a failed HTTP
+    // connection, which carries the filled secret values. Put them in the
+    // global log mask until this session's proxy is destroyed.
+    register_session_mcp_log_masks(session_id, &secret_values);
+
     LoadedServerConfigs {
         stdio_configs,
         http_configs,
@@ -375,6 +380,24 @@ pub(super) fn mask_server_secrets(
         Some(values) => mask_values(text, values.iter().map(String::as_str)),
         None => text.to_string(),
     }
+}
+
+/// #2969: Registers every filled secret value of the session's MCP servers with the
+/// logger's global mask, so lines written by code outside LibrAgent (the rmcp
+/// transport worker logs the full URL of a failed HTTP connection) cannot leak them.
+/// The values hold every form they can take in a URL (raw and percent-encoded), as
+/// returned by [`FilledConfig::into_parts`]. Forgotten when the session's proxy is
+/// destroyed, and kept apart from the session's shell secrets by the source key.
+pub(crate) fn register_session_mcp_log_masks(
+    session_id: &str,
+    secret_values: &HashMap<String, Vec<String>>,
+) {
+    let values: Vec<String> = secret_values.values().flatten().cloned().collect();
+    crate::mcp::builtin::workspace::persistent_shell::secrets::register_log_secret_values(
+        session_id,
+        crate::mcp::builtin::workspace::persistent_shell::secrets::MCP_SECRET_MASK_SOURCE,
+        &values,
+    );
 }
 
 pub(super) async fn apply_startup_timeout_settings(
@@ -412,6 +435,63 @@ mod tests {
             mask_server_secrets(&secret_values, "other", failure),
             failure
         );
+    }
+
+    // #2969: a secret filled into a server URL must never reach the app log.
+    // The rmcp transport worker logs the full URL of a failed HTTP connection,
+    // so the filled values (raw and percent-encoded) go into the global log
+    // mask when the session's server configs are loaded.
+    #[tokio::test]
+    async fn session_mcp_log_masks_register_both_url_forms_of_a_filled_secret() {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            forget_log_secret_values, mask_log_line, MCP_SECRET_MASK_SOURCE,
+        };
+        use crate::mcp::secret_templates::{fill_secrets, secret_store, SecretStore};
+        use crate::mcp::types::{MCPServerConfig, TransportConfig};
+
+        let server_id = "log-mask-2969-server";
+        secret_store()
+            .set(server_id, "DEMO_TOKEN", "p@ss word&42")
+            .await
+            .expect("store secret");
+        let config = MCPServerConfig {
+            name: Some("demo".to_string()),
+            transport: TransportConfig::Http {
+                url: "https://api.example.test/mcp?key={{secret:DEMO_TOKEN}}".to_string(),
+                protocol_version: "2025-06-18".to_string(),
+                session_id: None,
+                headers: None,
+                enable_sse: None,
+                security: None,
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        };
+        let (filled, values) = fill_secrets(secret_store(), server_id, &config)
+            .await
+            .expect("fill secret")
+            .into_parts();
+        let TransportConfig::Http { url, .. } = &filled.transport else {
+            panic!("http transport expected");
+        };
+        assert!(url.contains("p%40ss%20word%2642"), "{url}");
+
+        let session_id = "log-mask-2969-session";
+        register_session_mcp_log_masks(session_id, &HashMap::from([("demo".to_string(), values)]));
+        let worker_line = format!(
+            "Transport channel failed: HTTP request failed with status 404 Not Found for url {url}"
+        );
+        let masked = mask_log_line(&worker_line);
+        assert!(!masked.contains("p@ss"), "{masked}");
+        assert!(!masked.contains("p%40ss"), "{masked}");
+        assert!(
+            masked.contains("404 Not Found"),
+            "the failure itself must stay visible: {masked}"
+        );
+
+        forget_log_secret_values(session_id, MCP_SECRET_MASK_SOURCE);
+        assert_eq!(mask_log_line(&worker_line), worker_line);
     }
 
     // #2924 (gatekeeper G1.4): a session-scoped install of the same plugin
