@@ -348,6 +348,29 @@ pub async fn agent_respond_tool_approval(
     })
 }
 
+/// Get pending tool-approval counts per active session (notification bell, #2971).
+///
+/// Returns a map of `session_id -> pending_approval_count`. Sessions absent from
+/// the map have no pending approvals: inactive sessions cannot hold them.
+#[command]
+pub async fn agent_get_pending_approval_counts(
+    manager: State<'_, AgentSessionManager>,
+) -> Result<AgentResponse, String> {
+    let counts = manager.pending_approval_counts().await;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!(
+            "Pending approval counts collected for {} sessions",
+            counts.len()
+        ),
+        data: Some(
+            serde_json::to_value(counts)
+                .map_err(|error| format!("Failed to serialize pending approval counts: {error}"))?,
+        ),
+    })
+}
+
 /// Handle LLM error from frontend (called by LLMServiceProvider in TS)
 #[command]
 pub async fn agent_handle_llm_error(
