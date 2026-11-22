@@ -19,6 +19,7 @@ use crate::agent::tools::{
     tool_result_preview_content_limit_bytes,
 };
 use crate::agent::types::{ToolCall, ToolCallFunction};
+use crate::mcp::builtin::ui::CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS;
 use crate::models::chat::Message;
 use crate::repositories::settings_repository::SettingsRepository;
 use std::collections::HashMap;
@@ -700,7 +701,12 @@ pub(crate) async fn apply_invalid_tool_args_policy(
         attempts,
         kind.as_error_kind()
     );
-    emit_circuit_breaker_triggered(session_id, &tool_name, attempts as usize, "invalidToolArgs");
+    emit_circuit_breaker_triggered(
+        session_id,
+        &tool_name,
+        attempts as usize,
+        CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS,
+    );
 
     let args_marker = if kind.is_truncated() {
         crate::agent::llm::tool_args_validation::redact_tool_call_arguments(raw_len)
@@ -721,7 +727,7 @@ pub(crate) async fn apply_invalid_tool_args_policy(
             &args_marker,
             Some(&reason),
             // #2957: the Resume text must match the cause.
-            Some("invalidToolArgs"),
+            Some(CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS),
         )]);
     } else {
         assistant_message.tool_calls = None;

@@ -16,6 +16,13 @@ pub mod tools;
 // Embed templates
 const CIRCUIT_BREAK_TEMPLATE: &str = include_str!("templates/circuit-break.hbs");
 
+/// The `kind` argument value of `ui__circuitBreak` / `ui__resumeCircuitBreak`
+/// for a break caused by invalid tool-call arguments (#2957). One shared
+/// constant: the invalid-args guard writes it, the resume selection compares
+/// it, and the tests assert it — a typo on either side is now a compile
+/// error instead of silently wrong guidance.
+pub const CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS: &str = "invalidToolArgs";
+
 #[derive(Debug)]
 pub struct UiServer {
     handlebars: Arc<Mutex<Handlebars<'static>>>,
@@ -41,7 +48,10 @@ impl UiServer {
         }
     }
 
-    fn circuit_break(&self, args: Value) -> Result<MCPResult, String> {
+    /// Renders the `ui__circuitBreak` card. `pub` only so integration tests
+    /// can drive the exact production path (guard → card → resume, #2957
+    /// G1.2); tool dispatch goes through `execute_tool`.
+    pub fn circuit_break(&self, args: Value) -> Result<MCPResult, String> {
         let tool_name = match args.get("toolName").and_then(|v| v.as_str()) {
             Some(v) => v,
             None => return Ok(missing_param_error("toolName", ToolGroup::UI)),
@@ -117,7 +127,10 @@ impl UiServer {
         ))
     }
 
-    fn resume_circuit_break(&self, args: Value) -> Result<MCPResult, String> {
+    /// Builds the `ui__resumeCircuitBreak` tool result. `pub` only so
+    /// integration tests can drive the exact production resume path (#2957
+    /// G1.2); tool dispatch goes through `execute_tool`.
+    pub fn resume_circuit_break(&self, args: Value) -> Result<MCPResult, String> {
         let tool_name = args
             .get("toolName")
             .and_then(|v| v.as_str())
@@ -131,9 +144,9 @@ impl UiServer {
         // must guide toward smaller output, not "different approach".
         let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("");
 
-        let text = if kind == "invalidToolArgs" {
+        let text = if kind == CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS {
             format!(
-                "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: Your previous tool-call arguments for \"{}\" were cut off or not valid JSON, so the tool did NOT run (it was attempted {} time(s)).\n\nThe arguments were too large for one tool call. Please:\n1. Split the output into smaller parts — for example, write a large file in several smaller calls instead of one\n2. Keep each tool call's arguments short\n3. Do NOT send the same large payload again",
+                "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: Your previous tool-call arguments for \"{}\" were cut off or not valid JSON, so the tool did NOT run (it was attempted {} time(s)).\n\nThe arguments may have been too large for one tool call. Please:\n1. Split the output into smaller parts — for example, write a large file in several smaller calls instead of one\n2. Keep each tool call's arguments short\n3. Do NOT send the same large payload again",
                 tool_name, repetition_count
             )
         } else {
@@ -621,7 +634,7 @@ mod tests {
                 .resume_circuit_break(json!({
                     "toolName": "workspace__writeFile",
                     "repetitionCount": 4,
-                    "kind": "invalidToolArgs",
+                    "kind": CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS,
                 }))
                 .expect("resume result"),
         );
@@ -686,20 +699,21 @@ mod tests {
     #[test]
     fn circuit_break_card_carries_kind_into_the_resume_context() {
         // The card's resume button sends `kind` from the context JSON
-        // (#2957), so the rendered script must contain it.
+        // (#2957), so the rendered script must contain the actual value.
         let html = embedded_html(
             UiServer::new()
                 .circuit_break(json!({
                     "toolName": "workspace__writeFile",
                     "repetitionCount": 4,
                     "args": "{}",
-                    "kind": "invalidToolArgs",
+                    "kind": CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS,
                 }))
                 .expect("resource response"),
         );
-        assert!(html.contains("invalidToolArgs"));
-        // Without a kind the context carries an empty string, and the
-        // button falls back to ''.
+        assert!(html.contains(CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS));
+        // S1.2: without a kind the context JSON itself must render
+        // `"kind":""` — the button then sends an empty kind, and the
+        // resume tool falls back to the loop text.
         let html = embedded_html(
             UiServer::new()
                 .circuit_break(json!({
@@ -709,6 +723,12 @@ mod tests {
                 }))
                 .expect("resource response"),
         );
-        assert!(html.contains("kind") && html.contains("contextData.kind"));
+        assert!(
+            html.contains(r#""kind":"""#),
+            "context JSON must carry an empty kind: {}",
+            html.lines()
+                .find(|line| line.contains("contextData"))
+                .unwrap_or("<contextData line not found>")
+        );
     }
 }

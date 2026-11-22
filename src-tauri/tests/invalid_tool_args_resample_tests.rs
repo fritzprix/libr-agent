@@ -17,6 +17,7 @@ use tauri_mcp_agent_lib::agent::llm::{
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::builtin::ui::{UiServer, CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS};
 use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
@@ -199,6 +200,23 @@ fn has_invalid_tool_args(messages: &[Message]) -> bool {
         })
 }
 
+/// The resume guidance a resume call with these arguments would produce —
+/// the exact tool path the GUI button and the E2E control resume drive.
+fn resume_circuit_break_text(args: &serde_json::Value) -> String {
+    let result = UiServer::new()
+        .resume_circuit_break(args.clone())
+        .expect("resume result");
+    result
+        .content
+        .expect("resume content")
+        .into_iter()
+        .find_map(|item| match item {
+            MCPContent::Text { text } => Some(text),
+            _ => None,
+        })
+        .expect("resume text content")
+}
+
 #[tokio::test]
 async fn truncated_tool_args_are_resampled_and_a_valid_retry_leaves_history_clean() {
     let session_id = "invalid-tool-args-retry-ok";
@@ -324,7 +342,41 @@ async fn invalid_tool_args_after_all_resamples_trip_the_circuit_breaker() {
     assert!(args["reason"]
         .as_str()
         .is_some_and(|reason| reason.contains("invalid arguments")));
+    // #2957 G1.2: the producer must carry the cause kind, so the resume
+    // text can match the break reason.
+    assert_eq!(
+        args["kind"], CIRCUIT_BREAK_KIND_INVALID_TOOL_ARGS,
+        "the injected break must carry the invalidToolArgs kind"
+    );
     assert!(!has_invalid_tool_args(std::slice::from_ref(&last)));
+
+    // #2957 G1.2 (chained): the arguments the guard actually produced, fed
+    // through the card and the resume tool, must yield the split-output
+    // guidance — not the identical-parameters loop text.
+    let card = UiServer::new()
+        .circuit_break(args.clone())
+        .expect("card renders");
+    let text = card
+        .content
+        .expect("card content")
+        .into_iter()
+        .find_map(|item| match item {
+            MCPContent::Text { text } => Some(text),
+            _ => None,
+        })
+        .expect("warning text");
+    assert!(text.contains("invalid arguments"));
+
+    let resume_text = resume_circuit_break_text(&args);
+    assert!(
+        resume_text.contains("cut off or not valid JSON"),
+        "resume guidance names the real cause: {resume_text}"
+    );
+    assert!(
+        resume_text.contains("smaller parts"),
+        "resume guidance says to split the output: {resume_text}"
+    );
+    assert!(!resume_text.contains("same parameters"));
 
     // The budget starts again for the next turn.
     assert_eq!(retry_count(&sessions, session_id).await, 0);
