@@ -117,6 +117,65 @@ fn bind_first_available_listener(
 
 /// Initialize and start the HTTP server.
 /// If the requested port is in use, automatically fallback to subsequent available ports.
+/// Serve `routes` on the already-bound `listener`, on a spawned task.
+///
+/// Every request is tagged with the accepted socket's peer address as a
+/// `std::net::SocketAddr` request extension before the warp filter runs; that
+/// is where `access_guard::loopback_peer_guard` reads it.
+///
+/// This deliberately does not go through `warp::serve(..).serve_incoming(..)`:
+/// warp's `serve_incoming` wraps every accepted socket in an internal `LiftIo`
+/// whose `remote_addr()` is always `None`, so `warp::addr::remote()` never
+/// sees the real peer and the loopback peer guard rejected every real request
+/// (#2956). `AddrIncoming` yields `AddrStream`s that carry the accepted
+/// socket's address instead.
+///
+/// `init` uses this; the integration test drives the same accept path with the
+/// production guard chain over a real socket.
+pub fn serve_http<F>(listener: tokio::net::TcpListener, routes: F) -> tokio::task::JoinHandle<()>
+where
+    F: warp::Filter + Clone + Send + Sync + 'static,
+    F::Extract: warp::reply::Reply,
+    F::Future: Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut incoming = match warp::hyper::server::conn::AddrIncoming::from_listener(listener) {
+            Ok(incoming) => incoming,
+            Err(error) => {
+                log::error!("Failed to adopt HTTP listener for serving: {error}");
+                return;
+            }
+        };
+        // Match warp's own bind path, which sets nodelay on accepted sockets.
+        incoming.set_nodelay(true);
+        let warp_service = warp::service(routes);
+        let make_service = warp::hyper::service::make_service_fn(
+            move |addr_stream: &warp::hyper::server::conn::AddrStream| {
+                let peer_addr = addr_stream.remote_addr();
+                let service = warp_service.clone();
+                async move {
+                    Ok::<_, std::convert::Infallible>(warp::hyper::service::service_fn(
+                        move |mut request| {
+                            let mut service = service.clone();
+                            async move {
+                                request.extensions_mut().insert(peer_addr);
+                                warp::hyper::service::Service::call(&mut service, request).await
+                            }
+                        },
+                    ))
+                }
+            },
+        );
+        if let Err(error) = warp::hyper::Server::builder(incoming)
+            .serve(make_service)
+            .await
+        {
+            log::warn!("HTTP server loop exited with error: {error}");
+        }
+        info!("HTTP server stopped");
+    })
+}
+
 /// Port `0` binds an OS-assigned port; the returned value is the real port.
 pub async fn init(
     agent_manager: Arc<AgentSessionManager>,
@@ -194,27 +253,9 @@ pub async fn init(
     let listener = tokio::net::TcpListener::from_std(listener)
         .map_err(|e| format!("Failed to adopt HTTP listener: {e}"))?;
 
-    // Spawn the server in a separate task so it doesn't block
-    tokio::spawn(async move {
-        let incoming = futures::stream::unfold(listener, |listener| async move {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, _addr)) => {
-                        // Match warp's own bind path, which sets nodelay on accepted sockets.
-                        let _ = stream.set_nodelay(true);
-                        break Some((Ok::<_, std::io::Error>(stream), listener));
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(e) => {
-                        log::warn!("HTTP accept failed, stopping server: {e}");
-                        break None;
-                    }
-                }
-            }
-        });
-        warp::serve(routes).serve_incoming(incoming).await;
-        info!("HTTP server stopped");
-    });
+    // Spawns the serving task; dropping the handle detaches it, so the server
+    // lives for the lifetime of the process.
+    let _server = serve_http(listener, routes);
 
     Ok(bound_port)
 }
