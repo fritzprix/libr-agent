@@ -719,10 +719,36 @@ mod tests {
     fn resume_plan_carries_pending_break_details() {
         let messages = vec![circuit_break_call()];
         let pending = pending_circuit_break(&messages).expect("break must be pending");
-        let (tool_name, repetition_count) =
+        let (tool_name, repetition_count, kind) =
             plan_circuit_break_resume(Some(pending)).expect("pending break must yield a plan");
         assert_eq!(tool_name, "workspace__runShell");
         assert_eq!(repetition_count, 5);
+        // No `kind` argument in the break call: the identical-call loop kind.
+        assert_eq!(kind, "");
+    }
+
+    #[test]
+    fn resume_plan_carries_invalid_args_kind_for_cause_specific_guidance() {
+        // #2957: an invalid-arguments break carries its kind through the
+        // pending state and the resume plan, so the resume tool picks the
+        // split-output guidance instead of the identical-parameters text.
+        let messages = vec![assistant_tool_call(
+            "ui__circuitBreak",
+            r#"{"toolName":"workspace__writeFile","repetitionCount":4,"args":"<redacted: 900000 bytes, truncated>","reason":"The model sent invalid arguments...","kind":"invalidToolArgs"}"#,
+            "call-break-args",
+        )];
+        let pending = pending_circuit_break(&messages).expect("break must be pending");
+        let (tool_name, repetition_count, kind) =
+            plan_circuit_break_resume(Some(pending)).expect("pending break must yield a plan");
+        assert_eq!(tool_name, "workspace__writeFile");
+        assert_eq!(repetition_count, 4);
+        assert_eq!(kind, "invalidToolArgs");
+
+        let message = resume_circuit_break_message("sess-1", &tool_name, repetition_count, &kind);
+        let tool_calls = message.tool_calls.expect("resume injects a tool call");
+        let args: serde_json::Value = serde_json::from_str(&tool_calls[0].function.arguments)
+            .expect("arguments must be valid JSON");
+        assert_eq!(args["kind"], "invalidToolArgs");
     }
 
     #[test]
@@ -775,7 +801,7 @@ mod tests {
 
     #[test]
     fn resume_message_reuses_the_gui_tool_call_shape() {
-        let message = resume_circuit_break_message("sess-1", "workspace__runShell", 5);
+        let message = resume_circuit_break_message("sess-1", "workspace__runShell", 5, "");
         assert_eq!(message.session_id, "sess-1");
         assert_eq!(message.role, "assistant");
         assert!(message.content.is_empty());

@@ -172,6 +172,8 @@
               params: {
                 toolName: contextData.toolName,
                 repetitionCount: contextData.repetitionCount,
+                // #2957: the resume guidance must match the break cause.
+                kind: contextData.kind || '',
               },
             },
           },

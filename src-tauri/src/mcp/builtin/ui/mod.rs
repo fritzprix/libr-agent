@@ -58,10 +58,14 @@ impl UiServer {
 
         // Handlebars {{toolName}}/{{args}} HTML-escape once. Triple-stash {{{contextJson}}}
         // is raw — neutralize </script> breakouts from LLM-controlled strings.
+        // `kind` (#2957) travels through the card to the Resume call so the
+        // resume guidance can match the cause (`invalidToolArgs` vs loop).
+        let kind = non_empty_string_arg(&args, "kind");
         let context_json = json!({
             "toolName": tool_name,
             "repetitionCount": repetition_count,
             "args": args_str,
+            "kind": kind.unwrap_or(""),
         });
         let context_json_for_script = context_json
             .to_string()
@@ -75,6 +79,7 @@ impl UiServer {
             "repetitionCount": repetition_count,
             "args": args_str,
             "reason": reason.unwrap_or(""),
+            "kind": kind.unwrap_or(""),
             "contextJson": context_json_for_script,
         });
 
@@ -121,11 +126,22 @@ impl UiServer {
             .get("repetitionCount")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
+        // #2957: the break card passes its cause kind through. An
+        // invalid-arguments break never ran the tool, so the resume text
+        // must guide toward smaller output, not "different approach".
+        let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("");
 
-        let text = format!(
-            "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: You have called \"{}\" {} times with the same parameters.\n\nThis suggests your current approach is not working. Please:\n1. Analyze why the previous attempts failed (use planning__reflect if you need a structured critique → reflection → nextAction)\n2. Try a DIFFERENT approach or tool\n3. If the error persists, inform the user about the limitation\n\nDo NOT repeat the same tool call again.",
-            tool_name, repetition_count
-        );
+        let text = if kind == "invalidToolArgs" {
+            format!(
+                "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: Your previous tool-call arguments for \"{}\" were cut off or not valid JSON, so the tool did NOT run (it was attempted {} time(s)).\n\nThe arguments were too large for one tool call. Please:\n1. Split the output into smaller parts — for example, write a large file in several smaller calls instead of one\n2. Keep each tool call's arguments short\n3. Do NOT send the same large payload again",
+                tool_name, repetition_count
+            )
+        } else {
+            format!(
+                "🔄 Execution Resumed by User\n\n⚠️ IMPORTANT: You have called \"{}\" {} times with the same parameters.\n\nThis suggests your current approach is not working. Please:\n1. Analyze why the previous attempts failed (use planning__reflect if you need a structured critique → reflection → nextAction)\n2. Try a DIFFERENT approach or tool\n3. If the error persists, inform the user about the limitation\n\nDo NOT repeat the same tool call again.",
+                tool_name, repetition_count
+            )
+        };
 
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text { text }]),
@@ -594,5 +610,105 @@ mod tests {
                 text.contains("has been called 5 times consecutively with identical parameters")
             );
         }
+    }
+
+    // --- #2957: the Resume guidance must match the break cause -------------
+
+    #[test]
+    fn resume_after_invalid_args_break_gives_split_output_guidance() {
+        let text = first_text(
+            UiServer::new()
+                .resume_circuit_break(json!({
+                    "toolName": "workspace__writeFile",
+                    "repetitionCount": 4,
+                    "kind": "invalidToolArgs",
+                }))
+                .expect("resume result"),
+        );
+        assert!(text.starts_with("🔄 Execution Resumed by User"));
+        assert!(
+            text.contains("cut off or not valid JSON"),
+            "resume text names the actual cause: {text}"
+        );
+        assert!(text.contains("did NOT run"), "the tool never ran: {text}");
+        assert!(
+            text.contains("smaller parts"),
+            "resume text tells the model to split the output: {text}"
+        );
+        assert!(
+            !text.contains("same parameters"),
+            "the identical-loop wording must not appear: {text}"
+        );
+        assert!(
+            !text.contains("DIFFERENT approach"),
+            "\"try a different tool\" is wrong guidance here: {text}"
+        );
+    }
+
+    #[test]
+    fn resume_after_identical_call_loop_keeps_loop_text() {
+        let text = first_text(
+            UiServer::new()
+                .resume_circuit_break(json!({
+                    "toolName": "workspace__runShell",
+                    "repetitionCount": 5,
+                }))
+                .expect("resume result"),
+        );
+        assert!(text.contains("times with the same parameters"));
+        assert!(text.contains("DIFFERENT approach"));
+        assert!(
+            !text.contains("cut off or not valid JSON"),
+            "the invalid-args wording must not appear: {text}"
+        );
+    }
+
+    #[test]
+    fn resume_with_missing_or_unknown_kind_falls_back_to_loop_text() {
+        for args in [
+            json!({ "toolName": "workspace__runShell", "repetitionCount": 5 }),
+            json!({ "toolName": "workspace__runShell", "repetitionCount": 5, "kind": "" }),
+            json!({ "toolName": "workspace__runShell", "repetitionCount": 5, "kind": "   " }),
+            json!({ "toolName": "workspace__runShell", "repetitionCount": 5, "kind": "somethingElse" }),
+        ] {
+            let text = first_text(
+                UiServer::new()
+                    .resume_circuit_break(args)
+                    .expect("resume result"),
+            );
+            assert!(
+                text.contains("times with the same parameters"),
+                "unknown kind falls back to the loop text: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn circuit_break_card_carries_kind_into_the_resume_context() {
+        // The card's resume button sends `kind` from the context JSON
+        // (#2957), so the rendered script must contain it.
+        let html = embedded_html(
+            UiServer::new()
+                .circuit_break(json!({
+                    "toolName": "workspace__writeFile",
+                    "repetitionCount": 4,
+                    "args": "{}",
+                    "kind": "invalidToolArgs",
+                }))
+                .expect("resource response"),
+        );
+        assert!(html.contains("invalidToolArgs"));
+        // Without a kind the context carries an empty string, and the
+        // button falls back to ''.
+        let html = embedded_html(
+            UiServer::new()
+                .circuit_break(json!({
+                    "toolName": "workspace__writeFile",
+                    "repetitionCount": 5,
+                    "args": "{}",
+                }))
+                .expect("resource response"),
+        );
+        assert!(html.contains("kind") && html.contains("contextData.kind"));
     }
 }

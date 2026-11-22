@@ -424,11 +424,11 @@ async fn handle_circuit_break_resume(
         Err((status, error)) => return Ok(json_error(status, error)),
     };
     let pending = pending_circuit_break_in(manager.as_ref(), &session_id).await;
-    let (tool_name, repetition_count) = match plan_circuit_break_resume(pending) {
+    let (tool_name, repetition_count, kind) = match plan_circuit_break_resume(pending) {
         Ok(plan) => plan,
         Err((status, error)) => return Ok(json_error(status, error)),
     };
-    let message = resume_circuit_break_message(&session_id, &tool_name, repetition_count);
+    let message = resume_circuit_break_message(&session_id, &tool_name, repetition_count, &kind);
     match manager.handle_llm_response(session_id, message).await {
         Ok(()) => Ok(json_ok(&serde_json::json!({
             "ok": true,
@@ -441,14 +441,14 @@ async fn handle_circuit_break_resume(
 
 /// The pure dispatch decision behind [`handle_circuit_break_resume`]: a
 /// session with no waiting circuit breaker is rejected with 409, and a
-/// waiting one yields the tool name + repetition count to inject. Tested
-/// directly because a live `AgentSessionManager` needs a Tauri `AppHandle`
-/// that integration tests cannot construct.
+/// waiting one yields the tool name, repetition count, and cause kind
+/// (#2957) to inject. Tested directly because a live `AgentSessionManager`
+/// needs a Tauri `AppHandle` that integration tests cannot construct.
 pub fn plan_circuit_break_resume(
     pending: Option<PendingCircuitBreak>,
-) -> Result<(String, u64), (StatusCode, &'static str)> {
+) -> Result<(String, u64, String), (StatusCode, &'static str)> {
     match pending {
-        Some(pending) => Ok((pending.tool_name, pending.repetition_count)),
+        Some(pending) => Ok((pending.tool_name, pending.repetition_count, pending.kind)),
         None => Err((
             StatusCode::CONFLICT,
             "no circuit breaker is waiting for resume on this session",

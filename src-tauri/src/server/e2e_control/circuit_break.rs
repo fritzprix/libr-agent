@@ -25,6 +25,12 @@ pub struct PendingCircuitBreak {
     pub tool_name: String,
     pub repetition_count: u64,
     pub tool_call_id: String,
+    /// Cause kind carried from the `ui__circuitBreak` arguments (#2957):
+    /// `invalidToolArgs` for a broken-arguments break, empty for the
+    /// identical-call loop. The resume message must reproduce it so the
+    /// guidance matches the cause.
+    #[serde(default)]
+    pub kind: String,
 }
 
 /// Strip the MCP server prefix from a tool name (`ui__circuitBreak` → `circuitBreak`).
@@ -66,6 +72,11 @@ pub fn pending_circuit_break(messages: &[Message]) -> Option<PendingCircuitBreak
                             .and_then(|value| value.as_u64())
                             .unwrap_or(0),
                         tool_call_id: tool_call.id.clone(),
+                        kind: args
+                            .get("kind")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                     });
                 }
                 _ => {}
@@ -76,16 +87,19 @@ pub fn pending_circuit_break(messages: &[Message]) -> Option<PendingCircuitBreak
 }
 
 /// Build the assistant message that the Resume button injects, so the control
-/// plane drives the exact same path as the GUI.
+/// plane drives the exact same path as the GUI. `kind` is the pending break's
+/// cause (#2957): the resume tool selects its guidance text by it.
 pub fn resume_circuit_break_message(
     session_id: &str,
     tool_name: &str,
     repetition_count: u64,
+    kind: &str,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
     let arguments = serde_json::json!({
         "toolName": tool_name,
         "repetitionCount": repetition_count,
+        "kind": kind,
     })
     .to_string();
     Message {
