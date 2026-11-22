@@ -483,7 +483,7 @@ fn fallback_notice_event(
         .as_ref()
         .and_then(|details| details.context.as_ref())
         .and_then(|context| context.get(HTTP_STATUS_CONTEXT_KEY))
-        .and_then(|status| Some(u16::try_from(status.as_u64()?).ok()?));
+        .and_then(|status| status.as_u64().and_then(|value| u16::try_from(value).ok()));
     AgentEvent::LlmFallbackNotice {
         session_id: request.session_id.clone(),
         status_code,
