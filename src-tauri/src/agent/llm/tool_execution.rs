@@ -31,17 +31,22 @@ enum ApprovalOutcome {
     ChannelClosed,
 }
 
+/// Identifiers of the tool call awaiting approval: the session running it and the
+/// call itself. Borrowed for the build; each payload copies what it needs.
+struct ToolCallRef<'a> {
+    session_id: &'a str,
+    tool_call_id: &'a str,
+    tool_name: &'a str,
+}
+
 /// The record to store and the event to emit for one pending approval. Both carry
 /// the same display arguments: the request's masked arguments when it has them,
 /// otherwise the tool call's own arguments. The approval card, the Session API
 /// listing and the resume re-emit read these arguments; execution never does — it
 /// runs the tool call's own arguments (#2968). Split out of `request_approval` so
 /// the store-and-emit wiring is testable without a live session.
-#[allow(clippy::too_many_arguments)]
 fn build_pending_approval(
-    session_id: &str,
-    tool_call_id: &str,
-    tool_name: &str,
+    call: &ToolCallRef<'_>,
     args_str: &str,
     approval_request: &ToolApprovalRequest,
     approval_kind: PendingApprovalKind,
@@ -59,7 +64,7 @@ fn build_pending_approval(
     let input_preview = Some(approval_request.input_preview.clone());
     let data = crate::agent::state::PendingApprovalData {
         sender,
-        tool_name: tool_name.to_string(),
+        tool_name: call.tool_name.to_string(),
         arguments: display_arguments.to_string(),
         approval_kind,
         request_id: request_id.clone(),
@@ -67,9 +72,9 @@ fn build_pending_approval(
         input_preview: input_preview.clone(),
     };
     let event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
-        session_id: session_id.to_string(),
-        tool_call_id: tool_call_id.to_string(),
-        tool_name: tool_name.to_string(),
+        session_id: call.session_id.to_string(),
+        tool_call_id: call.tool_call_id.to_string(),
+        tool_name: call.tool_name.to_string(),
         arguments: display_arguments.to_string(),
         approval_kind,
         request_id,
@@ -184,9 +189,11 @@ impl ToolExecutionContext<'_> {
         // secrets is stored and emitted already masked; execution never reads
         // them back, it runs the tool call's own arguments.
         let (approval_data, approval_event) = build_pending_approval(
-            self.session_id,
-            tool_call_id,
-            tool_name,
+            &ToolCallRef {
+                session_id: self.session_id,
+                tool_call_id,
+                tool_name,
+            },
             args_str,
             approval_request,
             approval_kind,
@@ -1051,7 +1058,7 @@ mod pre_tool_hook_tests {
 
 #[cfg(test)]
 mod pending_approval_tests {
-    use super::build_pending_approval;
+    use super::{build_pending_approval, ToolCallRef};
     use crate::agent::events::AgentEvent;
     use crate::agent::state::PendingApprovalKind;
     use crate::agent::tool_approvals::{
@@ -1087,9 +1094,11 @@ mod pending_approval_tests {
         };
         let (tx, _rx) = oneshot::channel();
         let (stored, event) = build_pending_approval(
-            "sess-2968",
-            "tc-2968",
-            "tool__registerServer",
+            &ToolCallRef {
+                session_id: "sess-2968",
+                tool_call_id: "tc-2968",
+                tool_name: "tool__registerServer",
+            },
             &args.to_string(),
             &request,
             PendingApprovalKind::Hard,
@@ -1123,9 +1132,11 @@ mod pending_approval_tests {
         let raw = r#"{"command":"ls -la"}"#;
         let (tx, _rx) = oneshot::channel();
         let (stored, event) = build_pending_approval(
-            "sess-raw",
-            "tc-raw",
-            "workspace__runShell",
+            &ToolCallRef {
+                session_id: "sess-raw",
+                tool_call_id: "tc-raw",
+                tool_name: "workspace__runShell",
+            },
             raw,
             &request,
             PendingApprovalKind::Standard,
