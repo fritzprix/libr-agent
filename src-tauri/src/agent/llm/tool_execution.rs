@@ -31,6 +31,54 @@ enum ApprovalOutcome {
     ChannelClosed,
 }
 
+/// The record to store and the event to emit for one pending approval. Both carry
+/// the same display arguments: the request's masked arguments when it has them,
+/// otherwise the tool call's own arguments. The approval card, the Session API
+/// listing and the resume re-emit read these arguments; execution never does — it
+/// runs the tool call's own arguments (#2968). Split out of `request_approval` so
+/// the store-and-emit wiring is testable without a live session.
+#[allow(clippy::too_many_arguments)]
+fn build_pending_approval(
+    session_id: &str,
+    tool_call_id: &str,
+    tool_name: &str,
+    args_str: &str,
+    approval_request: &ToolApprovalRequest,
+    approval_kind: PendingApprovalKind,
+    sender: oneshot::Sender<bool>,
+    request_id: Option<String>,
+) -> (
+    crate::agent::state::PendingApprovalData,
+    crate::agent::events::AgentEvent,
+) {
+    let display_arguments = approval_request
+        .masked_arguments
+        .as_deref()
+        .unwrap_or(args_str);
+    let description = Some(approval_request.description.clone());
+    let input_preview = Some(approval_request.input_preview.clone());
+    let data = crate::agent::state::PendingApprovalData {
+        sender,
+        tool_name: tool_name.to_string(),
+        arguments: display_arguments.to_string(),
+        approval_kind,
+        request_id: request_id.clone(),
+        description: description.clone(),
+        input_preview: input_preview.clone(),
+    };
+    let event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
+        session_id: session_id.to_string(),
+        tool_call_id: tool_call_id.to_string(),
+        tool_name: tool_name.to_string(),
+        arguments: display_arguments.to_string(),
+        approval_kind,
+        request_id,
+        description,
+        input_preview,
+    };
+    (data, event)
+}
+
 impl ToolExecutionContext<'_> {
     fn emit_tool_execution_started(&self, tool_name: &str) {
         let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
@@ -132,32 +180,27 @@ impl ToolExecutionContext<'_> {
             .await;
         let request_id = has_permission_relay_channel
             .then(crate::agent::tool_approvals::generate_channel_permission_request_id);
-        let description = Some(approval_request.description.clone());
-        let input_preview = Some(approval_request.input_preview.clone());
         // #2968: the card shows these arguments, so a transport that may carry
         // secrets is stored and emitted already masked; execution never reads
         // them back, it runs the tool call's own arguments.
-        let display_arguments = approval_request
-            .masked_arguments
-            .as_deref()
-            .unwrap_or(args_str);
+        let (approval_data, approval_event) = build_pending_approval(
+            self.session_id,
+            tool_call_id,
+            tool_name,
+            args_str,
+            approval_request,
+            approval_kind,
+            tx,
+            request_id.clone(),
+        );
+        let description = approval_data.description.clone();
+        let input_preview = approval_data.input_preview.clone();
 
         {
             let active = self.active_sessions.read().await;
             if let Some(session) = active.get(self.session_id) {
                 let mut approvals = session.pending_approvals.write().await;
-                approvals.insert(
-                    tool_call_id.to_string(),
-                    crate::agent::state::PendingApprovalData {
-                        sender: tx,
-                        tool_name: tool_name.to_string(),
-                        arguments: display_arguments.to_string(),
-                        approval_kind,
-                        request_id: request_id.clone(),
-                        description: description.clone(),
-                        input_preview: input_preview.clone(),
-                    },
-                );
+                approvals.insert(tool_call_id.to_string(), approval_data);
             }
         }
 
@@ -177,16 +220,6 @@ impl ToolExecutionContext<'_> {
             );
         }
 
-        let approval_event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
-            session_id: self.session_id.to_string(),
-            tool_call_id: tool_call_id.to_string(),
-            tool_name: tool_name.to_string(),
-            arguments: display_arguments.to_string(),
-            approval_kind,
-            request_id: request_id.clone(),
-            description: description.clone(),
-            input_preview: input_preview.clone(),
-        };
         if let Err(error) =
             TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(approval_event)
         {
@@ -1013,5 +1046,104 @@ mod pre_tool_hook_tests {
                 kind: PendingApprovalKind::Standard,
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod pending_approval_tests {
+    use super::build_pending_approval;
+    use crate::agent::events::AgentEvent;
+    use crate::agent::state::PendingApprovalKind;
+    use crate::agent::tool_approvals::{
+        evaluate_tool_execution_policy, ToolApprovalRequest, ToolExecutionPolicyDecision,
+    };
+    use tokio::sync::oneshot;
+
+    fn event_arguments(event: &AgentEvent) -> &str {
+        let AgentEvent::ToolExecutionRequiresApproval { arguments, .. } = event else {
+            panic!("expected a ToolExecutionRequiresApproval event");
+        };
+        arguments
+    }
+
+    /// #2968 (gatekeeper G1.1): the arguments stored in `pending_approvals` (the
+    /// source for the Session API listing and the resume re-emit) and the
+    /// arguments emitted for the approval card both come from the request's
+    /// masked arguments — a literal query value, header or fragment never
+    /// reaches either.
+    #[tokio::test]
+    async fn mcp_server_approval_stores_and_emits_masked_arguments() {
+        let args = serde_json::json!({
+            "name": "svc",
+            "transport": {
+                "type": "http",
+                "url": "http://127.0.0.1:9001/mcp?token=literal-secret&key={{secret:URLKEY}}#frag",
+                "headers": { "Authorization": "Bearer literal-header" },
+            },
+        });
+        let decision = evaluate_tool_execution_policy("tool__registerServer", &args).await;
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        let (tx, _rx) = oneshot::channel();
+        let (stored, event) = build_pending_approval(
+            "sess-2968",
+            "tc-2968",
+            "tool__registerServer",
+            &args.to_string(),
+            &request,
+            PendingApprovalKind::Hard,
+            tx,
+            None,
+        );
+
+        assert_eq!(stored.arguments, event_arguments(&event));
+        for arguments in [&stored.arguments, event_arguments(&event)] {
+            assert!(!arguments.contains("literal-secret"), "{arguments}");
+            assert!(!arguments.contains("literal-header"), "{arguments}");
+            assert!(!arguments.contains("#frag"), "{arguments}");
+            assert!(arguments.contains("token=***"), "{arguments}");
+            assert!(
+                arguments.contains("{{secret:URLKEY}}"),
+                "templates must stay visible: {arguments}"
+            );
+        }
+    }
+
+    /// The opposite case: a request with no masked arguments keeps the tool
+    /// call's raw arguments on both the stored record and the event, and the
+    /// kind and request id reach both payloads.
+    #[test]
+    fn approval_without_masked_arguments_keeps_raw_arguments() {
+        let request = ToolApprovalRequest {
+            description: "run the thing".to_string(),
+            input_preview: "preview".to_string(),
+            masked_arguments: None,
+        };
+        let raw = r#"{"command":"ls -la"}"#;
+        let (tx, _rx) = oneshot::channel();
+        let (stored, event) = build_pending_approval(
+            "sess-raw",
+            "tc-raw",
+            "workspace__runShell",
+            raw,
+            &request,
+            PendingApprovalKind::Standard,
+            tx,
+            Some("req-9".to_string()),
+        );
+        assert_eq!(stored.arguments, raw);
+        assert_eq!(event_arguments(&event), raw);
+        assert_eq!(stored.request_id.as_deref(), Some("req-9"));
+        let AgentEvent::ToolExecutionRequiresApproval {
+            request_id,
+            approval_kind,
+            ..
+        } = &event
+        else {
+            panic!("expected a ToolExecutionRequiresApproval event");
+        };
+        assert_eq!(request_id.as_deref(), Some("req-9"));
+        assert_eq!(*approval_kind, PendingApprovalKind::Standard);
     }
 }
