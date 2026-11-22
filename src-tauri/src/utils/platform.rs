@@ -109,6 +109,36 @@ fn nvidia_driver_present() -> bool {
     )
 }
 
+/// Set once this process has applied the DMA-BUF workaround, so the info
+/// line can be logged after a logger exists (#2964).
+#[cfg(target_os = "linux")]
+static DMABUF_WORKAROUND_APPLIED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Core of [`apply_webkit_dmabuf_workaround`], parameterized by the detection
+/// result and the env accessors so tests can drive the real set path without
+/// touching the process environment (no races with other tests).
+#[cfg(target_os = "linux")]
+fn apply_dmabuf_workaround_with(
+    nvidia_detected: bool,
+    existing_value: Option<&std::ffi::OsStr>,
+    set_var: impl FnOnce(&str, &str),
+) -> bool {
+    if !should_set_dmabuf_workaround(nvidia_detected, existing_value) {
+        return false;
+    }
+    set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    DMABUF_WORKAROUND_APPLIED.store(true, std::sync::atomic::Ordering::Relaxed);
+    true
+}
+
+/// True once the workaround has been applied in this process. This decides
+/// whether [`log_webkit_dmabuf_workaround_if_applied`] emits the info line.
+#[cfg(target_os = "linux")]
+pub fn dmabuf_workaround_applied() -> bool {
+    DMABUF_WORKAROUND_APPLIED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Apply the WebKitGTK DMA-BUF workaround for the NVIDIA proprietary driver
 /// (#2964). Must run before any WebView is created: without it, WebKitGTK's
 /// watchdog can kill `WebKitWebProcess` and the renderer spins at 100% CPU.
@@ -116,16 +146,30 @@ fn nvidia_driver_present() -> bool {
 /// Sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` only on NVIDIA systems and never
 /// overwrites a user value. Trade-off: NVIDIA users get a slower render path
 /// until an upstream fix lands.
+///
+/// No logger exists this early, so the required info line is deferred: the
+/// application records the result here and logs it once via
+/// [`log_webkit_dmabuf_workaround_if_applied`] after its logger is up.
 #[cfg(target_os = "linux")]
 pub fn apply_webkit_dmabuf_workaround() {
     const NAME: &str = "WEBKIT_DISABLE_DMABUF_RENDERER";
-    if !should_set_dmabuf_workaround(nvidia_driver_present(), std::env::var_os(NAME).as_deref()) {
-        return;
-    }
-    std::env::set_var(NAME, "1");
-    log::info!(
-        "NVIDIA driver detected: set WEBKIT_DISABLE_DMABUF_RENDERER=1 (WebKitGTK DMA-BUF hang workaround, #2964)"
+    apply_dmabuf_workaround_with(
+        nvidia_driver_present(),
+        std::env::var_os(NAME).as_deref(),
+        |name, value| std::env::set_var(name, value),
     );
+}
+
+/// Emit the one info line reporting that the DMA-BUF workaround fired
+/// (#2964). Call after the process logger is initialized; no-op when the
+/// workaround was never applied.
+#[cfg(target_os = "linux")]
+pub fn log_webkit_dmabuf_workaround_if_applied() {
+    if dmabuf_workaround_applied() {
+        log::info!(
+            "NVIDIA driver detected: WEBKIT_DISABLE_DMABUF_RENDERER=1 was set before WebView creation (WebKitGTK DMA-BUF hang workaround, #2964)"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -171,6 +215,46 @@ mod tests {
             proc_root.path(),
             module_root.path()
         ));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn apply_webkit_dmabuf_workaround_sets_variable_only_when_it_should() {
+        // Drives the real set path of apply_webkit_dmabuf_workaround (its
+        // parameterized core) with a captured setter, so nothing touches the
+        // process environment and other env-reading tests cannot race.
+        let mut set_calls: Vec<(String, String)> = Vec::new();
+
+        // Non-NVIDIA: the setter must never run and the flag stays unset.
+        assert!(!apply_dmabuf_workaround_with(false, None, |name, value| {
+            set_calls.push((name.to_string(), value.to_string()))
+        }));
+        assert!(set_calls.is_empty());
+        assert!(!dmabuf_workaround_applied());
+
+        // NVIDIA but the user set their own value (including "0"): keep it.
+        assert!(!apply_dmabuf_workaround_with(
+            true,
+            Some(std::ffi::OsStr::new("0")),
+            |name, value| set_calls.push((name.to_string(), value.to_string()))
+        ));
+        assert!(set_calls.is_empty());
+        assert!(!dmabuf_workaround_applied());
+
+        // NVIDIA, untouched variable: the real write happens with the exact
+        // name and value, and the flag that gates the deferred info line
+        // becomes true.
+        assert!(apply_dmabuf_workaround_with(true, None, |name, value| {
+            set_calls.push((name.to_string(), value.to_string()))
+        }));
+        assert_eq!(
+            set_calls,
+            vec![(
+                "WEBKIT_DISABLE_DMABUF_RENDERER".to_string(),
+                "1".to_string()
+            )]
+        );
+        assert!(dmabuf_workaround_applied());
     }
 
     #[test]

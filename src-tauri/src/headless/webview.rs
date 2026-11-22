@@ -198,6 +198,11 @@ fn setup_hidden_headless_app(
     // logs go to stderr and the ephemeral log file.
     let _ = crate::logger::setup_headless_file_logger(log_dir, 1);
 
+    // Report the NVIDIA DMA-BUF workaround (#2964) applied before the WebView
+    // was created; its info line could not land until this logger existed.
+    #[cfg(target_os = "linux")]
+    crate::utils::platform::log_webkit_dmabuf_workaround_if_applied();
+
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
         let _ = window.set_skip_taskbar(true);

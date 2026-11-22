@@ -434,7 +434,9 @@ pub(crate) fn configure_tauri_builder(
 /// - The Tauri application builder with all necessary plugins (dialog, logging, opener).
 /// - The full list of invoke handlers (Tauri commands) available to the frontend.
 /// - A setup hook to initialize managed state like `SecureFileManager` and `InteractiveBrowserServer`.
-/// - Linux-specific environment variables and checks for WebKit compatibility.
+/// - Linux-specific environment variables and checks for WebKit compatibility
+///   (e.g. the NVIDIA DMA-BUF renderer workaround, #2964, applied before the
+///   WebView exists and reported once the logger is up).
 /// - Graceful error handling for panics that may occur during application startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
