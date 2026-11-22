@@ -675,6 +675,113 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
     });
 
+    it('keeps a session that entered the list via backend pending approvals when marking all notifications viewed', async () => {
+        // #2971: an approval event for a session not yet in either collection is
+        // dropped by the frontend, but the backend records both the attention and
+        // the pending count. After the session enters the list on refresh,
+        // mark-all-read must keep it because the backend still reports approvals.
+        let backendCounts: Record<string, number> = {};
+
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+            if (cmd === 'agent_list_sessions') {
+                return Promise.resolve([
+                    {
+                        id: 'session-normal',
+                        name: 'Normal Session',
+                        status: 'paused',
+                        model: 'gpt-4o',
+                        provider: 'openai',
+                        createdAt: Date.now(),
+                        updatedAt: Date.now(),
+                    },
+                ]);
+            }
+            if (cmd === 'agent_list_attention_sessions') {
+                return Promise.resolve(
+                    backendCounts['session-outside']
+                        ? [
+                              {
+                                  id: 'session-outside',
+                                  name: 'Outside Session',
+                                  status: 'paused',
+                                  model: 'gpt-4o',
+                                  provider: 'openai',
+                                  createdAt: Date.now(),
+                                  updatedAt: Date.now(),
+                                  lastAttentionAt: Date.now(),
+                                  lastAttentionReason: 'pendingApproval',
+                              },
+                          ]
+                        : [],
+                );
+            }
+            if (cmd === 'agent_get_pending_approval_counts') {
+                return Promise.resolve({ success: true, message: '', data: backendCounts });
+            }
+            if (cmd === 'agent_mark_session_viewed') {
+                return Promise.resolve();
+            }
+            return Promise.resolve();
+        });
+
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapperWithEvent },
+        );
+
+        await waitFor(() => {
+            expect(result.current.state.sessions).toHaveLength(1);
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        // The outside session is in neither list: the count update is dropped.
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-outside',
+                    toolCallId: 'call-outside',
+                },
+            });
+        });
+
+        expect(result.current.state.notificationSessions.map((s) => s.id)).not.toContain(
+            'session-outside',
+        );
+
+        // Refresh: backend attention list + backend counts bring the session in
+        // with its true pending-approval count.
+        backendCounts = { 'session-outside': 2 };
+        await act(async () => {
+            await result.current.actions.loadSessions(true);
+        });
+
+        await waitFor(() => {
+            const outside = result.current.state.notificationSessions.find(
+                (s) => s.id === 'session-outside',
+            );
+            expect(outside?.pendingApprovalCount).toBe(2);
+        });
+
+        await act(async () => {
+            await result.current.actions.markAllNotificationsViewed();
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.notificationSessions.map((s) => s.id)).toContain(
+                'session-outside',
+            );
+        });
+        expect(
+            result.current.state.notificationSessions.find((s) => s.id === 'session-outside')
+                ?.pendingApprovalCount,
+        ).toBe(2);
+        expect(safeInvoke).not.toHaveBeenCalledWith('agent_mark_session_viewed', {
+            sessionId: 'session-outside',
+            viewedAt: expect.any(Number),
+        });
+    });
+
     it('marks active-session approval requests as viewed immediately', async () => {
         const { result } = renderHook(() => useAgentSessionListState(), {
             wrapper: ActiveSessionWrapper,

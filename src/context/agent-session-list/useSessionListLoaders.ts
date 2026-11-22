@@ -19,6 +19,10 @@ import {
   loadInitialSessionList,
   SESSION_LIST_PAGE_SIZE,
 } from './startup-cache';
+import {
+  fetchPendingApprovalCounts,
+  mergePendingApprovalCounts,
+} from './pendingApprovals';
 import type { SessionListStore } from './useSessionListStore';
 
 const logger = getLogger('AgentSessionListContext');
@@ -76,24 +80,35 @@ export function useSessionListLoaders({
         promise === latestSessionListPromiseRef.current;
 
       try {
-        const [initialData, assistants] = await Promise.all([
-          promise,
-          listAssistants(),
-        ]);
+        const [initialData, assistants, backendPendingApprovalCounts] =
+          await Promise.all([
+            promise,
+            listAssistants(),
+            fetchPendingApprovalCounts(),
+          ]);
 
         if (!isCurrentLoad()) {
           return;
         }
 
-        const pendingApprovalCounts = new Map<string, number>();
+        const frontendPendingApprovalCounts = new Map<string, number>();
         [...sessionsRef.current, ...notificationSessionsRef.current].forEach(
           (session) => {
-            pendingApprovalCounts.set(
+            frontendPendingApprovalCounts.set(
               session.id,
               session.pendingApprovalCount ?? 0,
             );
           },
         );
+        // Backend counts are authoritative (#2971): sessions absent from the
+        // backend map cannot hold pending approvals. On fetch failure keep the
+        // frontend-seeded counts instead of wiping live values.
+        const pendingApprovalCounts = backendPendingApprovalCounts
+          ? mergePendingApprovalCounts(
+              frontendPendingApprovalCounts,
+              backendPendingApprovalCounts,
+            )
+          : frontendPendingApprovalCounts;
 
         const assistantsById = new Map(
           assistants.map((assistant) => [assistant.id, assistant]),

@@ -19,6 +19,8 @@ pub use pending::{
     PendingApprovalData, PendingApprovalKind, PendingEvent, PendingEventManager,
     PendingToolExecution,
 };
+#[cfg(test)]
+pub(crate) use session::build_test_session;
 pub use session::{AgentSession, SessionStatusTransition};
 pub use user_prompt::{
     admit_user_prompt, await_user_prompt, await_user_prompt_with_timeout, new_user_prompt_slot,

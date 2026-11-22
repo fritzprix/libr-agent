@@ -11,6 +11,7 @@ import { applyViewedAtToSession } from '@/lib/session-utils';
 import type { AgentSession, CreateSessionParams } from '@/models/agent';
 import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
 import { buildCreateAgentSessionRequest, mapCreatedSession } from './mappings';
+import { fetchPendingApprovalCounts } from './pendingApprovals';
 import type { SessionListStore } from './useSessionListStore';
 
 const logger = getLogger('AgentSessionListContext');
@@ -324,6 +325,24 @@ export function useSessionListMutations({
   );
 
   const markAllNotificationsViewed = useCallback(async () => {
+    // Consult the backend for authoritative pending-approval counts (#2971).
+    // Frontend counts can be stale: an approval event for a session not yet in
+    // the loaded lists is dropped, and sessions started from the Session API or
+    // another window never emit a local count. Reconcile the store first, then
+    // prune only sessions the backend confirms have no pending approvals.
+    const backendPendingApprovalCounts = await fetchPendingApprovalCounts();
+    if (backendPendingApprovalCounts) {
+      notificationSessionsRef.current.forEach((session) => {
+        const backendCount = backendPendingApprovalCounts.get(session.id) ?? 0;
+        if (backendCount !== (session.pendingApprovalCount ?? 0)) {
+          applySessionUpdate(session.id, (candidate) => ({
+            ...candidate,
+            pendingApprovalCount: backendCount,
+          }));
+        }
+      });
+    }
+
     const targets = notificationSessionsRef.current.filter(
       (session) => (session.pendingApprovalCount ?? 0) <= 0,
     );
@@ -341,7 +360,7 @@ export function useSessionListMutations({
         });
       }
     });
-  }, [markSessionViewed, notificationSessionsRef]);
+  }, [applySessionUpdate, markSessionViewed, notificationSessionsRef]);
 
   const clearPendingApproval = useCallback(
     (sessionId: string, toolCallId: string) => {
