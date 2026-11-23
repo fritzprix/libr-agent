@@ -515,6 +515,7 @@ mod tests {
         // facade line — LibrAgent's own and rmcp's tracing events bridged to log —
         // passes through mask_log_line. No other test in this binary installs a
         // global logger; concurrent lines of other tests are filtered by target.
+        let previous_level = log::max_level();
         let (sender, receiver) = std::sync::mpsc::channel::<String>();
         formatted_dispatch()
             .chain(sender)
@@ -562,6 +563,16 @@ mod tests {
             after.iter().any(|line| line.contains(encoded)),
             "a forgotten value is no longer known: {after:?}"
         );
+
+        // The log crate cannot uninstall a logger, so leave the installed one
+        // inert for the rest of the test binary: restore the previous level so
+        // no further record is dispatched, and keep the channel receiver alive
+        // (the sender lives in the logger) so a stray record can never fail the
+        // sink — a failed fern sink dumps every record to stderr through
+        // backup_logging, which floods the CI log and overflows the sequential
+        // test runner's spawnSync buffer (ENOBUFS).
+        log::set_max_level(previous_level);
+        Box::leak(Box::new(receiver));
     }
 
     fn write_archive(dir: &Path, name: &str, bytes: usize, age_secs: u64) {
