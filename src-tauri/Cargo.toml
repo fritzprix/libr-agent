@@ -75,7 +75,7 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["sha2", "hmac
 html-escape = "0.3"
 html2md = "0.2"           # HTML to Markdown conversion
 tiktoken-rs = "0.12"       # OpenAI tokenizer for accurate token-based pagination
-warp = "0.3"
+warp = "0.4"
 dashmap = "6.2"
 regex = "1"
 cuid2 = "0.1.6"
