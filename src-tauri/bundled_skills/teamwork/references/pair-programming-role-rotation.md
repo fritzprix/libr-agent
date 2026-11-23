@@ -5,7 +5,7 @@ Guidelines for turn execution and role-swapping in the Pair Programming workflow
 ## 📌 Role Definitions
 
 * **Driver**
-   - **Allowed Actions:** File writes and edits (`write_file`, `replace_file_content`).
+   - **Allowed Actions:** File writes and edits (`workspace__writeFile`, `workspace__editFile`, `workspace__strReplace`).
    - **Focus:** Implementation logic, translating Navigator's guidelines into code.
    
 * **Navigator**

@@ -31,7 +31,7 @@ LibrAgent provides a **desktop product** for these tasks:
 | Traditional Setup                            | With LibrAgent                                                                                                                   |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Edit MCP configuration files manually        | **Extensions** — One-click presets (GitHub, Brave Search, Filesystem) and import from Cursor, VS Code, Claude Code, and Windsurf |
-| Assemble multi-agent systems from code       | **Standard coordination patterns** as bundled skills (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`)         |
+| Assemble multi-agent systems from code       | **Standard coordination patterns** as bundled skills (`teamwork` (pipeline, hub-and-spoke), `divide-conquer`, `consensus-delegation`)         |
 | Restricted to one provider model and toolset | **Choose your LLM** (API keys or local [Ollama](https://ollama.com)) and your tool stack with MIT, local-first architecture      |
 
 [Download the latest release](https://github.com/fritzprix/libr-agent/releases/latest) · [5-minute onboarding](#the-5-minute-onboarding-path)
@@ -55,7 +55,7 @@ LibrAgent provides a **desktop product** for these tasks:
 ### 3. Select a coordination pattern without code assembly
 
 - Describe your workflow, or attach a skill directly by name:
-  - _"@skill:pipeline — research, draft, and review; generate one final report"_
+  - _"@skill:teamwork pipeline — research, draft, and review; generate one final report"_
   - _"@skill:divide-conquer — divide this task into independent steps and merge the results"_
 - Coordination patterns are packaged skills that do not require external SDK setup. See [Sub-agents & orchestration](docs/user/guides/sub-agents.md).
 
@@ -72,11 +72,11 @@ Select a pattern that matches the structure of your task, then execute it from t
 
 | Skill                                | Pattern             | When to use                                                                |
 | ------------------------------------ | ------------------- | -------------------------------------------------------------------------- |
-| `pipeline`                           | Sequential stages   | Output from each step supplies the next step (research → draft → review)   |
-| `hub-spoke`                          | Hub-and-spoke       | One coordinator delegates tasks to multiple specialized workers            |
+| `teamwork` (pipeline)                           | Sequential stages   | Output from each step supplies the next step (research → draft → review)   |
+| `teamwork` (hub-and-spoke)                          | Hub-and-spoke       | One coordinator delegates tasks to multiple specialized workers            |
 | `divide-conquer`                     | Parallel split      | Divide work into independent tasks, then merge the results                 |
 | `consensus-delegation`               | Multi-perspective   | Send the same question to multiple specialists, then reconcile differences |
-| `gatekeeper` / `pair-programming`    | Review loops        | Enforce strict code review or collaborative two-agent programming          |
+| `delegation-eval-loop` (gatekeeper) / `teamwork` (pair programming)    | Review loops        | Enforce strict code review or collaborative two-agent programming          |
 | `delegate`                           | Lightweight handoff | Run one child session with lineage tracking                                |
 | `teamwork` → `org`                   | Persistent team     | Create durable multi-agent teams with shared guidelines                    |
 | `schedule` / `loop` / `call-me-back` | Time & events       | Execute cron schedules, in-session delays, or resume on process events     |
@@ -124,7 +124,7 @@ Long-running sessions maintain stability through context compaction, loop preven
 
 ### Non-framework power user — Standard orchestration patterns
 
-1. Enter `@skill:pipeline` (or `hub-spoke` / `divide-conquer`) to specify workflow structure.
+1. Enter `@skill:teamwork pipeline` (or `teamwork` (hub-and-spoke) / `divide-conquer`) to specify workflow structure.
 2. Agents coordinate according to the selected pattern.
 3. Review the consolidated deliverable in your workspace without maintaining external framework code.
 
@@ -176,7 +176,7 @@ Download the latest installer from the **[Releases page](https://github.com/frit
 
 **Next — Coordination and automation**
 
-- _"@skill:pipeline — research, draft, then review; save one final report."_
+- _"@skill:teamwork pipeline — research, draft, then review; save one final report."_
 - _"Prepare a teamwork workspace for this repo."_
 - _"Set up a scheduled daily competitor brief at 7am."_ (or launch the Morning Briefing recipe)
 
@@ -185,7 +185,7 @@ Download the latest installer from the **[Releases page](https://github.com/frit
 - _"Import my MCP servers from Cursor and show me what was added."_
 - _"Install the GitHub MCP preset and attach it to a coding agent."_
 - _"Review this workspace, then write findings to `DELIVERABLE.md`."_
-- _"@skill:pipeline — research this topic, draft a summary, then review; save the final report."_
+- _"@skill:teamwork pipeline — research this topic, draft a summary, then review; save the final report."_
 - _"Set up a scheduled daily competitor brief at 7am."_
 
 ### Developer setup

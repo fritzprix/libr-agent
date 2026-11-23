@@ -1,21 +1,18 @@
----
-name: orch-loop
-description: "Run an existing LibrAgent org on a clock: the org root acts as PM and each tick hands work to org members (`/orch-loop 10m slots: 3`). Use when the user asks to run an org continuously or triggers `/orch-loop`."
----
+# Orch Loop (org reference)
 
-# Orch Loop
+Run an existing org on a clock: the org root acts as PM, and each tick hands board work to org members. Use when the user asks to run an org continuously (for example "run the org every 10 minutes with 3 members at a time").
 
 The org scaffold is the operating contract: `agents.md`, `MISSION.md`, `ROLES.md`, `coordination/`, role skills, and `@teamwork/.libragent/teamwork.json`. Roles, the board, how status is recorded or synced, and the definition of done all come from it. An explicit user instruction replaces the matching part of the scaffold.
 
-## Invocation
+## Parameters
 
-`/orch-loop <interval> slots: <N>`: `interval` is the root tick period; `slots` is the number of members working at once. Record `slots` in `coordination/DECISIONS.md` on first run; ask once if it is missing. `slots + 1` fits the app's active-agent limit (default 4).
+Get two values from the user request: `interval` (the root tick period) and `slots` (the number of members working at once). This is not a slash command; the user asks in plain words. Record `slots` in `coordination/DECISIONS.md` on first run; ask once if it is missing. `slots + 1` fits the app's active-agent limit (default 4).
 
 ## Start
 
-1. Read `@teamwork/.libragent/teamwork.json`. The current session is `executionSubstrate.orgLineage.rootSessionId`; otherwise use `org`.
+1. Read `@teamwork/.libragent/teamwork.json`. The current session must be `executionSubstrate.orgLineage.rootSessionId`; otherwise create or resume the org with the main `org` workflow first.
 2. Read `agents.md`, `MISSION.md`, `ROLES.md`, and `coordination/`.
-3. Schedule the tick with `loop`: one `scheduled_task__scheduleCallback(message, cronExpression)` on the root. Reuse the root callback shown by `scheduled_task__listScheduledTasks()`.
+3. Schedule the tick on the root session (see the `loop` skill): one `scheduled_task__scheduleCallback(message, cronExpression)` on the root. Reuse the root callback shown by `scheduled_task__listScheduledTasks()`. To stop the loop, delete or pause that callback (`scheduled_task__deleteScheduledTask` / `scheduled_task__toggleScheduledTask`).
 
 ## Tick
 

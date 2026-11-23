@@ -26,7 +26,7 @@ App-local under `{appData}/harness-lessons/<scopeId>/` (outside project git).
 Scope: `org-<orgRootSessionId>` when in org lineage, else `ws-<workspaceHash>`.  
 Harness injects non-empty content into system prompt as `## Active Operational Lessons` on the next LLM turn.
 
-Specialist skills own optional secondary mutations (boost, org-restructure, …).  
+Specialist skills own optional secondary mutations (boost, `org` restructure, …).  
 Do not invent a parallel org model.
 
 ## Not This Skill
@@ -35,7 +35,7 @@ Do not invent a parallel org model.
 | --- | --- |
 | **teamwork** | First-time scaffold / choose substrate |
 | **org** | Create org, spawn/resume org members |
-| **org-restructure** | Apply role/constitution structural changes |
+| **org** (`references/org-restructure.md`) | Apply role/constitution structural changes |
 | **delegation-eval-loop** | Grade one child sprint (not fleet learning) |
 | **boost** / **recruit** | Tune or create assistant configs only |
 | **schedule** / **loop** | Recurring wake-ups (cadence only) |
@@ -133,7 +133,7 @@ Before declaring the cycle complete:
 
 ### 6. Optional secondary routes
 
-After the enzyme step, top remaining actions may go to boost / org-restructure / delegation-eval-loop / schedule — see routing table. Keep ≤2 secondary actions.
+After the enzyme step, top remaining actions may go to boost / `org` restructure / delegation-eval-loop / schedule — see routing table. Keep ≤2 secondary actions.
 
 ## Cadence (optional)
 

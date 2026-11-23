@@ -1,23 +1,31 @@
 ---
 name: wiki-maintainer
 description: >
-  Use when the user asks to mine recent sessions for recurring agent failures,
-  write durable diagnostic patterns, maintain the global skill-evolution wiki,
-  or bootstrap a recurring Scheduled Task so Wiki Maintainer keeps running
-  without further commands. Triggers on "update the skill wiki", "record this
-  failure pattern", "analyze my sessions for skill gaps", "알아서 돌려",
-  "매일 wiki", "자동으로 정리", or "wiki-maintainer".
+  Mine sessions for recurring agent failures into the global skill-evolution
+  wiki, propose one atomic SKILL.md patch from wiki patterns, or bootstrap a
+  recurring Scheduled Task for it. Triggers: "update the skill wiki", "record
+  this failure pattern", "analyze my sessions for skill gaps", "propose a skill
+  fix", "patch this skill from the wiki", "skill-proposer", "알아서 돌려", "매일 wiki".
 ---
 
 # Wiki Maintainer
 
 Turn **past session history** into durable patterns in the **host-global** wiki
 so **later sessions on this machine** can reuse them (Windows, macOS, and Linux).
-Meta workflow only: do not inject wiki files into a normal task agent. Skill
-patches go through **skill-proposer**.
+Meta workflow only: do not inject wiki files into a normal task agent.
+
+## Choose the procedure
+
+| Need | Procedure |
+| --- | --- |
+| Mine sessions, write or update wiki patterns, bootstrap the recurring wake | Workflow below |
+| Turn a wiki pattern into **one** atomic `SKILL.md` change and record Accept/Reject in the skill-impact ledger | [skill-proposer.md](references/skill-proposer.md) |
+
+Do mining first. Propose a skill change only when a pattern has enough evidence.
 
 **Preferred UX:** one bootstrap chat → create a global Scheduled Task that wakes
 **Wiki Maintainer** on a cron. See [autonomous-loop.md](references/autonomous-loop.md).
+Skill proposal: [skill-proposer.md](references/skill-proposer.md), [skill-proposer-checklist.md](references/skill-proposer-checklist.md).
 
 ## Prerequisites
 
@@ -59,7 +67,6 @@ Templates: [wiki-layout.md](references/wiki-layout.md),
 | Need | Use |
 | --- | --- |
 | Facts / preferences into the knowledge graph | **knowledge-distiller** |
-| Propose a concrete `SKILL.md` patch | **skill-proposer** |
 | One-shot clock delay inside this chat only | **loop** |
 | Wait for process/ticket/webhook completion | **call-me-back** |
 | Create/update the recurring wake | **schedule** (see autonomous-loop) |
@@ -109,8 +116,8 @@ Structure: [pattern-template.md](references/pattern-template.md).
 
 ### 5. Stop conditions
 
-- Do not edit `SKILL.md` here — hand off to **skill-proposer**.
-- On scheduled runs, skill-proposer may **Propose** only; never Accept without
+- Do not edit `SKILL.md` in the mining workflow — use [skill-proposer.md](references/skill-proposer.md).
+- On scheduled runs, the skill proposal may **Propose** only; never Accept without
   an interactive user Accept.
 - No evaluation-task answers or hidden grader hints.
 - Only record what `history__*` returned.

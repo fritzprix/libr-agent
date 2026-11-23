@@ -25,7 +25,7 @@ Redo your decomposition if any of the following apply:
 * **Bad:** 
   - Subtask A: "Design API specification."
   - Subtask B: "Implement frontend using Subtask A's API specs."
-* **Fix:** Execute sequentially (use pipeline) or merge into a single subtask.
+* **Fix:** Execute sequentially (use the teamwork pipeline pattern) or merge into a single subtask.
 
 ### 2. File Modification Conflict (Write-Write)
 * **Bad:**

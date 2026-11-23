@@ -1,14 +1,6 @@
----
-name: pipeline
-description: >
-  Execute sequential, stage-based assembly line tasks where the output of one stage
-  becomes the input of the next stage. Useful for progressive refinement workflows
-  like Research -> Draft -> Review -> Format.
-  Not for parallel execution (use divide-conquer) or consensus (use consensus-delegation).
-  Triggers: "파이프라인", "순차 처리", "단계별 처리", "pipeline", "sequential processing".
----
+# Pipeline (teamwork reference)
 
-# Pipeline
+Session-level pattern of the **teamwork** skill. It needs no team scaffold. Spawn and isolation rules: `delegate`.
 
 The Pipeline pattern organizes tasks into sequential stages, where the output (artifact) of a preceding stage serves as the input instruction/context for the next stage.
 
@@ -34,10 +26,10 @@ Input ──► [ Stage A ] ──► (Artifacts) ──► [ Stage B ] ──�
 - **Sequential Assignments**: Use `agent__messageToSession` with `waitForResponse=true` for a reused child, `agent__spawnSession` with `waitForResult=true` for a new child, or `agent__checkSession(sessionId, wait=true)` to synchronize.
 - **Context Filtering**: Avoid passing the entire conversation logs of previous stages to prevent context bloat. Only pass the **summarized markdown text and file paths**.
 
-See [pipeline-specs.md](references/pipeline-specs.md) for details.
+See [pipeline-specs.md](pipeline-specs.md) for details.
 
 ## References
 
-- [Pipeline specs](references/pipeline-specs.md)
-- [Handover templates](references/handover-templates.md)
-- [Failure recovery](references/failure-recovery.md)
+- [Pipeline specs](pipeline-specs.md)
+- [Handover templates](pipeline-handover-templates.md)
+- [Failure recovery](pipeline-failure-recovery.md)

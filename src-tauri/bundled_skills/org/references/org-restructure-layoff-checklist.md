@@ -6,7 +6,7 @@ Remove a role from a living org without dissolving the org.
 
 - User wants to drop a specialist role (e.g. "we don't need a separate researcher anymore")
 - Role scope was absorbed by the coordinator
-- Duplicate role is being removed in favor of a merge (see [merge-checklist.md](merge-checklist.md) instead if combining)
+- Duplicate role is being removed in favor of a merge (see [merge-checklist.md](org-restructure-merge-checklist.md) instead if combining)
 
 ## Steps
 

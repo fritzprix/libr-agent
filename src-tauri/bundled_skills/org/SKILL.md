@@ -1,6 +1,6 @@
 ---
 name: org
-description: Run explicit org-based teamwork in LibrAgent. Use when collaboration needs durable org identity, org-visible child sessions, org-root resume behavior, or clear parent/sibling org context while preserving normal parent workspace inheritance.
+description: "Run, restructure, or schedule an explicit LibrAgent org: durable org identity, org-visible members, and root-session resume. Use to create or run an org, add/remove/merge roles or update its constitution, or run the org on a recurring tick (orch loop). Triggers: org, 조직, org restructure, add role, layoff role, orch loop, run the org continuously."
 ---
 
 # Org
@@ -8,8 +8,17 @@ description: Run explicit org-based teamwork in LibrAgent. Use when collaboratio
 An org is a long-lived team: one root session and a stable set of members, reused across runs.
 
 Use `teamwork` first when the workspace constitution is not ready.
-Use `org-restructure` when the org already exists and roles or constitution files need to change (add, layoff, merge, agents.md updates).
 Use `postmortem-improve` after missions or repeated failures to capture lessons and route durable org improvements.
+
+## Choose the procedure
+
+| Need | Procedure |
+| --- | --- |
+| Create the org, spawn or reuse members, resume through the root | Workflow below |
+| The org exists and roles or constitution files must change (add, layoff, merge roles; `agents.md` / `MISSION.md` updates; retire members) | [org-restructure.md](references/org-restructure.md) |
+| The org must keep working on a recurring tick: the root acts as PM and hands board items to members | [orch-loop.md](references/orch-loop.md) |
+
+Do not restructure during bootstrap; create the org first. Start an orch loop only after the board and roles exist.
 
 ## Workflow
 
@@ -50,5 +59,6 @@ Use `postmortem-improve` after missions or repeated failures to capture lessons 
 ## References
 
 - [Org patterns and tool call examples](references/org-patterns.md)
-- Living org changes (roles, constitution): use bundled skill `org-restructure`
+- [Org restructure](references/org-restructure.md) — [impact analysis](references/org-restructure-impact-analysis.md), [layoff](references/org-restructure-layoff-checklist.md), [merge](references/org-restructure-merge-checklist.md), [constitution update](references/org-restructure-constitution-update.md)
+- [Orch loop (scheduled org tick)](references/orch-loop.md)
 - After-action learning / continuous improvement: use bundled skill `postmortem-improve`

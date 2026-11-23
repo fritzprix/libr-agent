@@ -136,7 +136,7 @@ Users can also manage these from the session Planning panel.
 - **`schedule`** — global cron that survives beyond the current session
 - **`delegate`** — spawn a child session now
 - **`teamwork`** — multi-agent workspace constitution; not needed for simple loops
-- **`gatekeeper`** — Creator–Reviewer quality gate for backlog cycles
+- **`delegation-eval-loop`** — Creator–Reviewer quality gate (gatekeeper pattern) for backlog cycles
 
 ## User guide
 

@@ -13,8 +13,8 @@ Map each postmortem actionable to **one** route. Apply Top-1 enzyme first; backl
 
 | Symptom / finding | Durable change | Skill | Notes |
 | --- | --- | --- | --- |
-| Role missing, duplicate, or wrong owner | Edit `ROLES.md` / `MISSION.md`; reassign KANBAN | **org-restructure** | Org must already exist |
-| Constitution vague (`@teamwork/agents.md` handoff rules) | Tighten agents.md + DECISIONS | **org-restructure** | Refresh next step |
+| Role missing, duplicate, or wrong owner | Edit `ROLES.md` / `MISSION.md`; reassign KANBAN | **org** (restructure) | Org must already exist |
+| Constitution vague (`@teamwork/agents.md` handoff rules) | Tighten agents.md + DECISIONS | **org** (restructure) | Refresh next step |
 | No teamwork artifacts / wrong framework | Scaffold or re-scaffold | **teamwork** | Then **org** if lineage needed |
 | Org identity / spawn / resume confusion | Fix org operating practice | **org** | Do not recreate org casually |
 | Assistant has wrong/missing tools for its role | Update config tool lists | **boost** | Full replace of `externalMcpServers` |
@@ -32,7 +32,7 @@ Is the failure a deterministic tool/contract/environment defect?
 
 Need secondary structural/config change?
   teamwork missing and user wants multi-agent → teamwork
-  org roles/constitution → org-restructure
+  org roles/constitution → org (restructure reference)
   assistant tools → boost / recruit
   eval soft-pass habit → delegation-eval-loop
   workspace agents.md (user asked) → agent-init
@@ -51,5 +51,5 @@ Need secondary structural/config change?
 - Calling LESSONS Done while only writing POSTMORTEMS/ or KANBAN
 - Using LESSONS to paper over `contract_lie` / handler bugs
 - Defaulting to workspace `agents.md` (git dirty)
-- Applying boost + recruit + org-restructure in one vague "cleanup"
+- Applying boost + recruit + org restructure in one vague "cleanup"
 - Requiring org/teamwork before solo learning can land

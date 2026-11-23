@@ -15,7 +15,7 @@ Language: [한국어](/) · **English** · [**Download Latest Release (Windows /
 ## Why LibrAgent?
 
 - **Direct desktop UI without manual setup**: Install one-click MCP presets in **Extensions** or import configurations from Cursor, VS Code, Claude Code, and Windsurf.
-- **Built-in multi-agent orchestration**: Run standard coordination patterns (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork`, `schedule`) as bundled skills without assembling framework code.
+- **Built-in multi-agent orchestration**: Run standard coordination patterns (`teamwork` (pipeline, hub-and-spoke), `divide-conquer`, `consensus-delegation`, `teamwork`, `schedule`) as bundled skills without assembling framework code.
 - **Model and stack freedom (Local-First, MIT)**: Connect OpenAI, Anthropic, Gemini, Groq, or local **Ollama** models while keeping your workspace, shell, and browser sessions on your machine.
 
 ---

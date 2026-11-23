@@ -62,7 +62,7 @@ flowchart LR
 5. 다시 고치기 한도에 닿으면 남은 문제를 짧게 알립니다.
 6. 다음 깨울 때까지 쉽니다.
 
-검수 스킬 자체는 [`gatekeeper`](sub-agents.md)를 보세요.
+검수 스킬 자체는 [`delegation-eval-loop` (gatekeeper)](sub-agents.md)를 보세요.
 
 ---
 
@@ -75,7 +75,7 @@ flowchart LR
 | **정해진 시각**에 이 대화로 돌아와 할 일 처리 | `loop`         | “30분마다 ready 이슈 1건 처리해 줘.”             |
 | 빌드·티켓 **완료**·웹훅이 **끝나면** 깨우기   | `call-me-back` | “이 이슈가 닫히면 배포 노트를 써 줘.”            |
 | 채팅을 닫아도 도는 **앱 전체** 일정           | `schedule`     | “매일 9시에 브리핑 어시스턴트를 돌려 줘.”        |
-| 작성 ↔ 검수 품질 확인                        | `gatekeeper`   | “초안을 쓰고 세 가지 기준을 통과할 때까지 돌려.” |
+| 작성 ↔ 검수 품질 확인                        | `delegation-eval-loop` (gatekeeper)   | “초안을 쓰고 세 가지 기준을 통과할 때까지 돌려.” |
 
 칸반·Jira·GitHub Issues는 **할 일 목록**입니다.  
 “티켓이 끝날 때까지 기다리기”를 `loop` 지연으로 짐작하지 마세요. 끝났다는 신호는 [`call-me-back`](call-me-back.md)입니다.
@@ -136,7 +136,7 @@ Jira·GitHub 등을 쓰려면 먼저 [Extensions](extensions.md)에서 MCP를 �
 ### GitHub Issues
 
 ```text
-@skill:loop @skill:gatekeeper
+@skill:loop @skill:delegation-eval-loop gatekeeper
 매시 정각에 이 대화로 돌아와 한 바퀴만 실행해 줘.
 
 규칙:
@@ -154,7 +154,7 @@ Jira·GitHub 등을 쓰려면 먼저 [Extensions](extensions.md)에서 MCP를 �
 ### Jira / 칸반 보드
 
 ```text
-@skill:loop @skill:gatekeeper
+@skill:loop @skill:delegation-eval-loop gatekeeper
 2시간마다 이 대화로 돌아와 보드 "팀 백로그"에서 한 바퀴만 실행해 줘.
 
 규칙:
@@ -173,7 +173,7 @@ Jira·GitHub 등을 쓰려면 먼저 [Extensions](extensions.md)에서 MCP를 �
 오래 가는 팀이면 [teamwork → org](sub-agents.md)로 작성/검수 역할을 나눈 뒤, **대표 대화**에 루프를 겁니다.
 
 ```text
-@skill:teamwork @skill:org @skill:loop @skill:gatekeeper
+@skill:teamwork @skill:org @skill:loop @skill:delegation-eval-loop gatekeeper
 Org 팀의 KANBAN.md를 할 일 목록으로 쓴다.
 매일 10시에 대표 대화에서:
 - To Do 1건을 작성자에게 맡긴다
@@ -201,6 +201,6 @@ Org 팀의 KANBAN.md를 할 일 목록으로 쓴다.
 
 - [끝나면 이어서 진행 (call-me-back)](call-me-back.md) — 완료 신호로 깨우기
 - [자동화 개요](automation.md) · [예약 작업](scheduled-tasks.md) — 앱 전체 일정
-- [서브 에이전트 · 오케스트레이션](sub-agents.md) — `gatekeeper`, Org
+- [서브 에이전트 · 오케스트레이션](sub-agents.md) — `delegation-eval-loop` (gatekeeper), Org
 - [오케스트레이션 실전 예시](orchestration-examples.md) — 복사해 쓰는 짧은 요청
 - [스킬](skills.md) — 번들 스킬 목록

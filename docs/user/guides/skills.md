@@ -114,7 +114,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 하위 에이전트를 나누는 법은 **[서브 에이전트 · 오케스트레이션](sub-agents.md)** 을 보세요.
 
-`delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
+`delegate`, `teamwork`, `org`, `divide-conquer`, `consensus-delegation`, `recruit`, `boost`
 
 ### 일정 · 웨이크
 

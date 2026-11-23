@@ -38,8 +38,8 @@ Run one autonomous skill-evolution pass:
    user corrections since the last wiki log entry; skip chit-chat and prior
    Wiki Maintainer runs).
 3. Upsert evidence-backed patterns; keep single-session findings as draft.
-4. If a pattern is strong enough for a skill change, @skill:skill-proposer for
-   exactly one atomic proposal. Do not Accept patches without an explicit user
+4. If a pattern is strong enough for a skill change, follow [skill-proposer.md](skill-proposer.md)
+   for exactly one atomic proposal. Do not Accept patches without an explicit user
    Accept in a later interactive session — leave the proposal + ledger entry
    for the user to review.
 5. Prepend a short logs.md line summarizing what you did (or "no new patterns").
@@ -51,7 +51,7 @@ Stop when done; do not wait for further user input.
 | Action | Autonomous cron OK? |
 | --- | --- |
 | Wiki init / pattern write / index / log | Yes |
-| skill-proposer draft + impact ledger Propose | Yes |
+| Skill proposal draft + impact ledger Propose | Yes |
 | Accept / apply skill patch permanently | **No** — user Accept only |
 | Delete unrelated skills or widen cron past policy | No |
 

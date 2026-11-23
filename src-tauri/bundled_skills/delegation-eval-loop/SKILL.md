@@ -1,16 +1,11 @@
 ---
 name: delegation-eval-loop
 description: >
-  Generator-evaluator loop for delegated sub-agent work: parent evaluates,
-  child generates. Use layered verification (Deterministic, Invariant Gate,
-  Trajectory/reliability, Semantic), sprint contracts with checkbox acceptance
-  criteria, and targeted re-steers via agent__messageToSession. Use when
-  briefing with strict acceptance criteria, evaluating child results from
-  agent__checkSession, preventing premature "done" without proof, or when
-  delegate routes here for high-stakes handoffs. Triggers: generator-evaluator,
-  generator evaluator, delegation eval, subagent evaluation, verify subagent,
-  delegation loop, eval loop, proof before done, acceptance criteria,
-  delegation-eval-loop.
+  Verify delegated work before accepting it: the parent evaluates a child with
+  layered checks, or a separate reviewer session gates a creator (gatekeeper).
+  Use for strict acceptance criteria, proof before done, or rework loops.
+  Triggers: generator-evaluator, delegation eval, verify subagent, acceptance criteria, gatekeeper,
+  게이트키퍼, 리뷰 루프, 검증 게이트, 품질 검증, reviewer loop, quality gate.
 ---
 
 # Delegation Eval Loop
@@ -18,6 +13,15 @@ description: >
 **Generator–evaluator:** the child session **generates** (implements, researches, edits); the **parent** session **evaluates** and alone decides acceptance. Never treat the child's self-reported success as the final grade.
 
 For spawn, isolation, workspace inheritance, and tool naming, follow **`delegate` first**. This skill owns briefing contracts, layered grading, reject/re-steer, and bounded retries.
+
+## Choose the pattern
+
+| Situation | Pattern |
+| --- | --- |
+| The parent can check the result itself (run tests, inspect diffs, compare to requirements) | **Parent evaluates** — the workflow in this file |
+| The review needs its own context, role, or model, or must stay independent of the parent's plan (strict code review, compliance or style audit, long rework cycles) | **Gatekeeper** — a separate Reviewer session gates a Creator session: [gatekeeper.md](references/gatekeeper.md) |
+
+Default to **Parent evaluates**. It needs fewer sessions and the parent keeps the original requirements. Use **Gatekeeper** only when an independent reviewer adds real value. Both patterns use bounded rework (3–5 cycles) and the same evidence rules below.
 
 ## Core Rules
 
@@ -82,3 +86,9 @@ Templates: [handoff-templates.md](references/handoff-templates.md).
 ### 5. Final Acceptance
 
 When all layers pass, synthesize for the user with verified evidence (commands run, scope clean). Mark which criteria were checked.
+
+## References
+
+- [Evaluation protocol](references/evaluation-protocol.md)
+- [Handoff templates](references/handoff-templates.md)
+- [Gatekeeper pattern](references/gatekeeper.md) — [quality criteria](references/gatekeeper-criteria.md), [rework limit examples](references/gatekeeper-rework-limit-examples.md), [troubleshooting](references/gatekeeper-troubleshooting.md)

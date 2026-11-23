@@ -16,10 +16,10 @@ If one agent is enough, **do not hand off the work**. Make the structure bigger 
 | ---------------------------------------------------- | ------------------------------------ |
 | Give one block of work to another agent              | `delegate`                           |
 | Many tasks that do not depend on each other          | `divide-conquer`                     |
-| The result of one step is the input of the next step | `pipeline`                           |
+| The result of one step is the input of the next step | `teamwork` (pipeline)                           |
 | One question, many points of view                    | `consensus-delegation`               |
-| One leader directs the specialists                   | `hub-spoke`                          |
-| Make, check, and repeat                              | `gatekeeper` ([loop guide](loop.md)) |
+| One leader directs the specialists                   | `teamwork` (hub-and-spoke)                          |
+| Make, check, and repeat                              | `delegation-eval-loop` (gatekeeper) ([loop guide](loop.md)) |
 | A long-term team and the Org view                    | `teamwork` → `org`                   |
 
 ---
@@ -58,12 +58,12 @@ Save each part in the report folder. At the end, join them into one file named S
 
 ---
 
-## Example 3. Write a post in steps (`pipeline`)
+## Example 3. Write a post in steps (`teamwork` (pipeline))
 
 **Use it when**: the result of one step is the input of the next step.
 
 ```text
-@skill:pipeline
+@skill:teamwork pipeline
 Write a blog post with the title "Make a weekly report with a local agent".
 1) Research: at least 5 sources. Save in drafts/01-research.md
 2) First draft: use the research. Save in drafts/02-draft.md
@@ -73,7 +73,7 @@ Write a blog post with the title "Make a weekly report with a local agent".
 
 **What happens**: All steps use the same folder. The next step gets only a summary and the file location, not the whole chat. If the review finds a problem, only the draft step runs again.
 
-**Watch out**: If the steps do not depend on each other, `divide-conquer` is faster than `pipeline`.
+**Watch out**: If the steps do not depend on each other, `divide-conquer` is faster than `teamwork` (pipeline).
 
 ---
 
@@ -104,12 +104,12 @@ The parent asks again **only about the points that conflict**. Here, the conflic
 
 ---
 
-## Example 5. A leader directs the specialists (`hub-spoke`)
+## Example 5. A leader directs the specialists (`teamwork` (hub-and-spoke))
 
 **Use it when**: the work has different jobs, such as research, analysis, and a summary, and one agent must put them together.
 
 ```text
-@skill:hub-spoke
+@skill:teamwork hub-and-spoke
 Make a comparison report for three competing services (A, B, C).
 You are the leader. The workers are: 1 compare the functions, 2 compare the prices, 3 collect what users say.
 Each worker gives only the leader a one-page summary and the source links.
@@ -122,12 +122,12 @@ The leader gets only the summaries. Then the leader writes a comparison table an
 
 ---
 
-## Example 6. Make, check, and make again (`gatekeeper`)
+## Example 6. Make, check, and make again (`delegation-eval-loop` (gatekeeper))
 
 **Use it when**: a notice must follow fixed rules.
 
 ```text
-@skill:gatekeeper
+@skill:delegation-eval-loop gatekeeper
 Let the writer make this month's customer notice.
 The reviewer checks 3 rules: 1 no wrong facts, 2 the most important point is first, 3 each item has no more than two sentences.
 If the notice does not pass in 3 rounds, tell me what is still wrong.
@@ -181,7 +181,7 @@ Make the Org from the team that you just prepared. Start with the research role.
 To change the team later:
 
 ```text
-@skill:org-restructure
+@skill:org restructure
 Join the data analysis role with the research role. Add the approval rules of the editor to the role description.
 ```
 
