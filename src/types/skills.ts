@@ -89,6 +89,32 @@ export interface SkillImportPreview {
   hooksRequireApproval: boolean;
   /** Present when the source carried a `.claude-plugin/plugin.json`. */
   pluginManifest?: PluginManifestSummary;
+  /** Slash commands found under `commands/` (#2922). */
+  commands: PluginCommandPreview[];
+}
+
+/** A plugin slash command shown in the install preview (#2922). */
+export interface PluginCommandPreview {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+}
+
+/**
+ * A plugin slash command available in a session (#2922).
+ * Mirrors Rust `PluginCommandInfo` (camelCase).
+ */
+export interface PluginCommandInfo {
+  plugin: string;
+  command: string;
+  /** Namespaced form, always available: `/<plugin>:<command>`. */
+  invocation: string;
+  /** Bare form `/<command>`, only when the name is unique and not built-in. */
+  bareInvocation?: string;
+  description: string;
+  argumentHint?: string;
+  scope: PluginScope;
+  sourceId: string;
 }
 
 export interface SkillImportResult {

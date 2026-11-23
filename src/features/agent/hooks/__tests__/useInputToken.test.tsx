@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
-import type { SkillMetadata } from '@/types/skills';
+import type { PluginCommandInfo, SkillMetadata } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
 import { useInputToken } from '../useInputToken';
 
@@ -31,6 +31,27 @@ const mockTools: MCPTool[] = [
     name: 'browser',
     description: 'Browser tool',
     inputSchema: { type: 'object' },
+  },
+];
+
+const mockPluginCommands: PluginCommandInfo[] = [
+  {
+    plugin: 'alpha',
+    command: 'hello',
+    invocation: '/alpha:hello',
+    bareInvocation: '/hello',
+    description: 'say hi',
+    argumentHint: '<name>',
+    scope: 'global',
+    sourceId: 'plugin-1',
+  },
+  {
+    plugin: 'beta',
+    command: 'deploy',
+    invocation: '/beta:deploy',
+    description: '',
+    scope: 'session',
+    sourceId: 'plugin-2',
   },
 ];
 
@@ -145,6 +166,52 @@ describe('useInputToken', () => {
 
     rerender({ skills: mockSkills, tools: mockTools });
 
-    expect(result.current.typeResults).toBe(typeResultsBefore);
+    expect(typeResultsBefore).toBe(result.current.typeResults);
+  });
+
+  it('merges plugin commands (bare + namespaced) into command results (#2922)', () => {
+    const { result } = renderHook(() =>
+      useInputToken([], [], mockPluginCommands),
+    );
+
+    act(() => {
+      result.current.onInputChange('/hello', 6);
+    });
+
+    const ids = result.current.commandResults.map((c) => c.id);
+    expect(ids).toContain('/hello');
+    expect(ids).toContain('/alpha:hello');
+    const bare = result.current.commandResults.find((c) => c.id === '/hello');
+    expect(bare?.label).toBe('/hello <name>');
+    expect(bare?.description).toBe('say hi');
+  });
+
+  it('filters namespaced-only plugin commands while typing the colon (#2922)', () => {
+    const { result } = renderHook(() =>
+      useInputToken([], [], mockPluginCommands),
+    );
+
+    act(() => {
+      result.current.onInputChange('/alpha:', 7);
+    });
+
+    const ids = result.current.commandResults.map((c) => c.id);
+    expect(ids).toEqual(['/alpha:hello']);
+    expect(result.current.commandResults[0].description).toBe('say hi');
+  });
+
+  it('falls back to a plugin-sourced description when the command has none (#2922)', () => {
+    const { result } = renderHook(() =>
+      useInputToken([], [], mockPluginCommands),
+    );
+
+    act(() => {
+      result.current.onInputChange('/beta:deploy', 12);
+    });
+
+    const deploy = result.current.commandResults.find(
+      (c) => c.id === '/beta:deploy',
+    );
+    expect(deploy?.description).toBe('Plugin command from beta');
   });
 });

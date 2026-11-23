@@ -474,7 +474,8 @@ pub(super) async fn build_import_preview(
         .as_ref()
         .map(build_hook_preview_entries)
         .unwrap_or_default();
-    let kind = if hooks.is_empty() {
+    let commands = super::plugin_commands::scan_plugin_commands(&prepared.scan_root);
+    let kind = if hooks.is_empty() && commands.is_empty() {
         SkillImportKind::SkillBundle
     } else {
         SkillImportKind::Plugin
@@ -492,6 +493,7 @@ pub(super) async fn build_import_preview(
             version: manifest.version.clone(),
             description: manifest.description.clone(),
         }),
+        commands,
     })
 }
 

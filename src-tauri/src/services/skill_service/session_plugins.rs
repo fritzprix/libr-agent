@@ -412,6 +412,7 @@ mod tests {
             hooks: vec![],
             hooks_require_approval: has_hooks,
             plugin_manifest: None,
+            commands: vec![],
         };
         install_prepared_with_dirs(&fx.dirs, prepared, preview, false, vec![], approve_hooks)
     }

@@ -43,6 +43,7 @@ export function SkillsConflictDialog({
   const { t } = useTranslation('common');
   const hasHooks = (pendingInstall?.preview.hooks.length ?? 0) > 0;
   const discoveredSkills = pendingInstall?.preview.discoveredSkills ?? [];
+  const previewCommands = pendingInstall?.preview.commands ?? [];
   const title = hasHooks
     ? t('settings.skills.installConfirmTitle', 'Review skills and hooks')
     : t('settings.skills.conflictTitle', 'Replace conflicting skills?');
@@ -101,6 +102,31 @@ export function SkillsConflictDialog({
                   ))}
                 </div>
               ) : null}
+              {previewCommands.length > 0 ? (
+                <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-2">
+                  <p className="font-medium">
+                    {t('settings.skills.commandsToInstall', 'Plugin commands')}
+                  </p>
+                  {previewCommands.map((command) => (
+                    <div key={command.name} className="min-w-0 space-y-0.5">
+                      <p className="font-medium font-mono text-xs">
+                        /{command.name}
+                        {command.argumentHint ? (
+                          <span className="text-muted-foreground">
+                            {' '}
+                            {command.argumentHint}
+                          </span>
+                        ) : null}
+                      </p>
+                      {command.description ? (
+                        <p className="text-xs text-muted-foreground">
+                          {command.description}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {hasHooks ? (
                 <div className="rounded-md border bg-muted/20 p-3 text-sm space-y-3">
                   <p className="font-medium">
@@ -120,7 +146,10 @@ export function SkillsConflictDialog({
                         ) : null}
                         <Badge variant="secondary">
                           {hook.executionStatus === 'executed'
-                            ? t('settings.skills.hookStatusExecuted', 'Executed')
+                            ? t(
+                                'settings.skills.hookStatusExecuted',
+                                'Executed',
+                              )
                             : t(
                                 'settings.skills.hookStatusStubbed',
                                 'Not supported',

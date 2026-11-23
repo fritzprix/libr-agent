@@ -42,6 +42,7 @@ function buildPendingInstall(
         },
       ],
       hooksRequireApproval: true,
+      commands: [],
       ...preview,
     },
   };

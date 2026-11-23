@@ -13,6 +13,7 @@ const mockState = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   safeInvoke: vi.fn(),
+  expandPlugin: vi.fn(),
 }));
 
 vi.mock('@paralleldrive/cuid2', () => ({
@@ -53,11 +54,16 @@ vi.mock('@/lib/backend/core', () => ({
   safeInvoke: (...args: unknown[]) => mockState.safeInvoke(...args),
 }));
 
+vi.mock('@/lib/backend/skills', () => ({
+  expandPluginCommand: (...args: unknown[]) => mockState.expandPlugin(...args),
+}));
+
 describe('useChatSubmit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.commitPendingFiles.mockResolvedValue([]);
     mockState.submit.mockResolvedValue(undefined);
+    mockState.expandPlugin.mockResolvedValue(null);
     mockState.safeInvoke.mockResolvedValue({
       success: true,
       message: 'cleared',
@@ -387,6 +393,69 @@ describe('useChatSubmit', () => {
     expect(mockState.safeInvoke).toHaveBeenLastCalledWith(
       'agent_execute_command',
       { sessionId: 'session-1', commandText: '/plugin uninstall my-plugin' },
+    );
+  });
+
+  it('sends the expanded body as a user message when a plugin command resolves (#2922)', async () => {
+    mockState.expandPlugin.mockResolvedValue('Hello world and all!');
+    const { result } = renderHook(() => useChatSubmit({ ...baseProps() }));
+
+    act(() => {
+      result.current.setInput('/alpha:hello world all');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.expandPlugin).toHaveBeenCalledWith(
+      'session-1',
+      '/alpha:hello world all',
+    );
+    expect(mockState.submit).toHaveBeenCalledTimes(1);
+    const message = mockState.submit.mock.calls[0][0] as {
+      content: { type: string; text: string }[];
+    };
+    expect(message.content[0].text).toBe('Hello world and all!');
+    expect(mockState.safeInvoke).not.toHaveBeenCalledWith(
+      'agent_execute_command',
+      expect.anything(),
+    );
+    expect(result.current.input).toBe('');
+  });
+
+  it('falls through to agent_execute_command when the command is not a plugin command (#2922)', async () => {
+    mockState.expandPlugin.mockResolvedValue(null);
+    const { result } = renderHook(() => useChatSubmit({ ...baseProps() }));
+
+    act(() => {
+      result.current.setInput('/nope');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.expandPlugin).toHaveBeenCalledWith('session-1', '/nope');
+    expect(mockState.submit).not.toHaveBeenCalled();
+    expect(mockState.safeInvoke).toHaveBeenCalledWith(
+      'agent_execute_command',
+      { sessionId: 'session-1', commandText: '/nope' },
+    );
+  });
+
+  it('does not ask the backend to expand built-in command tokens (#2922)', async () => {
+    const { result } = renderHook(() => useChatSubmit({ ...baseProps() }));
+
+    act(() => {
+      result.current.setInput('/clear');
+    });
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(mockState.expandPlugin).not.toHaveBeenCalled();
+    expect(mockState.safeInvoke).toHaveBeenCalledWith(
+      'agent_execute_command',
+      { sessionId: 'session-1', commandText: '/clear' },
     );
   });
 });

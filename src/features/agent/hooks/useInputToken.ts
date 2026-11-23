@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
 import type { SkillMetadata } from '@/types/skills';
+import type { PluginCommandInfo } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
 import type { Playbook } from '@/types/playbook';
 
@@ -49,8 +50,9 @@ export const BUILTIN_TOKEN_TYPES: TokenType[] = [
 const TYPE_RE = /@([\w]*)$/;
 /** Regex: matches `@word:rest` (typing arg for a type). */
 const ARG_RE = /@([\w]+):([\S]*)$/;
-/** Regex: matches `/command` with potential spaces. */
-const COMMAND_RE = /(?<!\S)\/([\w\s-]*)$/;
+/** Regex: matches `/command` with potential spaces (`:` included so
+ *  namespaced plugin commands like `/myplugin:hello` keep typing). */
+const COMMAND_RE = /(?<!\S)\/([\w\s:-]*)$/;
 
 export interface UseInputTokenResult {
   /** Current UX stage. */
@@ -88,6 +90,7 @@ export interface UseInputTokenResult {
 export function useInputToken(
   skills: SkillMetadata[],
   tools: MCPTool[] = [],
+  pluginCommands: PluginCommandInfo[] = [],
 ): UseInputTokenResult {
   const [stage, setStage] = useState<TokenStage>({ kind: 'idle' });
   // Keep a ref for non-reactive use in callbacks
@@ -219,7 +222,7 @@ export function useInputToken(
     updatedAt: Date;
   })[] = [];
 
-  // Filter slash command results
+  // Filter slash command results (built-ins first, then plugin commands).
   const commandResults = useMemo(() => {
     const commands = [
       {
@@ -266,6 +269,26 @@ export function useInputToken(
         label: '/plugin list',
         description: 'List active global and session plugins',
       },
+      ...pluginCommands.flatMap((command) => {
+        const hint = command.argumentHint ? ` ${command.argumentHint}` : '';
+        const description =
+          command.description || `Plugin command from ${command.plugin}`;
+        const entries = [
+          {
+            id: command.invocation,
+            label: `${command.invocation}${hint}`,
+            description,
+          },
+        ];
+        if (command.bareInvocation) {
+          entries.push({
+            id: command.bareInvocation,
+            label: `${command.bareInvocation}${hint}`,
+            description,
+          });
+        }
+        return entries;
+      }),
     ];
     if (stage.kind === 'typing-command') {
       return commands.filter((c) =>
@@ -273,7 +296,7 @@ export function useInputToken(
       );
     }
     return [];
-  }, [stage]);
+  }, [stage, pluginCommands]);
 
   return {
     stage,

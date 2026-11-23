@@ -52,6 +52,7 @@ function preview(overrides: Partial<SkillImportPreview>): SkillImportPreview {
     conflicts: [],
     hooks: [],
     hooksRequireApproval: false,
+    commands: [],
     ...overrides,
   };
 }

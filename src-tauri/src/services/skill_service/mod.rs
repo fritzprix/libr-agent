@@ -4,6 +4,7 @@ mod directories;
 mod github;
 mod importing;
 mod outbox;
+mod plugin_commands;
 mod plugin_manifest;
 mod plugin_sources;
 mod scanning;
@@ -14,8 +15,8 @@ pub use cache::{
 };
 pub use contracts::{
     GitHubRepoSpec, HookPreviewEntry, HookPreviewExecutionStatus, ManagedSkillsOverview,
-    PluginSourceOverview, SkillAliasRoot, SkillImportCandidate, SkillImportConflict,
-    SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
+    PluginCommandPreview, PluginSourceOverview, SkillAliasRoot, SkillImportCandidate,
+    SkillImportConflict, SkillImportKind, SkillImportPreview, SkillImportResult, SkillMetadata,
     ASSISTANT_SKILLS_ALIAS_PREFIX, LEGACY_SYSTEM_SKILLS_DIR_NAME,
     MANAGED_SYSTEM_SKILLS_MANIFEST_FILE_NAME, SKILL_FILE_NAME, SYSTEM_SKILLS_ALIAS_PREFIX,
     SYSTEM_SKILLS_DIR_NAME, USER_SKILLS_ALIAS_PREFIX, USER_SKILLS_DIR_NAME,
@@ -37,6 +38,7 @@ pub use importing::{
     reset_user_skills, skill_storage_directory_name,
 };
 pub use outbox::{install_outbox, SKILL_OUTBOX_RELATIVE_DIR};
+pub use plugin_commands::{expand_plugin_command, list_plugin_commands, PluginCommandInfo};
 pub use plugin_sources::{delete_plugin_source, list_plugin_source_overviews};
 pub use scanning::{
     copy_dir_recursive, get_skill_content, get_skill_content_from_roots, parse_skill_metadata,

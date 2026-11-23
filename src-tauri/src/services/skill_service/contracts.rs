@@ -121,6 +121,19 @@ pub struct PluginManifestSummary {
     pub description: Option<String>,
 }
 
+/// A slash command declared by a plugin's `commands/` directory (#2922),
+/// shown in the install preview. `name` is plugin-local (`git:commit` for
+/// `commands/git/commit.md`); the chat input prefixes the plugin name.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginCommandPreview {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub argument_hint: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillImportPreview {
@@ -132,6 +145,9 @@ pub struct SkillImportPreview {
     /// `.claude-plugin/plugin.json` summary, when the source carried one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_manifest: Option<PluginManifestSummary>,
+    /// Slash commands found under `commands/` (#2922).
+    #[serde(default)]
+    pub commands: Vec<PluginCommandPreview>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

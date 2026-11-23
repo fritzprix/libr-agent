@@ -9,6 +9,7 @@ import type { MCPContent } from '@/lib/mcp';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { safeInvoke } from '@/lib/backend/core';
+import { expandPluginCommand } from '@/lib/backend/skills';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { isExecutionMode } from '@/lib/generated/execution-mode';
 import { parsePluginInstallCommand } from '../lib/plugin-command';
@@ -26,6 +27,23 @@ function parsePermissionCommand(commandText: string): ExecutionMode | null {
 
   const mode = match[1].toLowerCase();
   return isExecutionMode(mode) ? mode : null;
+}
+
+/**
+ * First tokens owned by the built-in parser (mirrors the reserved list in
+ * `skill_service::plugin_commands`). A plugin can never claim these, so
+ * they go straight to `agent_execute_command` without an expand round-trip.
+ */
+const RESERVED_COMMAND_TOKENS = new Set([
+  'clear',
+  'reload',
+  'permission',
+  'plugin',
+]);
+
+function isReservedCommandToken(text: string): boolean {
+  const firstToken = text.trim().split(/\s+/)[0] ?? '';
+  return RESERVED_COMMAND_TOKENS.has(firstToken.slice(1).toLowerCase());
 }
 
 interface UseChatSubmitProps {
@@ -116,8 +134,23 @@ export function useChatSubmit({
         return;
       }
 
+      // Expand plugin slash commands into a normal user message (#2922).
+      // Built-in commands are never shadowed: the backend returns null for
+      // them, so they keep flowing through agent_execute_command below.
+      let promptText = messageText;
+      if (promptText.startsWith('/') && !isReservedCommandToken(promptText)) {
+        try {
+          const expanded = await expandPluginCommand(session.id, promptText);
+          if (typeof expanded === 'string') {
+            promptText = expanded;
+          }
+        } catch (err) {
+          logger.warn('Plugin command expansion lookup failed', err);
+        }
+      }
+
       // Intercept CLI command execution (allowed before Session Ready)
-      if (messageText.startsWith('/')) {
+      if (promptText.startsWith('/')) {
         isSubmittingRef.current = true;
         setIsSubmitting(true);
         const currentInput = input;
@@ -125,7 +158,7 @@ export function useChatSubmit({
         // Optimistic UI clear: do not wait for invoke. Backend also emits
         // resourceUpdated(clear); without this, a slow command looks like a
         // failed clear and users re-issue `/clear` (nested reset race).
-        if (messageText === '/clear') {
+        if (promptText === '/clear') {
           onClearSession?.();
           clearPendingFiles();
         }
@@ -136,12 +169,12 @@ export function useChatSubmit({
             message: string;
           }>('agent_execute_command', {
             sessionId: session.id,
-            commandText: messageText,
+            commandText: promptText,
           });
           if (result.success) {
-            if (messageText !== '/clear') {
+            if (promptText !== '/clear') {
               clearPendingFiles();
-              const permissionMode = parsePermissionCommand(messageText);
+              const permissionMode = parsePermissionCommand(promptText);
               if (permissionMode) {
                 onExecutionModeChange?.(permissionMode);
               }
@@ -175,12 +208,12 @@ export function useChatSubmit({
       if (
         !hasPersistedMessages &&
         pendingFiles.length === 0 &&
-        messageText.length >
+        promptText.length >
           settings.maxInputContext * OBVIOUS_OVERSIZE_CHAR_MULTIPLIER
       ) {
         logger.warn('Rejected obvious oversize first input in ChatInput', {
           sessionId: session.id,
-          inputLength: messageText.length,
+          inputLength: promptText.length,
           maxInputContext: settings.maxInputContext,
           obviousOversizeCharLimit:
             settings.maxInputContext * OBVIOUS_OVERSIZE_CHAR_MULTIPLIER,
@@ -240,7 +273,7 @@ export function useChatSubmit({
         sessionId: session.id,
         threadId: session.id,
         role: 'user',
-        content: [{ type: 'text', text: messageText }, ...inlineContent],
+        content: [{ type: 'text', text: promptText }, ...inlineContent],
         createdAt: new Date(),
         updatedAt: new Date(),
       };

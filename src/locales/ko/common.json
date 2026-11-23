@@ -902,6 +902,7 @@
       "installConfirmTitle": "스킬 및 훅 검토",
       "installConfirmDescription": "설치할 스킬과 세션 중 승인된 플러그인 훅 실행 여부를 확인하세요.",
       "skillsToInstall": "설치할 스킬",
+      "commandsToInstall": "플러그인 명령",
       "hooksToInstall": "플러그인 훅",
       "hookStatusExecuted": "실행됨",
       "hookStatusStubbed": "지원되지 않음",

@@ -79,6 +79,7 @@ describe('useSkillsManagementPanel scoped-skills revalidation', () => {
       discoveredSkills: [],
       hooks: [],
       hooksRequireApproval: false,
+      commands: [],
     });
     skillsBackend.installGitHubSkills.mockResolvedValue({
       importedNames: ['new-skill'],

@@ -1,6 +1,7 @@
 import { safeInvoke } from './core';
 import type {
   ManagedSkillsOverview,
+  PluginCommandInfo,
   PluginSourceOverview,
   SkillImportPreview,
   SkillImportResult,
@@ -143,6 +144,28 @@ export async function listSessionPlugins(
 ): Promise<SessionPluginsOverview> {
   return safeInvoke<SessionPluginsOverview>('list_session_plugins', {
     sessionId,
+  });
+}
+
+/** Slash commands contributed by plugins active in a session (#2922). */
+export async function listPluginCommands(
+  sessionId: string,
+): Promise<PluginCommandInfo[]> {
+  return safeInvoke<PluginCommandInfo[]>('list_plugin_commands', { sessionId });
+}
+
+/**
+ * Expands a plugin slash command into its prompt body (#2922).
+ * `null` means the text is not a plugin command (built-ins are never
+ * shadowed and always fall through to `agent_execute_command`).
+ */
+export async function expandPluginCommand(
+  sessionId: string,
+  commandText: string,
+): Promise<string | null> {
+  return safeInvoke<string | null>('expand_plugin_command', {
+    sessionId,
+    commandText,
   });
 }
 

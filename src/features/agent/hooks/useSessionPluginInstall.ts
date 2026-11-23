@@ -14,7 +14,7 @@ import {
 } from '@/features/skills/skills-management-utils';
 import type { SkillImportConflict } from '@/types/skills';
 import { isScopedSkillsKey } from './useScopedSkills';
-import { isSessionPluginsKey } from './useSessionPlugins';
+import { isPluginCommandsKey, isSessionPluginsKey } from './useSessionPlugins';
 
 const logger = getLogger('useSessionPluginInstall');
 
@@ -52,7 +52,11 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
   );
 
   const refreshAfterChange = useCallback(async () => {
-    await Promise.all([mutate(isScopedSkillsKey), mutate(isSessionPluginsKey)]);
+    await Promise.all([
+      mutate(isScopedSkillsKey),
+      mutate(isSessionPluginsKey),
+      mutate(isPluginCommandsKey),
+    ]);
   }, [mutate]);
 
   const runInstall = useCallback(

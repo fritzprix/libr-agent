@@ -902,6 +902,7 @@
       "installConfirmTitle": "Review skills and hooks",
       "installConfirmDescription": "Confirm which skills to install and whether approved plugin hooks may run during your sessions.",
       "skillsToInstall": "Skills to install",
+      "commandsToInstall": "Plugin commands",
       "hooksToInstall": "Plugin hooks",
       "hookStatusExecuted": "Executed",
       "hookStatusStubbed": "Not supported",

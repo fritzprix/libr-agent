@@ -1,5 +1,6 @@
 use crate::services::skill_service::{
-    self, PluginSourceOverview, SessionPluginsOverview, SkillImportPreview, SkillImportResult,
+    self, PluginCommandInfo, PluginSourceOverview, SessionPluginsOverview, SkillImportPreview,
+    SkillImportResult,
 };
 
 #[tauri::command]
@@ -126,4 +127,20 @@ pub async fn install_session_plugin(
 #[tauri::command]
 pub async fn list_session_plugins(session_id: String) -> Result<SessionPluginsOverview, String> {
     skill_service::list_session_plugins(&session_id)
+}
+
+/// Slash commands contributed by plugins active in a session (#2922).
+#[tauri::command]
+pub async fn list_plugin_commands(session_id: String) -> Result<Vec<PluginCommandInfo>, String> {
+    skill_service::list_plugin_commands(&session_id)
+}
+
+/// Expand a plugin slash command into its prompt body (#2922). `None` means
+/// the text is not a plugin command (built-ins are never shadowed).
+#[tauri::command]
+pub async fn expand_plugin_command(
+    session_id: String,
+    command_text: String,
+) -> Result<Option<String>, String> {
+    skill_service::expand_plugin_command(&session_id, &command_text)
 }

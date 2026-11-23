@@ -35,6 +35,7 @@ import {
 } from '@/context/DnDContext';
 import { useScopedSkills } from '../hooks/useScopedSkills';
 import { useSessionAgentTools } from '../hooks/useSessionAgentTools';
+import { usePluginCommands } from '../hooks/useSessionPlugins';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useTextareaAutosize } from '@/hooks/useTextareaAutosize';
 import { AGENT_ATTACHMENT_PICKER_ACCEPT } from '../lib/attachment-picker';
@@ -81,6 +82,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     sessionId: session?.id,
   });
   const { availableTools: tools } = useSessionAgentTools();
+  const { commands: pluginCommands } = usePluginCommands(session?.id);
 
   const {
     stage,
@@ -92,7 +94,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onTypeSelect,
     onArgSelect,
     onDismiss,
-  } = useInputToken(skills, tools);
+  } = useInputToken(skills, tools, pluginCommands);
 
   // null = dropdown not active; string (incl. '') = active with current query
   const fileQuery =

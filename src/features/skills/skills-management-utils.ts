@@ -12,6 +12,7 @@ export function shouldPromptSkillInstall(
   return (
     preview.kind === 'plugin' ||
     preview.hooks.length > 0 ||
+    preview.commands.length > 0 ||
     userConflictCount > 0
   );
 }
