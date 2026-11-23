@@ -112,7 +112,62 @@ struct AppendPreview {
     display_lines: String,
 }
 
+/// Read-back attempts after an append when the appended content is not yet
+/// visible, and the wait between attempts. Absorbs transient post-write
+/// visibility lag (observed as a macOS-only flake where the read-back saw
+/// the fully pre-append file, size and lines included).
+const APPEND_PREVIEW_RETRIES: u64 = 10;
+const APPEND_PREVIEW_RETRY_DELAY_MS: u64 = 50;
+
+/// True when the tail bytes of `safe_path` currently equal `appended`.
+/// Because append is verbatim, the appended bytes are always the file tail,
+/// so this proves the append landed in the data the preview will read.
+fn append_is_visible(safe_path: &Path, appended: &[u8]) -> Result<bool, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(safe_path).map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    let need = appended.len() as u64;
+    if len < need {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-(need as i64)))
+        .map_err(|e| e.to_string())?;
+    let mut buf = vec![0u8; appended.len()];
+    file.read_exact(&mut buf).map_err(|e| e.to_string())?;
+    Ok(buf == appended)
+}
+
+/// Read the post-append preview, retrying briefly while the appended content
+/// is not yet visible in a read-back. Guarantees the returned preview really
+/// includes the appended tail, or fails loudly instead of echoing a stale
+/// view of the file.
 fn read_back_append_preview(
+    safe_path: &Path,
+    appended: &str,
+    max_display_lines: usize,
+    max_display_bytes: usize,
+) -> Result<AppendPreview, String> {
+    let mut remaining = APPEND_PREVIEW_RETRIES;
+    loop {
+        if append_is_visible(safe_path, appended.as_bytes())? {
+            return read_back_append_preview_once(safe_path, max_display_lines, max_display_bytes);
+        }
+        if remaining == 0 {
+            return Err(format!(
+                "read-back did not reflect the appended content after {} retries ({total_wait_ms} ms of waiting)",
+                APPEND_PREVIEW_RETRIES,
+                total_wait_ms = APPEND_PREVIEW_RETRIES * APPEND_PREVIEW_RETRY_DELAY_MS,
+            ));
+        }
+        remaining -= 1;
+        std::thread::sleep(std::time::Duration::from_millis(
+            APPEND_PREVIEW_RETRY_DELAY_MS,
+        ));
+    }
+}
+
+fn read_back_append_preview_once(
     safe_path: &Path,
     max_display_lines: usize,
     max_display_bytes: usize,
@@ -434,9 +489,11 @@ impl WorkspaceServer {
                 let max_display_bytes = 51200; // 50KB
                 let append_preview = if mode == "append" {
                     let preview_path = write_safe_path.clone();
+                    let appended_content = content.to_string();
                     match tokio::task::spawn_blocking(move || {
                         read_back_append_preview(
                             &preview_path,
+                            &appended_content,
                             max_display_lines,
                             max_display_bytes,
                         )
@@ -858,6 +915,30 @@ mod tests {
         assert!(
             !text.contains("permission"),
             "permission hint shown: {text}"
+        );
+    }
+
+    #[test]
+    fn append_is_visible_detects_missing_then_present_tail() {
+        let temp_dir = tempdir().expect("temp dir");
+        let file_path = temp_dir.path().join("notes.txt");
+        std::fs::write(&file_path, "line-1\n").expect("seed file");
+
+        // Simulates the stale read-back view: the appended tail is not present yet.
+        assert!(
+            !append_is_visible(&file_path, b"fresh-tail-line\n").expect("check should succeed"),
+            "missing appended tail must be reported as not visible"
+        );
+
+        std::fs::write(&file_path, "line-1\nfresh-tail-line\n").expect("write appended file");
+        assert!(
+            append_is_visible(&file_path, b"fresh-tail-line\n").expect("check should succeed"),
+            "present appended tail must be reported as visible"
+        );
+
+        assert!(
+            append_is_visible(&file_path, b"").expect("check should succeed"),
+            "empty append must always be visible"
         );
     }
 }
