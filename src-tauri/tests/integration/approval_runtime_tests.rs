@@ -9,10 +9,12 @@ fn yolo_skips_normal_approval_but_keeps_hard_approval() {
     let normal = ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
         description: "normal".to_string(),
         input_preview: "args".to_string(),
+        masked_arguments: None,
     });
     let hard = ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
         description: "hard".to_string(),
         input_preview: "args".to_string(),
+        masked_arguments: None,
     });
 
     assert!(approval_request_for_runtime(&normal, false, false).is_some());
@@ -26,10 +28,12 @@ fn unsafe_mode_bypasses_normal_and_hard_approvals() {
     let normal = ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
         description: "normal".to_string(),
         input_preview: "args".to_string(),
+        masked_arguments: None,
     });
     let hard = ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
         description: "hard".to_string(),
         input_preview: "args".to_string(),
+        masked_arguments: None,
     });
 
     assert!(approval_request_for_runtime(&normal, false, true).is_none());
