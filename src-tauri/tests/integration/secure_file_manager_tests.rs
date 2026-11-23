@@ -63,6 +63,35 @@ async fn test_append_file_string_within_limit() {
     );
 }
 
+/// Regression test for #2987: when `append_file_string` returns, the appended
+/// bytes must already be visible to a plain synchronous read-back. A macOS CI
+/// run saw a read-back observe the fully pre-append file right after the
+/// append completed, which made the `writeFile` append preview omit the
+/// appended tail.
+#[tokio::test]
+async fn test_append_file_string_visible_to_readback_after_return() {
+    let dir = tempdir().unwrap();
+    let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
+
+    manager
+        .write_file_string("notes.txt", "line-1\n")
+        .await
+        .unwrap();
+
+    manager
+        .append_file_string("notes.txt", "fresh-tail-line\n")
+        .await
+        .unwrap();
+
+    // Read back synchronously, exactly how file tools read the file for their
+    // post-write preview: the append must be there the moment the future resolves.
+    let content = std::fs::read_to_string(dir.path().join("notes.txt")).unwrap();
+    assert!(
+        content.ends_with("line-1\nfresh-tail-line\n"),
+        "appended content must be visible to a synchronous read-back immediately after append_file_string returns, got: {content:?}"
+    );
+}
+
 fn assert_windows_reserved_filename_error(result: Result<(), String>, path: &str) {
     let error = result.expect_err("Operation should reject Windows reserved filenames");
     assert!(
