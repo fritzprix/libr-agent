@@ -14,7 +14,7 @@ use crate::common;
 
 use serde_json::{json, Value};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use warp::Filter;
@@ -1081,4 +1081,151 @@ async fn streamed_completion_records_usage_timing_details_on_saved_message() {
             .is_some_and(|ms| ms >= 0.0),
         "expected non-negative timeToFirstToken, got {details}"
     );
+}
+
+/// A reply whose tool-call arguments are cut off mid-JSON — the shape the
+/// invalid-args policy discards and resamples (#2967).
+fn truncated_tool_call_reply(name: &str) -> Vec<Value> {
+    vec![
+        json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_trunc","function":{"name":name,"arguments":"{\"command\": \"pnpm rust:test --lib"}}]},"finish_reason":"tool_calls"}]}),
+        json!({"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":9,"total_tokens":19}}),
+    ]
+}
+
+/// The #2967 flow: the handler discards a reply with invalid tool-call
+/// arguments and requests a replacement completion from inside the delivery
+/// of the running call. This sink mirrors the two steps the session-manager
+/// sink performs in production at that moment: re-dispatch through the real
+/// executor entry, then finish the delivery through an await point (the
+/// production resample paths pass await points after dispatching the
+/// replacement — the tool-loop resample records its attempt after it).
+#[derive(Default)]
+struct ResamplingSink {
+    /// Filled by `new`; lets the sink re-dispatch through its own Arc.
+    weak: std::sync::Weak<ResamplingSink>,
+    resampled_text: Mutex<Option<String>>,
+    delivery_done: AtomicBool,
+    resample_requested: AtomicBool,
+}
+
+impl ResamplingSink {
+    fn new(weak: std::sync::Weak<ResamplingSink>) -> Self {
+        Self {
+            weak,
+            resampled_text: Mutex::new(None),
+            delivery_done: AtomicBool::new(false),
+            resample_requested: AtomicBool::new(false),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ResponseSink for ResamplingSink {
+    async fn llm_response(&self, session_id: String, reply: Message) -> Result<(), String> {
+        let invalid = reply.tool_calls.as_ref().is_some_and(|calls| {
+            calls.iter().any(|call| {
+                !serde_json::from_str::<Value>(&call.function.arguments)
+                    .is_ok_and(|value| value.is_object())
+            })
+        });
+        if !invalid {
+            *self.resampled_text.lock().unwrap() = Some(text_of(&reply));
+            return Ok(());
+        }
+        // Discard the invalid reply and request the replacement from inside
+        // this delivery, exactly where production does it.
+        let Some(this) = self.weak.upgrade() else {
+            return Err("sink dropped mid-delivery".to_string());
+        };
+        let sink: Arc<dyn ResponseSink> = this;
+        let user = message(session_id.as_str(), "u1", "user", "run it", 1_000);
+        let dispatched = dispatch_completion(
+            app(),
+            &request(&session_id, "resp-2", PROVIDER, vec![user]),
+            move || Some(sink),
+        )
+        .await
+        .map_err(|error| error.display_message.clone())?;
+        if !dispatched {
+            return Err("the mock provider must answer in Rust".to_string());
+        }
+        self.resample_requested.store(true, Ordering::SeqCst);
+        // The call that requested the replacement must survive this await and
+        // finish its own delivery; aborting it here is what left #2967
+        // unsettled — its reply processing died with the call.
+        tokio::task::yield_now().await;
+        self.delivery_done.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+    async fn llm_error(&self, _session_id: String, error: AgentRuntimeError) -> Result<(), String> {
+        *self.resampled_text.lock().unwrap() = Some(format!("ERROR: {}", error.display_message));
+        Ok(())
+    }
+    async fn compact_response(
+        &self,
+        _session_id: &str,
+        _request: &CompactRequest,
+        _summary: String,
+        _meta: CompactStreamMeta,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+    async fn compact_error(
+        &self,
+        _session_id: String,
+        _error: AgentRuntimeError,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// #2967: a resample requested from inside the running call must not abort
+/// that call. The turn settles: the running delivery completes through its
+/// await point after the replacement dispatch, and the resampled answer
+/// arrives — both inside the issue's 10 s settle window.
+#[tokio::test]
+async fn a_resample_requested_from_inside_a_running_call_settles_the_turn() {
+    let _guard = TEST_GUARD.lock().await;
+    let session_id = "rust-executor-resample-selfreplace";
+    let provider = mock_provider(vec![
+        truncated_tool_call_reply("workspace__runShell"),
+        text_reply("Resampled answer."),
+    ])
+    .await;
+    let sink = Arc::new_cyclic(|weak| ResamplingSink::new(weak.clone()));
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message(session_id, "u1", "user", "run it", 1_000);
+
+    let sink_for_dispatch: Arc<dyn ResponseSink> = sink.clone();
+    assert!(dispatch_completion(
+        app(),
+        &request(session_id, "resp-1", PROVIDER, vec![user]),
+        move || { Some(sink_for_dispatch) }
+    )
+    .await
+    .unwrap());
+
+    // The issue's acceptance window: the turn settles within 10 s.
+    let settle = Instant::now();
+    wait_for("the resampled answer to arrive", || {
+        sink.resampled_text.lock().unwrap().is_some()
+    })
+    .await;
+    assert!(
+        settle.elapsed() < Duration::from_secs(10),
+        "the turn must settle inside the issue's 10 s window"
+    );
+    // The call that requested the resample was not aborted by it: its
+    // delivery finished through the await point after the replacement
+    // dispatch. Before the #2967 fix the abort dropped this delivery.
+    assert!(
+        sink.delivery_done.load(Ordering::SeqCst),
+        "the running call must finish its own delivery after the resample dispatch"
+    );
+    assert_eq!(
+        sink.resampled_text.lock().unwrap().as_deref(),
+        Some("Resampled answer.")
+    );
+    // The mock saw exactly the original call and the resample.
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
 }

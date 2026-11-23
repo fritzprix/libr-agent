@@ -439,3 +439,58 @@ async fn cancelled_session_with_invalid_tool_args_is_not_resampled() {
     // …and the resample counter stays untouched.
     assert_eq!(retry_count(&sessions, session_id).await, 0);
 }
+
+/// The duplicate drop keeps covering its real double-delivery case: a reply
+/// matching the last cached message of a settled (Idle) session is skipped
+/// before any side effect — it must not be cached again (#2967 must not widen
+/// the drop, it only narrows it to sessions nothing else will settle).
+#[tokio::test]
+async fn duplicate_reply_on_a_settled_session_is_skipped_without_side_effect() {
+    let session_id = "duplicate-reply-idle";
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+    let last = message("assistant-last", "assistant", None, "All done.");
+    sessions.write().await.insert(
+        session_id.to_string(),
+        build_active_session(session_id, vec![last]),
+    );
+
+    let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+    let db = Database::connect("sqlite::memory:")
+        .await
+        .expect("in-memory database");
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("session-root"),
+        )
+        .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager));
+    let mock_app = tauri::test::mock_app();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_app.handle() as *const tauri::AppHandle<tauri::test::MockRuntime>
+            as *const tauri::AppHandle)
+    };
+
+    // Same signature as the last cached message, different id: a redelivery
+    // to a turn that already finished.
+    let duplicate = message("assistant-redelivered", "assistant", None, "All done.");
+    handle_llm_response(
+        &session_repo,
+        &sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+        duplicate,
+    )
+    .await
+    .expect("a skipped duplicate is not an error");
+
+    let messages = history(&sessions, session_id).await;
+    assert_eq!(
+        messages.len(),
+        1,
+        "the redelivered duplicate must not be cached again"
+    );
+    assert_eq!(messages[0].id, "assistant-last");
+}

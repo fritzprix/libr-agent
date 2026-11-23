@@ -297,6 +297,21 @@ async fn resample_after_invalid_tool_args(
     })
 }
 
+/// True when a reply that duplicates the last cached message must still be
+/// processed (#2967): the session is Busy and no tool execution is pending, so
+/// this reply is the only thing that can settle the turn. The resample case
+/// lands here — the discarded invalid reply cached nothing — and dropping the
+/// matching reply would leave the session busy forever.
+async fn busy_session_awaits_reply(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let sessions = active_sessions.read().await;
+    sessions.get(session_id).is_some_and(|session| {
+        session.metadata.status == SessionStatus::Busy && session.pending_execution.is_none()
+    })
+}
+
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
     session_repo: &Arc<dyn SessionRepository>,
@@ -329,6 +344,18 @@ pub async fn handle_llm_response(
             false
         }
     };
+
+    // #2967: a duplicate is only safe to drop when something else will settle
+    // the turn (the previous turn already finished, or a tool execution is
+    // pending). A matching reply on a Busy session with nothing pending is the
+    // resample case and must be processed; the expected-response-id guard
+    // still rejects a genuine double delivery of an already-consumed reply.
+    // Note the changed outcome for that genuine double delivery on a Busy
+    // session: it no longer returns Ok(()) silently here — it falls through
+    // to the expected-response-id guard, which returns an error the executor
+    // logs at error level. No state is damaged by the rejection.
+    let is_duplicate =
+        is_duplicate && !busy_session_awaits_reply(active_sessions, &session_id).await;
 
     if is_duplicate {
         log::info!(
