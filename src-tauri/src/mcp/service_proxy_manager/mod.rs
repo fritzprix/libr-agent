@@ -28,9 +28,6 @@ mod tests;
 pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
 pub use creation::promote_builtin_reuse_runtime_state;
 pub use management::{decide_proxy_readiness_state, ProxyReadinessEntry, ProxyReadinessState};
-// Only the logger's test drives the production registration helper cross-module.
-#[cfg(test)]
-pub(crate) use proxy_config::register_session_mcp_log_masks;
 pub use proxy_config::{decide_existing_proxy_disposition, ExistingProxyDisposition};
 
 /// Manages per-session MCP service proxies for isolated tool execution

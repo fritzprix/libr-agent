@@ -179,6 +179,12 @@ impl FilledConfig {
     pub fn into_parts(self) -> (MCPServerConfig, Vec<String>) {
         (self.config, self.values)
     }
+
+    /// Every form of every filled value (raw and percent-encoded), for registering with
+    /// the global log mask while a connect based on this config runs (#2969).
+    pub fn log_mask_values(&self) -> &[String] {
+        &self.values
+    }
 }
 
 /// The URL without user info, query, and fragment, so a log line never shows a value

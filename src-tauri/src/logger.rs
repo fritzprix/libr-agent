@@ -458,25 +458,48 @@ mod tests {
 
     // #2969: the rmcp transport worker (a crate outside LibrAgent) logs the full
     // URL of a failed HTTP connection, which carries the secret values filled
-    // from `{{secret:NAME}}` templates. Emitted lines must mask them.
+    // from `{{secret:NAME}}` templates. Drive the real connect path of
+    // `verify_config_at` against a real loopback server that answers 404 — the
+    // repro of the issue — and capture the lines through the production
+    // `formatted_dispatch` chain: the probe must keep the filled values in the
+    // log mask while it connects, and forget them afterwards.
     #[tokio::test]
-    async fn emitted_lines_mask_mcp_secrets_filled_into_a_server_url() {
-        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
-            forget_log_secret_values, MCP_SECRET_MASK_SOURCE,
-        };
-        use crate::mcp::secret_templates::{fill_secrets, secret_store, SecretStore};
-        use crate::mcp::service_proxy_manager::register_session_mcp_log_masks;
+    async fn probe_connect_to_a_404_server_never_logs_the_filled_secret() {
+        use crate::mcp::secret_templates::secret_store;
+        use crate::mcp::session_isolation::exec_target::StdioExecTarget;
         use crate::mcp::types::{MCPServerConfig, TransportConfig};
+        use crate::services::McpServerService;
 
-        let server_id = "logger-mcp-mask-server";
+        // A loopback server that answers every request with 404.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind a loopback port");
+        let addr = listener.local_addr().expect("read the loopback port");
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request).await;
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                    )
+                    .await;
+            }
+        });
+
+        let raw = "logger-real-secret 42";
+        let encoded = "logger-real-secret%2042";
+        let server_id = "logger-real-probe-server";
         secret_store()
-            .set(server_id, "DEMO_TOKEN", "logger-mcp-secret 42")
+            .set(server_id, "DEMO_TOKEN", raw)
             .await
             .expect("store secret");
         let config = MCPServerConfig {
             name: Some("demo".to_string()),
             transport: TransportConfig::Http {
-                url: "https://api.example.test/mcp?key={{secret:DEMO_TOKEN}}".to_string(),
+                // {{...}} needs quadrupled braces inside format! to stay a template.
+                url: format!("http://{addr}/mcp?key={{{{secret:DEMO_TOKEN}}}}"),
                 protocol_version: "2025-06-18".to_string(),
                 session_id: None,
                 headers: None,
@@ -487,44 +510,57 @@ mod tests {
             metadata: None,
             provenance: None,
         };
-        let (filled, values) = fill_secrets(secret_store(), server_id, &config)
-            .await
-            .expect("fill secret")
-            .into_parts();
-        let TransportConfig::Http { url, .. } = &filled.transport else {
-            panic!("http transport expected");
-        };
 
-        let session_id = "logger-mcp-mask-session";
-        register_session_mcp_log_masks(
-            session_id,
-            &std::collections::HashMap::from([("demo".to_string(), values)]),
-        );
+        // Install the production format chain as this process's logger, so every
+        // facade line — LibrAgent's own and rmcp's tracing events bridged to log —
+        // passes through mask_log_line. No other test in this binary installs a
+        // global logger; concurrent lines of other tests are filtered by target.
         let (sender, receiver) = std::sync::mpsc::channel::<String>();
-        let (_, logger) = formatted_dispatch().chain(sender).into_log();
+        formatted_dispatch()
+            .chain(sender)
+            .apply()
+            .expect("install the capture logger");
+        log::set_max_level(log::LevelFilter::Trace);
 
-        emit(
-            logger.as_ref(),
-            "rmcp::transport::worker",
-            &format!(
-                "Transport channel failed: HTTP request failed with status 404 Not Found for url {url}"
-            ),
-        );
-        forget_log_secret_values(session_id, MCP_SECRET_MASK_SOURCE);
-        emit(logger.as_ref(), "after", &format!("forgotten {url}"));
+        let error = McpServerService::verify_config_at(config, &StdioExecTarget::Host, server_id)
+            .await
+            .expect_err("connecting to a 404 server must fail");
+        server.abort();
 
-        let lines: Vec<String> = receiver.try_iter().collect();
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        assert!(!lines[0].contains("logger-mcp-secret"), "{}", lines[0]);
-        assert!(!lines[0].contains("%2042"), "{}", lines[0]);
+        let lines: Vec<String> = receiver
+            .try_iter()
+            .filter(|line| {
+                line.contains("rmcp::transport::worker") || line.contains("mcp::server::lifecycle")
+            })
+            .collect();
         assert!(
-            lines[0].contains("404 Not Found"),
-            "the failure itself must stay visible: {}",
-            lines[0]
+            lines
+                .iter()
+                .any(|line| line.contains("rmcp::transport::worker")),
+            "the real rmcp transport worker line must reach the app log: {lines:?}"
         );
+        for line in &lines {
+            assert!(!line.contains(raw), "{line}");
+            assert!(!line.contains(encoded), "{line}");
+        }
         assert!(
-            lines[1].contains("logger-mcp-secret"),
-            "a forgotten value is no longer known"
+            lines.iter().any(|line| line.contains("404")),
+            "the failure itself must stay visible: {lines:?}"
+        );
+
+        // The returned error is masked too, and the probe's guard must have
+        // forgotten the values: a later line carrying the same value passes
+        // through untouched.
+        assert!(!error.contains(raw), "{error}");
+        assert!(!error.contains(encoded), "{error}");
+        log::error!(target: "after-probe", "forgotten {encoded}");
+        let after: Vec<String> = receiver
+            .try_iter()
+            .filter(|line| line.contains("after-probe"))
+            .collect();
+        assert!(
+            after.iter().any(|line| line.contains(encoded)),
+            "a forgotten value is no longer known: {after:?}"
         );
     }
 

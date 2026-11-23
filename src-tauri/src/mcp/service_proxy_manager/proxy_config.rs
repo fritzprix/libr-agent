@@ -388,6 +388,9 @@ pub(super) fn mask_server_secrets(
 /// The values hold every form they can take in a URL (raw and percent-encoded), as
 /// returned by [`FilledConfig::into_parts`]. Forgotten when the session's proxy is
 /// destroyed, and kept apart from the session's shell secrets by the source key.
+/// This replaces the session's whole `{session}#mcp` entry, which is correct only
+/// because the caller passes the complete set of the session's servers every time:
+/// a future partial load must recompute the full set instead of registering a subset.
 pub(crate) fn register_session_mcp_log_masks(
     session_id: &str,
     secret_values: &HashMap<String, Vec<String>>,
@@ -446,7 +449,7 @@ mod tests {
         use crate::mcp::builtin::workspace::persistent_shell::secrets::{
             forget_log_secret_values, mask_log_line, MCP_SECRET_MASK_SOURCE,
         };
-        use crate::mcp::secret_templates::{fill_secrets, secret_store, SecretStore};
+        use crate::mcp::secret_templates::{fill_secrets, secret_store};
         use crate::mcp::types::{MCPServerConfig, TransportConfig};
 
         let server_id = "log-mask-2969-server";
