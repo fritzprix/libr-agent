@@ -9,7 +9,6 @@ description: |
 
 # Workspace Indexer
 
-> **Not this skill**: Wiki linking, catalog.json, backlinks, and `[[slug]]` management → use **repo-wiki**.
 > **Not this skill**: Single-file text extraction → use **docs** (`--to md`).
 
 ## Overview

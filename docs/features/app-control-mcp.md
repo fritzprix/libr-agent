@@ -41,7 +41,7 @@ Port: Settings HTTP port. Each backend writes its bound port to `~/.libragent/ht
 | `app__focus_session`  | `sessionId`                                             | Navigate to `/agent/{sessionId}`                                    |
 | `app__wait_ui`        | optional `ms` (default 500), optional `ready.path` hint | Sleep for pacing between steps                                      |
 
-There is **no** composite scenario tool. Demo shot lists live in the bundled [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md) and operator scripts that call these primitives.
+There is **no** composite scenario tool. Demo shot lists live in operator scripts that call these primitives.
 
 ## Cursor MCP config example
 
@@ -76,7 +76,7 @@ Presets with keys/OAuth (e.g. `github`) are rejected by the UI bridge.
 
 ## Demo composition (script, not a tool)
 
-Use primitives in order — see [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md):
+Use primitives in order:
 
 1. `app__navigate` → `/mcp-servers` (or `app__highlight` a zero-config preset)
 2. `app__wait_ui` `{ "ms": 800 }`
@@ -84,7 +84,5 @@ Use primitives in order — see [demo-play shot list](../../src-tauri/bundled_sk
 4. `app__wait_ui` `{ "ms": 1500 }`
 5. Create session via `POST /api/sessions` + `app__focus_session`
 6. Send the deliverable prompt via session message API / UI
-
-Operator skill: bundled `@skill:demo-play` (`src-tauri/bundled_skills/demo-play/`).
 
 Security: opt-in only; localhost by default unless HTTP expose is enabled. Do not enable app-control on exposed hosts without a network policy.

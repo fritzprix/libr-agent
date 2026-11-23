@@ -126,7 +126,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ### Research and documents
 
-`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `soul-awakening`
 
 `science-search` — Search scholarly papers, look up DOIs, similar works, and citations (free, no API key)
 
@@ -134,7 +134,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ### Development and integrations
 
-`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
+`git-workflow`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
 ### Common combinations
 

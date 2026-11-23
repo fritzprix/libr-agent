@@ -126,7 +126,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 ### 조사·문서
 
-`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `soul-awakening`
 
 `science-search` — 학술 논문 검색·DOI·유사 논문·인용 연결 (무료, API 키 불필요)
 
@@ -134,7 +134,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 ### 개발·연동·제작
 
-`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
+`git-workflow`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
 ### 자주 하는 조합
 
