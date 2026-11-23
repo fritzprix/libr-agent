@@ -2137,6 +2137,11 @@
         "title": "Antworten als PDF, Word oder PowerPoint",
         "body": "Geben Sie @skill:docs ein und bitten Sie um einen Bericht, ein Angebot oder ein Protokoll – der Agent speichert eine teilbare PDF-, DOCX- oder PPTX-Datei.",
         "cta": "Im Chat ausprobieren"
+      },
+      "plugins": {
+        "title": "Plugins mit /plugin install installieren",
+        "body": "Fügen Sie Claude-Code-Plugins im Chat oder unter Skills hinzu, um neue Slash-Befehle, Subagenten, Hooks und MCP-Tools freizuschalten.",
+        "cta": "Im Chat ausprobieren"
       }
     }
   }

@@ -2163,6 +2163,11 @@
         "title": "Get answers as PDF, Word, or PowerPoint",
         "body": "Type @skill:docs and ask for a report, proposal, or meeting minutes — the agent saves a ready-to-share PDF, DOCX, or PPTX file.",
         "cta": "Try it in chat"
+      },
+      "plugins": {
+        "title": "Install plugins with /plugin install",
+        "body": "Add Claude Code plugins in chat or from Skills to unlock new slash commands, subagents, hooks, and MCP tools.",
+        "cta": "Try it in chat"
       }
     }
   }

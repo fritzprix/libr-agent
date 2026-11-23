@@ -154,6 +154,23 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 ---
 
+## 플러그인 (Claude Code 호환)
+
+LibrAgent는 **Skills** 화면에서 전역으로, 또는 채팅에서 현재 세션 전용으로 Claude Code 플러그인을 설치할 수 있습니다:
+
+- **채팅에서 설치**: `/plugin install <소스>`를 입력해 현재 세션에 플러그인을 추가합니다.
+- **플러그인 업데이트**: `/plugin update`를 입력하거나 **Skills** 화면의 업데이트 알림을 사용합니다.
+- **플러그인이 제공하는 기능**:
+  - **스킬** (이름 충돌 시 자동 네임스페이스 적용)
+  - **슬래시 명령어** (`commands/`)
+  - **서브 에이전트** (`agents/`)
+  - **MCP 서버** (설치 시 승인 후 실행)
+  - **라이프사이클 훅** (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`)
+
+**Skills** 화면이나 세션 도구 모달에서 언제든 플러그인을 켜고 끄거나 제거할 수 있습니다.
+
+---
+
 ## 관련 문서
 
 - [서브 에이전트 · 오케스트레이션](sub-agents.md)

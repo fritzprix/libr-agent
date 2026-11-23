@@ -2153,6 +2153,11 @@
         "title": "답변을 PDF·Word·PowerPoint로 받아 보세요",
         "body": "@skill:docs를 입력하고 보고서·제안서·회의록을 요청하면 바로 공유할 수 있는 PDF, DOCX, PPTX 파일로 저장해 줘요.",
         "cta": "채팅에서 해보기"
+      },
+      "plugins": {
+        "title": "/plugin install로 플러그인을 설치해 보세요",
+        "body": "채팅이나 Skills에서 Claude Code 플러그인을 설치해 새 슬래시 명령어, 서브 에이전트, 훅, MCP 도구를 바로 쓸 수 있어요.",
+        "cta": "채팅에서 해보기"
       }
     }
   }

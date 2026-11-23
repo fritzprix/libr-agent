@@ -2137,6 +2137,11 @@
         "title": "以 PDF、Word 或 PowerPoint 获取回答",
         "body": "输入 @skill:docs 并请求报告、提案或会议纪要，助手会保存可直接分享的 PDF、DOCX 或 PPTX 文件。",
         "cta": "在聊天中试试"
+      },
+      "plugins": {
+        "title": "使用 /plugin install 安装插件",
+        "body": "在聊天或 Skills 中安装 Claude Code 插件，即可解锁新的斜杠命令、子智能体、钩子和 MCP 工具。",
+        "cta": "在聊天中试试"
       }
     }
   }

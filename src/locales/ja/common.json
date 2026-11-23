@@ -2137,6 +2137,11 @@
         "title": "回答を PDF・Word・PowerPoint で受け取れます",
         "body": "@skill:docs と入力して報告書・提案書・議事録を依頼すると、そのまま共有できる PDF、DOCX、PPTX ファイルとして保存します。",
         "cta": "チャットで試す"
+      },
+      "plugins": {
+        "title": "/plugin install でプラグインを追加できます",
+        "body": "チャットや Skills から Claude Code プラグインをインストールして、スラッシュコマンド・サブエージェント・フック・MCP ツールを拡張できます。",
+        "cta": "チャットで試す"
       }
     }
   }

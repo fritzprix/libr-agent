@@ -2137,6 +2137,11 @@
         "title": "Recevez vos réponses en PDF, Word ou PowerPoint",
         "body": "Tapez @skill:docs et demandez un rapport, une proposition ou un compte rendu : l'agent enregistre un fichier PDF, DOCX ou PPTX prêt à partager.",
         "cta": "Essayer dans le chat"
+      },
+      "plugins": {
+        "title": "Installez des plugins avec /plugin install",
+        "body": "Ajoutez des plugins Claude Code dans le chat ou depuis Skills pour activer de nouvelles commandes slash, des sous-agents, des hooks et des outils MCP.",
+        "cta": "Essayer dans le chat"
       }
     }
   }

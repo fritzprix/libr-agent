@@ -154,6 +154,23 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ---
 
+## Plugins (Claude Code compatible)
+
+LibrAgent supports installing Claude Code plugins globally from **Skills** or for a single session directly in chat:
+
+- **Install in chat**: Type `/plugin install <source>` to add a plugin to the current session.
+- **Update plugins**: Type `/plugin update` or use the update indicator in **Skills**.
+- **What plugins can provide**:
+  - **Skills** (automatically namespaced if a skill name collides)
+  - **Slash commands** (`commands/`)
+  - **Subagents** (`agents/`)
+  - **MCP servers** (started after install-time approval)
+  - **Lifecycle hooks** (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`)
+
+You can enable, disable, or uninstall plugins at any time from **Skills** or the session tools modal.
+
+---
+
 ## Related
 
 - [Sub-agents & orchestration](sub-agents.md)

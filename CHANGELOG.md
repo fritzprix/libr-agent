@@ -1,3 +1,28 @@
+## [0.9.32] - 2026-11-23
+
+### 🚀 Features & Capabilities
+
+- **Claude Code plugin support**: Install plugins globally from **Skills** or per-session with `/plugin install` (with session-scoped trust records stored outside the workspace). Plugins can provide skills (namespaced on collision), slash commands (`commands/`), subagents (`agents/`), MCP servers (with install-time approval), and lifecycle hooks (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`) with `CLAUDE_PLUGIN_DATA`, `CLAUDE_PROJECT_DIR`, `CLAUDE_ENV_FILE`, and `userConfig`. Includes enable/disable toggles, version/commit tracking, `/plugin update`, and update notices (#2812, #2921–#2927, #2942).
+- **Native Rust LLM client & streaming**: New Tauri-free `llm-client` Rust crate supporting OpenAI-compatible, Anthropic, Gemini, Groq, Cerebras, and Ollama providers with custom `baseUrl`, streaming deltas, and automatic WebView fallback (#2704, #2754, #2755, #2760, #2786, #2787).
+- **Headless CLI & multi-process profile support**: Run `libragent --headless` in-process with `--session` continuation, writing finished run history back to the profile database, plus `--list-sessions` and `--inspect-session` for digests and turn drill-down. Multiple backends can now share a profile safely with database-backed session ownership and cross-process scheduled task claiming (#2720, #2855–#2860, #2874).
+- **Fallback model notice & reasoning stop guide**: Chat shows a clear notice when a completion falls back to the fallback model (#2961), displays an action guide when a turn stops for long or looping reasoning (#2705), and shows exact circuit-break causes with tailored resume guidance (#2957).
+- **Per-session scratch directory & higher context ceiling**: Sessions receive an isolated per-session scratch directory with safe OS temp-dir access (#2946). Removed the hardcoded 128K `model_max_limit` clamp and switched **Max Input Context** to presets labeled in `M` (#2718).
+- **Bundled skills streamlined**: Added the `orch-loop` bundled skill, simplified `org` wording (#2730), merged seven overlapping bundled skills into their parent skills, and removed dev-only/niche bundled skills.
+
+### 🐛 Fixes & Hardening
+
+- **Secret masking in logs & approval cards**: Filled MCP server secrets (URLs, headers, env values) are now masked in approval cards, app logs, and config verification probes (#2968, #2969).
+- **Linux NVIDIA WebKit fix**: Automatically disables the WebKit DMA-BUF renderer on NVIDIA Linux systems to prevent blank windows and crashes (#2964).
+- **Agent turn & tool-call reliability**: Resamples replies with invalid tool-call arguments (#2951), settles turns cleanly when a resample replaces its own running call (#2967), and settles idle completed sessions on resume without triggering an extra LLM turn (#2898).
+- **Workspace & shell reliability**: Flushes `append` before returning so previews show the appended tail, forces English `sudo` messages so `storeAs` password-prompt guidance works on any locale (#2970), drains persistent-shell stderr reliably under user redirections (#2880, #2881), shows stdout on non-zero exit and resets PowerShell exit codes (#2706), and hardens symlink/canonical-prefix path checks (#2953).
+- **UI & notifications**: Marking all notifications as read keeps sessions with backend pending approvals (#2971), decode speed is preserved in the status bar (#2909), and `UserPromptDialog` strings are fully translated.
+
+### 🔧 Performance & Internal
+
+- **Modular splits**: Split `headless/mod.rs`, `server/sessions`, `tui/chat.rs`, and `cli/` into focused submodules (#2886–#2889).
+- **E2E & benchmark harness**: Added debug-only UI automation control plane (`/api/e2e-control/*`), window resize/visibility controls, privileged-path test container, `libr-e2e-verify` skill, and expanded Harbor E2E matrix tasks (#2692, #2901–#2905, #2938).
+- **Dependency bumps**: Updated `log` (0.4.35) and `calamine` (0.38.0).
+
 ## [0.9.31] - 2026-11-10
 
 ### 🚀 Features & Capabilities
