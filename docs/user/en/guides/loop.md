@@ -62,7 +62,7 @@ A good cycle:
 5. If rework hits the limit, summarize what is left for you.
 6. Wait for the next wake.
 
-For the review skill itself, see [`gatekeeper`](sub-agents.md).
+For the review skill itself, see [`delegation-eval-loop` (gatekeeper)](sub-agents.md).
 
 ---
 
@@ -75,7 +75,7 @@ Do not mix clock, completion, and app-wide schedule.
 | Return to **this chat** on a **clock** to work the list | `loop`         | “Every 30 minutes, process one ready issue.”      |
 | Resume when a job or ticket is **done**                 | `call-me-back` | “When this issue closes, write the release note.” |
 | Run on an **app-wide** cron even if this chat closes    | `schedule`     | “Every Monday at 9, run the briefing assistant.”  |
-| Writer ↔ reviewer quality gate                         | `gatekeeper`   | “Draft the notice and pass these three rules.”    |
+| Writer ↔ reviewer quality gate                         | `delegation-eval-loop` (gatekeeper)   | “Draft the notice and pass these three rules.”    |
 
 Kanban, Jira, and GitHub Issues are **task lists**.  
 Do not fake “wait until Done” with a `loop` delay. Use [`call-me-back`](call-me-back.md) when something finishes.
@@ -136,7 +136,7 @@ Copy a prompt and change the repo, labels, and rules.
 ### GitHub Issues
 
 ```text
-@skill:loop @skill:gatekeeper
+@skill:loop @skill:delegation-eval-loop gatekeeper
 Every hour on the hour, run one cycle in this chat.
 
 Rules:
@@ -154,7 +154,7 @@ Rules:
 ### Jira / kanban board
 
 ```text
-@skill:loop @skill:gatekeeper
+@skill:loop @skill:delegation-eval-loop gatekeeper
 Every 2 hours, run one cycle on board "Team backlog".
 
 Rules:
@@ -172,7 +172,7 @@ To wait until a card is **Done**, then write release notes, use `call-me-back` o
 For a lasting team, set writer/reviewer roles with [teamwork → org](sub-agents.md), then put `loop` on the **lead** chat.
 
 ```text
-@skill:teamwork @skill:org @skill:loop @skill:gatekeeper
+@skill:teamwork @skill:org @skill:loop @skill:delegation-eval-loop gatekeeper
 Use the Org team’s KANBAN.md as the task list.
 Every day at 10:00 in the lead chat:
 - Give one To Do to the writer
@@ -200,6 +200,6 @@ Short prompts also live in [Orchestration examples](orchestration-examples.md).
 
 - [Continue when done (call-me-back)](call-me-back.md) — wake when something finishes
 - [Automation overview](automation.md) · [Scheduled Tasks](scheduled-tasks.md) — app-wide schedule
-- [Sub-agents & orchestration](sub-agents.md) — `gatekeeper`, Org
+- [Sub-agents & orchestration](sub-agents.md) — `delegation-eval-loop` (gatekeeper), Org
 - [Orchestration examples](orchestration-examples.md) — short prompts
 - [Skills](skills.md) — bundled skill list

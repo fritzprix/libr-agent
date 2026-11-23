@@ -34,4 +34,4 @@ Keep revise feedback numbered and file-specific.
 
 Before rotation, Navigator posts **handoff note** summarizing open items. New Driver reads shared workspace + handoff only — not full prior chat.
 
-See [role-rotation.md](role-rotation.md).
+See [role-rotation.md](pair-programming-role-rotation.md).

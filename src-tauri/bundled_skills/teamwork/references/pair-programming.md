@@ -1,13 +1,6 @@
----
-name: pair-programming
-description: >
-  Implement a turn-based Driver-Navigator pair programming workflow. One agent (Driver)
-  focuses on implementation and writes code, while the other (Navigator) reviews, validates,
-  and suggests improvements in real time. Roles can swap dynamically based on tasks.
-  Triggers: "페어 프로그래밍", "공동 작업", "드라이버 네비게이터", "pair programming", "driver navigator", "collaborative coding".
----
+# Pair Programming (teamwork reference)
 
-# Pair Programming
+Session-level pattern of the **teamwork** skill. It needs no team scaffold. Spawn and isolation rules: `delegate`.
 
 The Pair Programming pattern binds two sessions to a shared workspace (`workspaceOverride`) where one acts as the Driver (editing files, implementing logic) and the other acts as the Navigator (reviewing code, checking architecture, guiding steps) in a turn-based collaborative loop.
 
@@ -33,7 +26,7 @@ The Pair Programming pattern binds two sessions to a shared workspace (`workspac
 4. **Turn-based Interaction**:
    - The Driver implements a section of code and writes a summary of the edits for the Navigator.
    - The Navigator runs `workspace__readFile` or `git diff` on the workspace, checks for issues, and sends feedback/next instructions to the Driver.
-5. **Role Rotation**: Swap roles when moving between tasks (e.g., swapping to write test suites). See [role-rotation.md](references/role-rotation.md).
+5. **Role Rotation**: Swap roles when moving between tasks (e.g., swapping to write test suites). See [role-rotation.md](pair-programming-role-rotation.md).
 6. **Validation**: Run the final project test pipeline to verify correctness.
 
 ---
@@ -44,6 +37,6 @@ The Pair Programming pattern binds two sessions to a shared workspace (`workspac
 
 ## References
 
-- [Role rotation](references/role-rotation.md)
-- [Turn protocol](references/turn-protocol.md)
-- [Diff review checklist](references/diff-review-checklist.md)
+- [Role rotation](pair-programming-role-rotation.md)
+- [Turn protocol](pair-programming-turn-protocol.md)
+- [Diff review checklist](pair-programming-diff-review-checklist.md)

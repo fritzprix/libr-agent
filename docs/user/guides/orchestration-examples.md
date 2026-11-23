@@ -16,10 +16,10 @@ description: '한 명에게 맡기기부터 여러 관점 검토, 오래 가는 
 | ---------------------------------- | ----------------------------------- |
 | 한 덩어리를 다른 에이전트에게 맡김 | `delegate`                          |
 | 서로 상관없는 일이 여러 개         | `divide-conquer`                    |
-| 앞 단계의 결과가 다음 단계의 재료  | `pipeline`                          |
+| 앞 단계의 결과가 다음 단계의 재료  | `teamwork` (pipeline)                          |
 | 같은 안건을 여러 관점으로          | `consensus-delegation`              |
-| 대표 한 명이 전문가들을 지휘       | `hub-spoke`                         |
-| 만들고, 검수하고, 반복             | `gatekeeper` ([세션 루프](loop.md)) |
+| 대표 한 명이 전문가들을 지휘       | `teamwork` (hub-and-spoke)                         |
+| 만들고, 검수하고, 반복             | `delegation-eval-loop` (gatekeeper) ([세션 루프](loop.md)) |
 | 오래 가는 팀과 Org 화면            | `teamwork` → `org`                  |
 
 ---
@@ -58,12 +58,12 @@ description: '한 명에게 맡기기부터 여러 관점 검토, 오래 가는 
 
 ---
 
-## 예시 3. 글 한 편을 단계별로 쓰기 (`pipeline`)
+## 예시 3. 글 한 편을 단계별로 쓰기 (`teamwork` (pipeline))
 
 **이럴 때**: 앞 단계의 결과가 뒤 단계의 재료가 될 때.
 
 ```text
-@skill:pipeline
+@skill:teamwork pipeline
 "로컬 에이전트로 주간 보고서 만들기" 블로그 글을 써줘.
 1) 조사: 출처 5개 이상, drafts/01-조사.md에 정리
 2) 초안: 조사를 바탕으로 drafts/02-초안.md
@@ -73,7 +73,7 @@ description: '한 명에게 맡기기부터 여러 관점 검토, 오래 가는 
 
 **일어나는 일**: 모든 단계가 같은 폴더를 쓰고, 다음 단계에는 대화 전체가 아니라 요약과 파일 위치만 전달됩니다. 검토에서 문제가 나오면 초안 단계만 다시 합니다.
 
-**주의**: 단계끼리 상관이 없으면 `pipeline`보다 `divide-conquer`가 빠릅니다.
+**주의**: 단계끼리 상관이 없으면 `teamwork` (pipeline)보다 `divide-conquer`가 빠릅니다.
 
 ---
 
@@ -103,12 +103,12 @@ description: '한 명에게 맡기기부터 여러 관점 검토, 오래 가는 
 
 ---
 
-## 예시 5. 대표가 전문가들을 지휘하기 (`hub-spoke`)
+## 예시 5. 대표가 전문가들을 지휘하기 (`teamwork` (hub-and-spoke))
 
 **이럴 때**: 조사, 분석, 정리가 서로 다른 일인데 한 명이 모아서 결론을 내야 할 때.
 
 ```text
-@skill:hub-spoke
+@skill:teamwork hub-and-spoke
 경쟁 서비스 3곳(A, B, C)의 비교 보고서를 만들어줘.
 대표는 너야. 일하는 사람은 ① 기능 비교 ② 가격 비교 ③ 이용자 평가 정리야.
 각자 1페이지 요약과 출처 링크를 대표에게만 보고하게 해.
@@ -121,12 +121,12 @@ description: '한 명에게 맡기기부터 여러 관점 검토, 오래 가는 
 
 ---
 
-## 예시 6. 만들고, 검수하고, 다시 만들기 (`gatekeeper`)
+## 예시 6. 만들고, 검수하고, 다시 만들기 (`delegation-eval-loop` (gatekeeper))
 
 **이럴 때**: 공지문이나 안내문이 정해진 기준을 꼭 지켜야 할 때.
 
 ```text
-@skill:gatekeeper
+@skill:delegation-eval-loop gatekeeper
 작성자가 이번 달 고객 공지문을 쓰게 해줘.
 검수자는 ① 사실 오류 없음 ② 고객에게 중요한 내용이 맨 앞 ③ 항목마다 두 문장 이하를 확인해줘.
 3번 안에 통과하지 못하면 남은 문제를 알려줘.
@@ -180,7 +180,7 @@ description: '한 명에게 맡기기부터 여러 관점 검토, 오래 가는 
 나중에 팀을 고칠 때:
 
 ```text
-@skill:org-restructure
+@skill:org restructure
 데이터 분석 담당을 조사 담당과 합치고, 편집자의 승인 기준을 역할 설명에 추가해줘.
 ```
 

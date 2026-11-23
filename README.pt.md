@@ -32,7 +32,7 @@ O LibrAgent resolve isso como um **aplicativo desktop completo e pronto para uso
 | Abordagem tradicional                                | Com o LibrAgent                                                                                                                                      |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Editar manualmente configurações JSON de MCP         | **Extensões com um clique** — Predefinições prontas (GitHub, Brave Search, sistema de arquivos) e importação direta do Cursor, VS Code e Claude Code |
-| Programar sistemas multiagente em código             | **Padrões de coordenação integrados** — Habilidades empacotadas prontas para uso (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`) |
+| Programar sistemas multiagente em código             | **Padrões de coordenação integrados** — Habilidades empacotadas prontas para uso (`teamwork` (pipeline, hub-and-spoke), `divide-conquer`, `consensus-delegation`) |
 | Vinculação obrigatória aos modelos de um só provedor | **Liberdade tecnológica total** — Use chaves de API na nuvem ou modelos locais com [Ollama](https://ollama.com) sob licença aberta MIT               |
 
 [Baixar a versão mais recente](https://github.com/fritzprix/libr-agent/releases/latest) · [Guia de início em 5 minutos](#guia-de-início-em-5-minutos)
@@ -56,7 +56,7 @@ O LibrAgent resolve isso como um **aplicativo desktop completo e pronto para uso
 ### 3. Escolher um padrão de coordenação sem programar
 
 - Defina o fluxo de trabalho desejado diretamente no prompt:
-  - _"@skill:pipeline — pesquise, redija um rascunho e revise; produza um único relatório final"_
+  - _"@skill:teamwork pipeline — pesquise, redija um rascunho e revise; produza um único relatório final"_
   - _"@skill:divide-conquer — divida esta tarefa em etapas independentes em paralelo e unifique os resultados"_
 - Os padrões de coordenação são habilidades integradas que não exigem a montagem de SDKs externos. Consulte o guia de [Subagentes e orquestração](docs/user/guides/sub-agents.md).
 
@@ -73,11 +73,11 @@ Selecione o padrão adequado para a estrutura da sua tarefa diretamente no paine
 
 | Nome da habilidade                   | Padrão de coordenação | Caso de uso recomendado                                                               |
 | ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------- |
-| `pipeline`                           | Etapas sequenciais    | O resultado de uma fase alimenta a seguinte (Pesquisa → Redação → Revisão)            |
-| `hub-spoke`                          | Hub-and-Spoke         | Um agente coordenador central gerencia e integra múltiplos agentes especialistas      |
+| `teamwork` (pipeline)                           | Etapas sequenciais    | O resultado de uma fase alimenta a seguinte (Pesquisa → Redação → Revisão)            |
+| `teamwork` (hub-and-spoke)                          | Hub-and-Spoke         | Um agente coordenador central gerencia e integra múltiplos agentes especialistas      |
 | `divide-conquer`                     | Divisão paralela      | Dividir o trabalho em subtarefas independentes em paralelo e consolidar               |
 | `consensus-delegation`               | Multiperspectiva      | Enviar a mesma questão para múltiplos agentes especialistas e reconciliar análises    |
-| `gatekeeper` / `pair-programming`    | Ciclos de revisão     | Revisão rigorosa de código ou programação colaborativa em dupla                       |
+| `delegation-eval-loop` (gatekeeper) / `teamwork` (pair programming)    | Ciclos de revisão     | Revisão rigorosa de código ou programação colaborativa em dupla                       |
 | `delegate`                           | Delegação pontual     | Delegar uma tarefa específica para uma subsessão com rastreamento completo            |
 | `teamwork` → `org`                   | Equipe duradoura      | Equipes colaborativas estáveis com diretrizes compartilhadas e organograma interativo |
 | `schedule` / `loop` / `call-me-back` | Tempo e eventos       | Agendamentos periódicos Cron, intervalos na sessão ou retomada por eventos externos   |
@@ -125,7 +125,7 @@ A compactação automática de contexto, a prevenção de loops infinitos e a va
 
 ### Usuário avançado — Delegação com modelos padronizados
 
-1. Digite `@skill:pipeline` (ou `hub-spoke`, `divide-conquer`) no chat.
+1. Digite `@skill:teamwork pipeline` (ou `teamwork` (hub-and-spoke), `divide-conquer`) no chat.
 2. Os agentes colaboram de forma coordenada conforme o padrão escolhido.
 3. Obtenha um resultado integrado no seu espaço de trabalho sem precisar manter bibliotecas externas.
 
@@ -177,7 +177,7 @@ Baixe o instalador mais recente na **[Página de versões (Releases)](https://gi
 
 **Próximos passos — Coordenação avançada e automação**
 
-- _"@skill:pipeline — pesquise este tópico, elabore um resumo, revise-o e salve o relatório final"_
+- _"@skill:teamwork pipeline — pesquise este tópico, elabore um resumo, revise-o e salve o relatório final"_
 - _"Configure um espaço de trabalho teamwork para este repositório"_
 - _"Crie uma tarefa agendada diária de análise de concorrentes às 07:00"_ (ou utilize a receita Morning Briefing)
 
@@ -186,7 +186,7 @@ Baixe o instalador mais recente na **[Página de versões (Releases)](https://gi
 - _"Importe as configurações dos meus servidores MCP do Cursor e mostre quais ferramentas foram adicionadas."_
 - _"Instale o preset do GitHub MCP e vincule-o a um agente de desenvolvimento."_
 - _"Revise este espaço de trabalho e escreva recomendações práticas de melhoria em `DELIVERABLE.md`."_
-- _"@skill:pipeline — aprofunde o estudo deste tema técnico, redija um resumo estruturado e produza um relatório final revisado."_
+- _"@skill:teamwork pipeline — aprofunde o estudo deste tema técnico, redija um resumo estruturado e produza um relatório final revisado."_
 - _"Agende uma rotina diária para compilar um panorama do mercado todas as manhãs às 07:00."_
 
 ### Configuração para desenvolvedores

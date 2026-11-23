@@ -1,13 +1,8 @@
----
-name: org-restructure
-description: Restructure a living explicit org in LibrAgent without dissolving it. Use when an org already exists and you need to add/remove/merge roles in ROLES.md, update the org constitution (agents.md, MISSION.md), remove or retire org child sessions, reassign KANBAN owners, or record structural changes in coordination files. Not for initial org creation (use org), initial scaffolding (use teamwork), org dissolution, or archive.
----
-
-# Org Restructure
+# Org Restructure (org reference)
 
 Tune an existing explicit org. This is evolution, not creation and not teardown.
 
-Use `org` when the org does not exist yet or you need runtime coordination (spawn, resume, getOrg).
+Use the main `org` workflow when the org does not exist yet or you need runtime coordination (spawn, resume, getOrg).
 Use `teamwork` when the teamwork artifact directory or constitution files do not exist yet.
 Use `postmortem-improve` when the change set comes from an after-action review (postmortem → classify → then restructure/boost/recruit).
 
@@ -25,8 +20,8 @@ Do not edit repo-root copies unless the user explicitly wants repo pollution.
 1. **Confirm this is restructure, not bootstrap.**
    - `.libragent/teamwork.json` must exist with `executionSubstrate.mode: "org"` and `executionSubstrate.orgLineage.intended: true`.
    - An `orgId` must already be set (from `agent__createOrg` or manifest).
-   - If not, stop and use `teamwork` then `org`.
-2. **Run pre-flight audit** — see [impact-analysis.md](references/impact-analysis.md).
+   - If not, stop and use `teamwork`, then the main `org` workflow.
+2. **Run pre-flight audit** — see [impact-analysis.md](org-restructure-impact-analysis.md).
 3. **Pick one primary operation** (add, layoff, merge, constitution update, child removal). Load the matching reference checklist.
 4. **Apply constitution + coordination changes** in dependency order (decision record → ROLES/MISSION/agents → KANBAN/HANDOFF → sessions).
 5. **Propagate refresh** — constitution edits apply on a later execution step, not the current turn.
@@ -36,11 +31,11 @@ Do not edit repo-root copies unless the user explicitly wants repo pollution.
 
 | User intent | Read first | Primary edits |
 | --- | --- | --- |
-| Add a role | [constitution-update.md](references/constitution-update.md) | ROLES.md, MISSION.md, optional `skills/tf-*`, spawn child |
-| Remove a role (layoff) | [layoff-checklist.md](references/layoff-checklist.md) | ROLES.md, KANBAN owners, HANDOFF, child sessions |
-| Merge duplicate roles | [merge-checklist.md](references/merge-checklist.md) | ROLES.md, MISSION.md, skills, session mapping |
-| Change operating rules | [constitution-update.md](references/constitution-update.md) | agents.md, DECISIONS.md |
-| Remove child from org view | [layoff-checklist.md](references/layoff-checklist.md) § Child sessions | stop/delete session; no detach API yet |
+| Add a role | [constitution-update.md](org-restructure-constitution-update.md) | ROLES.md, MISSION.md, optional `skills/tf-*`, spawn child |
+| Remove a role (layoff) | [layoff-checklist.md](org-restructure-layoff-checklist.md) | ROLES.md, KANBAN owners, HANDOFF, child sessions |
+| Merge duplicate roles | [merge-checklist.md](org-restructure-merge-checklist.md) | ROLES.md, MISSION.md, skills, session mapping |
+| Change operating rules | [constitution-update.md](org-restructure-constitution-update.md) | agents.md, DECISIONS.md |
+| Remove child from org view | [layoff-checklist.md](org-restructure-layoff-checklist.md) § Child sessions | stop/delete session; no detach API yet |
 
 ## Core rules
 
@@ -68,7 +63,7 @@ There is no `agent__detachFromOrg` tool today. To remove a session from org view
 
 ## References
 
-- [Impact analysis (pre-flight)](references/impact-analysis.md)
-- [Layoff checklist](references/layoff-checklist.md)
-- [Merge checklist](references/merge-checklist.md)
-- [Constitution update](references/constitution-update.md)
+- [Impact analysis (pre-flight)](org-restructure-impact-analysis.md)
+- [Layoff checklist](org-restructure-layoff-checklist.md)
+- [Merge checklist](org-restructure-merge-checklist.md)
+- [Constitution update](org-restructure-constitution-update.md)

@@ -6,7 +6,7 @@
 
 **Fix:**
 
-1. Tighten [criteria.md](criteria.md) with pass/fail checks, not style opinions.
+1. Tighten [criteria.md](gatekeeper-criteria.md) with pass/fail checks, not style opinions.
 2. Parent tracks `reworkCount`; stop at limit (default 3) and escalate to user.
 3. On reject, require **numbered failed criteria** — not open-ended "improve quality."
 
@@ -35,7 +35,7 @@
 **Fix:**
 
 - Pass only: criteria snapshot, latest diff summary, failed items, target files.
-- See [rework-limit-examples.md](rework-limit-examples.md).
+- See [rework-limit-examples.md](gatekeeper-rework-limit-examples.md).
 
 ## Escalation template
 

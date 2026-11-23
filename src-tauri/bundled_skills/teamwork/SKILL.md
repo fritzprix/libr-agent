@@ -1,6 +1,6 @@
 ---
 name: teamwork
-description: Build and scaffold a multi-agent collaboration workspace with the right coordination model, shared operating files, and role-specific skills. Use when a user wants to create a team, crew, task force, asynchronous collaboration loop, specialist handoff workflow, or reusable shared workspace for multiple agents, then route execution to the right teamwork skill.
+description: "Pick and run a multi-agent collaboration pattern: scaffold a persistent team workspace, or run a hub-and-spoke, pipeline, or pair-programming session. Triggers: team, crew, task force, 허브 스포크, 작업 배분, hub and spoke, coordinator, 파이프라인, 순차 처리, 단계별 처리, pipeline, 페어 프로그래밍, driver navigator, pair programming."
 ---
 
 # Teamwork
@@ -36,6 +36,17 @@ Start by deciding whether the request needs:
 
 Default to the smallest structure that can succeed.
 
+## Choose the pattern
+
+| Work shape | Pattern | Procedure |
+| --- | --- | --- |
+| One coordinator splits work, routes it to workers, and merges the outputs; workers do not talk to each other | **Hub-and-spoke** | [hub-spoke.md](references/hub-spoke.md) |
+| Fixed stages in order; each stage output is the next stage input (for example research → draft → review → format) | **Pipeline** | [pipeline.md](references/pipeline.md) |
+| Two sessions share one workspace: a Driver edits code and a Navigator reviews in turns | **Pair programming** | [pair-programming.md](references/pair-programming.md) |
+| The team must persist: shared constitution, roles, board, or resumable collaboration | **Task force** | Core Workflow below (then `org` for org lineage) |
+
+Independent parallel pieces with one merge step use `divide-conquer`. A multi-expert verdict on one question uses `consensus-delegation`. A separate reviewer gate uses `delegation-eval-loop`. The three session patterns above need no scaffold; use the Core Workflow only for a persistent team.
+
 ## Core Workflow
 
 ### 1. Shape the task force
@@ -53,8 +64,8 @@ Use the decision matrix in [framework-selection.md](references/framework-selecti
 
 Pick exactly one primary model:
 
-- **Sequential** - use for dependency chains like research -> design -> implementation -> review.
-- **Hub-and-spoke** - use when one coordinator must integrate outputs from several workers.
+- **Sequential** - use for dependency chains like research -> design -> implementation -> review. Stage handover: [pipeline.md](references/pipeline.md).
+- **Hub-and-spoke** - use when one coordinator must integrate outputs from several workers. Routing and polling: [hub-spoke.md](references/hub-spoke.md).
 - **Swarm** - use when exploration is open-ended and agents can safely work from a shared board.
 
 Use one primary model unless the task clearly needs a hybrid.
@@ -87,7 +98,7 @@ After choosing the execution substrate, route to the matching specialist skill:
 
 - **Plain child sessions** - stay here and use `delegate` when child-session mechanics matter.
 - **Explicit org lineage** - switch to `org`.
-- **Living org restructure** (add/layoff/merge roles, constitution edits) - switch to `org-restructure` after the org exists.
+- **Living org restructure** (add/layoff/merge roles, constitution edits) - switch to `org` (its restructure reference) after the org exists.
 - **Postmortem → improve** (after-action learning, continuous org improvement) - switch to `postmortem-improve`.
 - **Standalone global scheduled tasks** - switch to `schedule`.
 - **In-session delays or session-bound recurrence** - switch to `loop`.
@@ -267,3 +278,6 @@ Before announcing success, verify:
 - [Framework selection matrix](references/framework-selection.md)
 - [Coordination file contracts](references/coordination-contract.md)
 - [Expert skill template](references/expert-skill-template.md)
+- [Hub-and-spoke](references/hub-spoke.md) — [routing](references/hub-spoke-routing.md), [status polling](references/hub-spoke-status-polling.md), [context budget](references/hub-spoke-context-budget.md)
+- [Pipeline](references/pipeline.md) — [specs](references/pipeline-specs.md), [handover templates](references/pipeline-handover-templates.md), [failure recovery](references/pipeline-failure-recovery.md)
+- [Pair programming](references/pair-programming.md) — [role rotation](references/pair-programming-role-rotation.md), [turn protocol](references/pair-programming-turn-protocol.md), [diff review checklist](references/pair-programming-diff-review-checklist.md)

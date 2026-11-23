@@ -114,7 +114,7 @@ Chat `@skill:` autocomplete is the freshest list. Common names:
 
 How to split work across child sessions: [Sub-agents & orchestration](sub-agents.md).
 
-`delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
+`delegate`, `teamwork`, `org`, `divide-conquer`, `consensus-delegation`, `recruit`, `boost`
 
 ### Scheduling and wake-ups
 
