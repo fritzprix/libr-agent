@@ -297,6 +297,10 @@ impl SecureFileManager {
             .await
             .map_err(|e| format!("Failed to append to file: {e}"))?;
 
+        file.flush()
+            .await
+            .map_err(|e| format!("Failed to flush appended content: {e}"))?;
+
         info!("Successfully appended to file: {:?}", safe_path);
         Ok(())
     }
