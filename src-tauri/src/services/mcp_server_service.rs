@@ -36,6 +36,34 @@ fn verify_config_timeout() -> Duration {
     ))
 }
 
+/// Log-mask guard for the verification probe (#2969). While alive, the logger masks the
+/// filled secret values, so lines written during the probe — the failed-connect line of
+/// `start_http_server` and the rmcp transport worker's line carrying the full URL —
+/// cannot leak them. Its registry slot `probe#{server_id}` can never equal a session's
+/// key (session ids contain no `#`), so it cannot clobber a session's shell or MCP
+/// values. Dropping the guard forgets them, covering every exit path of the probe.
+struct ProbeLogMask(String);
+
+impl ProbeLogMask {
+    fn register(server_id: &str, values: &[String]) -> Self {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            register_log_secret_values, MCP_SECRET_MASK_SOURCE,
+        };
+        let slot = format!("probe#{server_id}");
+        register_log_secret_values(&slot, MCP_SECRET_MASK_SOURCE, values);
+        Self(slot)
+    }
+}
+
+impl Drop for ProbeLogMask {
+    fn drop(&mut self) {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            forget_log_secret_values, MCP_SECRET_MASK_SOURCE,
+        };
+        forget_log_secret_values(&self.0, MCP_SECRET_MASK_SOURCE);
+    }
+}
+
 pub(crate) fn summarize_tool_names(tools: &[MCPTool]) -> String {
     const MAX_NAMES: usize = 5;
 
@@ -148,12 +176,17 @@ impl McpServerService {
         server_id: &str,
     ) -> Result<Vec<MCPTool>, String> {
         let filled = fill_secrets(secret_store(), server_id, &config).await?;
+        // #2969: the connect below writes log lines while the filled values exist
+        // (start_http_server logs the failed connection, and the rmcp transport can
+        // log the full URL). Keep them in the global log mask for the probe only.
+        let log_mask = ProbeLogMask::register(server_id, filled.log_mask_values());
         let result = match (target.container_session(), &filled.config.transport) {
             (Some(session), TransportConfig::Stdio { .. }) => {
                 Self::verify_stdio_in_container(filled.config.clone(), session).await
             }
             _ => Self::verify_config(filled.config.clone()).await,
         };
+        drop(log_mask);
         result.map_err(|error| filled.mask(&error))
     }
 
