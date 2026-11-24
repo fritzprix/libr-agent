@@ -289,9 +289,52 @@ async fn handle_elements(body: ElementsBody) -> Result<JsonReply, Infallible> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    Ok(json_ok(
-        &json!({ "elements": elements, "count": elements.len() }),
-    ))
+    // #2972 item 3: element bounds are CSS pixels (getBoundingClientRect)
+    // while `ui/input` viewport coordinates are window pixels. Echo the webview
+    // zoom the app reported so clients can convert bounds by multiplying with
+    // `scaleFactor`.
+    let scale_factor = scale_factor_from_report(&report);
+    Ok(json_ok(&json!({
+        "elements": elements,
+        "count": elements.len(),
+        "scaleFactor": scale_factor,
+    })))
+}
+
+/// Webview zoom reported by the frontend inspect payload. Defaults to 1.0 for
+/// older frontends that report no `uiScale`, and rejects non-finite or
+/// non-positive values the same way.
+fn scale_factor_from_report(report: &Value) -> f64 {
+    report
+        .get("uiScale")
+        .and_then(Value::as_f64)
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+        .unwrap_or(1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scale_factor_from_report;
+    use serde_json::json;
+
+    #[test]
+    fn reported_ui_scale_is_echoed_as_scale_factor() {
+        // #2972 item 3: CSS-pixel bounds convert to ui/input window pixels.
+        assert_eq!(scale_factor_from_report(&json!({ "uiScale": 1.1 })), 1.1);
+    }
+
+    #[test]
+    fn missing_or_invalid_ui_scale_defaults_to_one() {
+        for report in [
+            json!({}),
+            json!({ "uiScale": null }),
+            json!({ "uiScale": "1.1" }),
+            json!({ "uiScale": 0 }),
+            json!({ "uiScale": -2 }),
+        ] {
+            assert_eq!(scale_factor_from_report(&report), 1.0, "{report}");
+        }
+    }
 }
 
 /// Deliver one `ui/input` action (#2902, owner ruling on the G1.1 input

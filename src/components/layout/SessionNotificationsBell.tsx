@@ -29,6 +29,12 @@ function formatSessionName(
 /**
  * Dismissing a row removes the focused menu item. Move focus to the item now at
  * the same position (or the menu itself) so keyboard users stay in the menu.
+ *
+ * Two traps fixed in #2972 (#2731 2565 N-2): Radix synchronously re-dumps
+ * focus onto the first item ("Mark all read") when the roving item is removed,
+ * so an "if focus is still in the menu, leave it alone" guard locks focus onto
+ * that wrong item; and the row may leave the DOM after the first frame, so
+ * wait until the dismissed item is actually gone before restoring focus.
  */
 function keepMenuFocusAfterRemoval(item: EventTarget | null) {
   if (!(item instanceof HTMLElement)) return;
@@ -37,11 +43,17 @@ function keepMenuFocusAfterRemoval(item: EventTarget | null) {
   const menuItems = () =>
     Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
   const index = menuItems().indexOf(item);
-  requestAnimationFrame(() => {
-    if (menu.contains(document.activeElement)) return;
+  let frames = 0;
+  const restore = () => {
+    if (item.isConnected && frames < 10) {
+      frames += 1;
+      requestAnimationFrame(restore);
+      return;
+    }
     const remaining = menuItems();
     (remaining[Math.min(index, remaining.length - 1)] ?? menu).focus();
-  });
+  };
+  requestAnimationFrame(restore);
 }
 
 export function SessionNotificationsBell() {

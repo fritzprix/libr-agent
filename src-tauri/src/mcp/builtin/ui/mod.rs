@@ -164,8 +164,8 @@ impl UiServer {
     }
 
     async fn ask_user(&self, args: Value, session_id: Option<String>) -> Result<MCPResult, String> {
-        let questions = match ask_user::parse_ask_user_args(&args) {
-            Ok(questions) => questions,
+        let (questions, warnings) = match ask_user::parse_ask_user_args(&args) {
+            Ok(parsed) => parsed,
             Err(result) => return Ok(result),
         };
         let Some(session_id) = session_id else {
@@ -184,7 +184,9 @@ impl UiServer {
             questions: questions.clone(),
         };
         match manager.request_user_prompt(&session_id, payload).await {
-            Ok(outcome) => Ok(ask_user::ask_user_outcome_result(&questions, &outcome)),
+            Ok(outcome) => Ok(ask_user::ask_user_outcome_result(
+                &questions, &outcome, &warnings,
+            )),
             Err(message) => Ok(MCPResult::error(&message)),
         }
     }
@@ -257,6 +259,21 @@ impl UiServer {
         // Only enforce on-disk existence when we actually probed a session workspace.
         // Without session_id we must not reject (cannot safely touch the host FS).
         let mut missing_export_paths: Vec<String> = Vec::new();
+        // Load attach metadata once: the sync branch below and the Docker hint in
+        // the missing-paths error both need it (#2972 item 5).
+        let attach_metadata = match session_id.as_deref() {
+            Some(sid) if !export_paths.is_empty() => {
+                crate::services::container_attach_fs::load_session(sid)
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        };
+        let docker_session = attach_metadata.as_ref().is_some_and(|session| {
+            session.workspace_isolation
+                == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
+        });
         if !export_paths.is_empty() {
             for path_str in &export_paths {
                 let (exists, size_bytes, extension, name, absolute_path) = if let Some(ref sid) =
@@ -270,11 +287,9 @@ impl UiServer {
                             // deliverables are visible before the host exists() probe.
                             // Propagate non-missing docker failures (same as
                             // sync_attach_before_host_read) — never trust stale staging.
-                            if let Ok(Some(session)) =
-                                crate::services::container_attach_fs::load_session(sid).await
-                            {
+                            if let Some(session) = attach_metadata.as_ref() {
                                 if let Err(err) = crate::services::container_attach_fs::pull_container_file_to_host(
-                                    &session,
+                                    session,
                                     &full_path,
                                 )
                                 .await
@@ -357,23 +372,43 @@ impl UiServer {
         // parent checkSession (#2044) promote a hollow deliverable.
         if status == "success" && !missing_export_paths.is_empty() {
             let missing_list = missing_export_paths.join(", ");
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Cannot report status=success: export_paths not found on disk: {missing_list}"
-                ),
-                ToolGroup::UI,
-            )
-            .with_guidance(vec![
+            // #2972 item 5 (#2731 2697 D-1): in a Docker session a missing host
+            // file usually means the container→host sync never ran because the
+            // daemon is unreachable. Say so instead of blaming the disk alone.
+            let docker_suffix = if docker_session {
+                " This session is Docker-isolated: the file may exist only inside \
+                 the container while the Docker daemon is unreachable on the host."
+            } else {
+                ""
+            };
+            let mut guidance = vec![
                 "Write each missing deliverable with workspace__writeFile (or correct the path)."
                     .to_string(),
                 "Verify the file exists (workspace__readFile / listDirectory), then call ui__reportResult again."
                     .to_string(),
+            ];
+            if docker_session {
+                guidance.push(
+                    "If the Docker daemon is unreachable, start it (or Docker Desktop) so the \
+                     container file can be synced, then retry."
+                        .to_string(),
+                );
+            }
+            guidance.push(
                 "Use status=partial only when intentionally delivering with known gaps — never claim success for missing files."
                     .to_string(),
-            ])
+            );
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Cannot report status=success: export_paths not found on disk: {missing_list}.{docker_suffix}"
+                ),
+                ToolGroup::UI,
+            )
+            .with_guidance(guidance)
             .to_mcp_result_with_data(Some(json!({
                 "missing_export_paths": missing_export_paths,
+                "docker_session": docker_session,
                 "deliverables": deliverables,
             }))));
         }

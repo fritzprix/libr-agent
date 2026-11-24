@@ -58,7 +58,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
             action: ShellPolicyAction::RequireHardApproval,
             enforced_in_unsafe: false,
             description: format!(
-                "Claude requested hard approval to run tool {}. Risk summary: {}.",
+                "The agent requested hard approval to run tool {}. Risk summary: {}.",
                 context.tool_name, reason
             ),
             input_preview: preview,
@@ -124,7 +124,7 @@ pub fn evaluate_shell_policy(context: ShellPolicyContext<'_>) -> ShellPolicyDeci
             action: ShellPolicyAction::RequireApproval,
             enforced_in_unsafe: false,
             description: format!(
-                "Claude requested approval to run tool {}. Risk summary: {}.",
+                "The agent requested approval to run tool {}. Risk summary: {}.",
                 context.tool_name, reason
             ),
             input_preview: preview,

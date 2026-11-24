@@ -10,10 +10,10 @@ pub fn build_channel_permission_description(tool_name: &str, arguments: &str) ->
     let trimmed_arguments = arguments.trim();
 
     if trimmed_arguments.is_empty() {
-        format!("Claude requested approval to run tool {}", tool_name)
+        format!("The agent requested approval to run tool {}", tool_name)
     } else {
         format!(
-            "Claude requested approval to run tool {} with the provided arguments",
+            "The agent requested approval to run tool {} with the provided arguments",
             tool_name
         )
     }

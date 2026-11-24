@@ -274,6 +274,10 @@ async fn report_result_success_rejects_missing_export_paths_without_settling() {
                 .any(|p| p.as_str() == Some("work/answers.json"))),
         "missing_export_paths should list the absent file: {structured}"
     );
+    assert!(
+        !text.contains("Docker"),
+        "host-session error must not mention Docker (#2972): {text}"
+    );
 
     let _ = WorkspaceService::cancel_override(session_id).await;
 }
@@ -567,6 +571,10 @@ async fn report_result_attach_container_missing_export_path_rejects() {
         "error must name missing export_paths: {text}"
     );
     assert!(
+        text.contains("Docker-isolated") && text.contains("Docker daemon"),
+        "Docker-session error must name the unreachable Docker daemon (#2972): {text}"
+    );
+    assert!(
         !text.contains("STOP: Do not call any more tools"),
         "must not emit STOP (would poison checkSession settle): {text}"
     );
@@ -581,6 +589,11 @@ async fn report_result_attach_container_missing_export_path_rejects() {
         .structured_content
         .as_ref()
         .expect("structured error data");
+    assert_eq!(
+        structured.get("docker_session").and_then(|v| v.as_bool()),
+        Some(true),
+        "structured data must flag the Docker session: {structured}"
+    );
     assert!(
         structured
             .get("missing_export_paths")

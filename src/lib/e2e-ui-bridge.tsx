@@ -21,6 +21,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { readCachedUiScale } from '@/lib/ui-scale';
 
 /** True after the first successful `e2e_ui_enabled` ping in this document. */
 let bridgeActive = false;
@@ -193,7 +194,10 @@ async function handleInspect(detail: InspectEvent): Promise<void> {
   const elements = collectInspectableElements(detail.selector);
   await invoke('e2e_ui_report', {
     requestId: detail.requestId,
-    payload: { elements },
+    // uiScale: the webview zoom the app applied (#2972 item 3). Element
+    // bounds are CSS pixels; ui/input viewport coordinates are window
+    // pixels. The control plane echoes this factor so clients can convert.
+    payload: { elements, uiScale: readCachedUiScale() },
   }).catch(reportRejection);
 }
 
