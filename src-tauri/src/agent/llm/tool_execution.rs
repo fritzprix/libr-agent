@@ -17,6 +17,10 @@ use tauri::AppHandle;
 use tokio::sync::{oneshot, RwLock};
 use tokio_util::sync::CancellationToken;
 
+/// Claude Code's `Notification` type string for a tool-approval prompt (#3005).
+/// A plugin groups these with `"matcher": "permission_prompt"`.
+pub(crate) const NOTIFICATION_PERMISSION_PROMPT: &str = "permission_prompt";
+
 struct ToolExecutionContext<'a> {
     session_repo: &'a Arc<dyn SessionRepository>,
     active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -236,13 +240,16 @@ impl ToolExecutionContext<'_> {
             );
         }
 
-        // Notification hook (#2925): run approved Notification handlers; ignore decisions.
+        // Notification hook (#2925, #3005): run approved Notification handlers;
+        // ignore decisions. The type string is the Claude Code one for a tool
+        // approval prompt (`permission_prompt`), so a plugin's
+        // `"matcher": "permission_prompt"` group matches.
         let mut notification_params = crate::services::hooks::HookEnvelopeParams::new(
             self.session_id,
             std::path::PathBuf::from("."),
             crate::services::hooks::HookEvent::Notification,
         );
-        notification_params.notification_type = Some("permission".to_string());
+        notification_params.notification_type = Some(NOTIFICATION_PERMISSION_PROMPT.to_string());
         notification_params.notification_message = Some(format!(
             "Tool {} requires approval: {}",
             tool_name,
@@ -250,7 +257,7 @@ impl ToolExecutionContext<'_> {
         ));
         let _ = crate::services::hooks::dispatch_hook_event(
             crate::services::hooks::HookEvent::Notification,
-            "permission",
+            NOTIFICATION_PERMISSION_PROMPT,
             &notification_params,
             self.session_id,
         )
@@ -605,7 +612,7 @@ pub async fn execute_tool_calls(
             continue;
         }
 
-        let args = match inspect_tool_call_arguments(args_str) {
+        let mut args = match inspect_tool_call_arguments(args_str) {
             Ok(map) => serde_json::Value::Object(map),
             Err((kind, parse_error)) => {
                 log::error!(
@@ -633,45 +640,15 @@ pub async fn execute_tool_calls(
             }
         };
 
-        let policy_decision =
-            crate::agent::tool_approvals::evaluate_tool_execution_policy(tool_name, &args).await;
-
+        let mut guards = pre_execution_guards(&context, tool_name, &args).await;
+        if let Some((refusal, reason)) = guards.refusal.take() {
+            context
+                .continue_after_tool(tool_call_id, refusal, reason)
+                .await;
+            index += 1;
+            continue;
+        }
         let unsafe_enabled = context.current_unsafe_mode().await;
-        if let Some(blocked) = crate::agent::tool_approvals::blocked_execution_for_runtime(
-            &policy_decision,
-            unsafe_enabled,
-        ) {
-            context
-                .continue_after_tool(
-                    tool_call_id,
-                    error_result(blocked.message.clone()),
-                    "policy-blocked tool execution",
-                )
-                .await;
-            index += 1;
-            continue;
-        }
-
-        // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
-        let root_refusal = {
-            let active = active_sessions.read().await;
-            crate::agent::tool_approvals::root_execution_refusal(
-                tool_name,
-                &args,
-                active.get(&session_id).map(|session| &session.metadata),
-            )
-        };
-        if let Some(refusal) = root_refusal {
-            context
-                .continue_after_tool(
-                    tool_call_id,
-                    tool_result_from_mcp_result(refusal),
-                    "root execution unavailable",
-                )
-                .await;
-            index += 1;
-            continue;
-        }
 
         // PreToolUse hook (#2925): runs after hard security/root guards and before
         // approval/execution. Applies matcher on `tool_name` and `permissionDecision`
@@ -693,6 +670,29 @@ pub async fn execute_tool_calls(
         if let Some(ctx) = pre_tool_outcome.joined_additional_context() {
             crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
         }
+
+        // `updatedInput` (#3005): a hook that allows the call may replace the
+        // whole argument object. The rewritten arguments then go through the
+        // same policy and root-execution guards as the ones the model sent, so
+        // a rewrite cannot walk around them. A `Block` decision ignores any
+        // rewrite — the call never runs.
+        let mut effective_args_json = args_str.clone();
+        if let Some(updated) = pre_tool_outcome.updated_input.clone().filter(|_| {
+            pre_tool_outcome.decision != Some(crate::services::hooks::HookDecision::Block)
+        }) {
+            args = updated;
+            effective_args_json = serde_json::to_string(&args).unwrap_or_else(|_| args_str.clone());
+            guards = pre_execution_guards(&context, tool_name, &args).await;
+            if let Some((refusal, reason)) = guards.refusal.take() {
+                context
+                    .continue_after_tool(tool_call_id, refusal, reason)
+                    .await;
+                index += 1;
+                continue;
+            }
+        }
+        let args_str = effective_args_json.as_str();
+        let policy_decision = guards.policy_decision;
 
         let yolo_enabled = context.current_yolo_mode().await;
         let is_hard_approval = matches!(
@@ -852,6 +852,63 @@ pub async fn execute_tool_calls(
             }
         }
         index += 1;
+    }
+}
+
+/// Pre-execution guards for one argument object (#3005).
+struct PreExecutionGuards {
+    policy_decision: ToolExecutionPolicyDecision,
+    /// The result to return instead of executing, plus its error context.
+    refusal: Option<(ToolExecutionResult, &'static str)>,
+}
+
+/// Policy block and root-execution refusal for `args`.
+///
+/// A `PreToolUse` hook may rewrite the arguments (`updatedInput`), so the same
+/// guards run again on the rewritten arguments: a hook rewrite must not walk
+/// around the policy block or the host root refusal.
+async fn pre_execution_guards(
+    context: &ToolExecutionContext<'_>,
+    tool_name: &str,
+    args: &serde_json::Value,
+) -> PreExecutionGuards {
+    let policy_decision =
+        crate::agent::tool_approvals::evaluate_tool_execution_policy(tool_name, args).await;
+
+    let unsafe_enabled = context.current_unsafe_mode().await;
+    // Build the refusal before moving `policy_decision`: the borrow inside
+    // `blocked_execution_for_runtime` ends with this statement.
+    let blocked_refusal = crate::agent::tool_approvals::blocked_execution_for_runtime(
+        &policy_decision,
+        unsafe_enabled,
+    )
+    .map(|blocked| error_result(blocked.message.clone()));
+    if let Some(refusal) = blocked_refusal {
+        return PreExecutionGuards {
+            policy_decision,
+            refusal: Some((refusal, "policy-blocked tool execution")),
+        };
+    }
+
+    // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
+    let root_refusal = {
+        let active = context.active_sessions.read().await;
+        crate::agent::tool_approvals::root_execution_refusal(
+            tool_name,
+            args,
+            active
+                .get(context.session_id)
+                .map(|session| &session.metadata),
+        )
+    };
+    PreExecutionGuards {
+        policy_decision,
+        refusal: root_refusal.map(|refusal| {
+            (
+                tool_result_from_mcp_result(refusal),
+                "root execution unavailable",
+            )
+        }),
     }
 }
 
@@ -1053,6 +1110,26 @@ mod pre_tool_hook_tests {
                 kind: PendingApprovalKind::Standard,
             }
         );
+    }
+
+    /// The `Notification` type string a tool-approval prompt emits is the
+    /// Claude Code one, so a plugin can match it by name (#3005).
+    #[test]
+    fn permission_prompt_is_the_claude_code_notification_type() {
+        assert_eq!(
+            super::NOTIFICATION_PERMISSION_PROMPT,
+            "permission_prompt",
+            "the emitted type string must stay the Claude Code value"
+        );
+        // Matchers are regexes, so an anchored pattern reaches it too.
+        assert!(crate::services::hooks::matcher_matches(
+            Some("permission_prompt"),
+            super::NOTIFICATION_PERMISSION_PROMPT
+        ));
+        assert!(crate::services::hooks::matcher_matches(
+            Some("^permission_.*$"),
+            super::NOTIFICATION_PERMISSION_PROMPT
+        ));
     }
 }
 

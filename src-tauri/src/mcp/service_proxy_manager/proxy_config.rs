@@ -563,6 +563,7 @@ mod tests {
                     approval_hashes: Default::default(),
                     created_at: 0,
                     hook_files: vec![],
+                    inline_hooks: vec![],
                     plugin: None,
                     mcp_servers: vec![],
                     mcp_approved: true,

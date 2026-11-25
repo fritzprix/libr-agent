@@ -143,6 +143,27 @@ pub(crate) async fn reset_session(
         }
     });
 
+    // SessionEnd hook (#3005): `/clear` ends the conversation, which is the
+    // `clear` reason Claude Code sends for the same command. The matching
+    // `SessionStart` with `source=clear` follows right below. The event's
+    // 1.5 s default budget keeps this off the `/clear` critical path.
+    {
+        let mut params = crate::services::hooks::HookEnvelopeParams::new(
+            session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::SessionEnd,
+        );
+        let reason = crate::services::hooks::SessionEndReason::Clear;
+        params.session_end_reason = Some(reason);
+        let _ = crate::services::hooks::dispatch_hook_event(
+            crate::services::hooks::HookEvent::SessionEnd,
+            reason.as_str(),
+            &params,
+            session_id,
+        )
+        .await;
+    }
+
     crate::services::hooks::spawn_session_start(
         session_id,
         crate::services::hooks::SessionStartSource::Clear,

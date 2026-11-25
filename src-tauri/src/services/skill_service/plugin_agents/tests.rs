@@ -297,6 +297,7 @@ fn record_for(root: &Path, source_id: &str, source_url: &str) -> PluginSourceRec
             created_at: 0,
             plugin: None,
             hook_files: Vec::new(),
+            inline_hooks: vec![],
             mcp_servers: Vec::new(),
             mcp_approved: false,
             enabled: true,

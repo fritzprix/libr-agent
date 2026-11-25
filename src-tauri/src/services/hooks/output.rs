@@ -14,6 +14,10 @@ pub struct HookOutput {
     pub decision: Option<HookDecision>,
     pub reason: Option<String>,
     pub continue_loop: Option<bool>,
+    /// `hookSpecificOutput.updatedInput` (#3005): the tool arguments a
+    /// `PreToolUse` hook wants the call to run with. It replaces the whole
+    /// input object, exactly as Claude Code applies it.
+    pub updated_input: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +39,7 @@ struct RawHookSpecificOutput {
     additional_context: Option<String>,
     permission_decision: Option<String>,
     permission_decision_reason: Option<String>,
+    updated_input: Option<serde_json::Value>,
 }
 
 /// Normalize hook stdout into structured output (alias for callers).
@@ -85,11 +90,17 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
 
     let continue_loop = raw.continue_loop;
 
+    let updated_input = raw
+        .hook_specific_output
+        .as_ref()
+        .and_then(|h| h.updated_input.clone());
+
     HookOutput {
         additional_context,
         decision,
         reason,
         continue_loop,
+        updated_input,
     }
 }
 
@@ -174,5 +185,24 @@ mod tests {
         }"#;
         let out = parse_hook_stdout(HookEvent::SessionStart, json);
         assert_eq!(out.additional_context.as_deref(), Some("bootstrap body"));
+    }
+
+    #[test]
+    fn reads_updated_input_from_hook_specific_output() {
+        let out = parse_hook_stdout_json(
+            r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"path":"b.txt","line":7}}}"#,
+        );
+        assert_eq!(out.decision, Some(HookDecision::Allow));
+        assert_eq!(
+            out.updated_input,
+            Some(serde_json::json!({"path": "b.txt", "line": 7}))
+        );
+    }
+
+    #[test]
+    fn updated_input_absent_parses_as_none() {
+        let out =
+            parse_hook_stdout_json(r#"{"hookSpecificOutput":{"permissionDecision":"allow"}}"#);
+        assert_eq!(out.updated_input, None);
     }
 }

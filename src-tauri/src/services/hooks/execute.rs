@@ -9,7 +9,7 @@ use super::registry::{
     get_session_plugins_directory, get_user_plugins_directory, list_effective_approved_sources_in,
 };
 use super::schema::{
-    HookDispatchMode, HookEvent, HookHandler, HookHttpConfig, DEFAULT_HOOK_TIMEOUT_SECS,
+    HookDispatchMode, HookEvent, HookHandler, HookHttpConfig, DEFAULT_HOOK_TIMEOUT_MS,
 };
 use crate::session::{get_session_manager, resolve_session_workspace_dir};
 use regex::Regex;
@@ -131,6 +131,9 @@ pub struct HookDispatchResult {
     pub additional_context: Vec<String>,
     pub decision: Option<HookDecision>,
     pub reason: Option<String>,
+    /// `updatedInput` from the handler that last allowed the call (#3005).
+    /// `None` means no hook rewrote the arguments.
+    pub updated_input: Option<serde_json::Value>,
 }
 
 impl HookDispatchResult {
@@ -165,6 +168,12 @@ impl HookDispatchResult {
             }
         } else if self.reason.is_none() && output.reason.is_some() {
             self.reason = output.reason;
+        }
+
+        // Claude Code applies one rewrite per call, so the last allowed
+        // handler's input replaces any earlier one.
+        if output.updated_input.is_some() && output.decision != Some(HookDecision::Block) {
+            self.updated_input = output.updated_input;
         }
     }
 
@@ -293,7 +302,10 @@ pub async fn dispatch_hook_event_with_sources(
     // `CLAUDE_ENV_FILE` (#2926): only a SessionStart run gets one, and it is
     // truncated first so a stale file from an earlier run cannot leak values
     // into this session. Its `NAME=value` lines are applied to later shell
-    // tool calls of the session once the hooks have run.
+    // tool calls of the session once the hooks have run. Claude Code also sets
+    // it for `Setup`, `CwdChanged`, and `FileChanged`; LibrAgent does not
+    // implement those events yet (#3005), so `SessionStart` is the whole scope
+    // that exists.
     let env_file = if event == HookEvent::SessionStart {
         prepare_session_env_file(session_id)
     } else {
@@ -487,12 +499,12 @@ async fn run_hook_handler(
     handler: &HookHandler,
     envelope_json: &str,
 ) -> HookRunOutcome {
-    let timeout_secs = if handler.timeout_secs == 0 {
-        DEFAULT_HOOK_TIMEOUT_SECS
+    let timeout_ms = if handler.timeout_ms == 0 {
+        DEFAULT_HOOK_TIMEOUT_MS
     } else {
-        handler.timeout_secs
+        handler.timeout_ms
     };
-    let deadline = Duration::from_secs(timeout_secs);
+    let deadline = Duration::from_millis(timeout_ms);
 
     if let Some(http) = &handler.http {
         return run_http_hook(event, http, deadline, envelope_json).await;
@@ -798,6 +810,19 @@ fn build_hook_command(env: &HookEnv, handler: &HookHandler) -> Result<Command, S
 }
 
 fn build_hook_shell_command(plugin_root: &Path, handler: &HookHandler) -> Result<Command, String> {
+    // Exec form (#3005): `args` present means the command is an executable and
+    // each `args` element is one argument, with `${CLAUDE_PLUGIN_ROOT}`
+    // substituted as a plain string. No shell runs, on any platform.
+    if let Some(args) = handler.args.as_deref() {
+        let program = expand_plugin_root_placeholders(&handler.command, plugin_root);
+        let mut cmd = Command::new(&program);
+        for arg in args {
+            cmd.arg(expand_plugin_root_placeholders(arg, plugin_root));
+        }
+        cmd.current_dir(plugin_root);
+        return Ok(cmd);
+    }
+
     #[cfg(target_os = "windows")]
     {
         if let Some(ps) = handler.powershell.as_deref() {
@@ -909,6 +934,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                inline_hooks: vec![],
                 enabled: true,
                 installed_commit: None,
             },
@@ -938,6 +964,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                inline_hooks: vec![],
                 enabled: true,
                 installed_commit: None,
             },
@@ -1067,6 +1094,89 @@ mod tests {
         clear_hook_context(&sid);
     }
 
+    /// Exec form (#3005): with `args` set, the command runs as an executable and
+    /// each element arrives verbatim. A shell would expand `$HOME` and split on
+    /// the `;`, so the literal output proves no shell ran.
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn exec_form_args_bypass_the_shell() {
+        let hooks_json = r#"{ "hooks": { "SessionStart": [ { "type": "command", "command": "printf", "args": ["%s|%s", "$HOME", "a;b c"] } ] } }"#;
+        let (temp, root) = setup_approved_plugin(hooks_json);
+        let sid = format!("hook-exec-{}", uuid::Uuid::new_v4());
+        clear_hook_context(&sid);
+        run_session_start_in(temp.path(), &sid, SessionStartSource::Startup, Some(root)).await;
+        assert_eq!(get_hook_context(&sid).as_deref(), Some("$HOME|a;b c"));
+        clear_hook_context(&sid);
+    }
+
+    /// `updatedInput` (#3005): a `PreToolUse` hook that allows the call rewrites
+    /// the arguments, and the aggregated dispatch result carries the rewrite.
+    #[tokio::test]
+    async fn pre_tool_use_updated_input_reaches_the_dispatch_result() {
+        #[cfg(not(target_os = "windows"))]
+        let hooks_json = r#"{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{\"path\":\"rewritten.txt\"}}}'" } ] } ] } }"#;
+        #[cfg(target_os = "windows")]
+        let hooks_json = r#"{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "echo {\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{\"path\":\"rewritten.txt\"}}}" } ] } ] } }"#;
+        let (temp, root) = setup_approved_plugin(hooks_json);
+        let sid = format!("hook-updated-input-{}", uuid::Uuid::new_v4());
+        let mut params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        params.tool_name = Some("workspace__readFile".to_string());
+        params.tool_input = Some(serde_json::json!({"path": "original.txt"}));
+
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__readFile",
+            &params,
+            &sid,
+        )
+        .await;
+
+        assert_eq!(
+            outcome.decision,
+            Some(crate::services::hooks::HookDecision::Allow)
+        );
+        assert_eq!(
+            outcome.updated_input,
+            Some(serde_json::json!({"path": "rewritten.txt"}))
+        );
+    }
+
+    /// A `block` decision drops the rewrite: the call never runs, so there is
+    /// nothing for `updatedInput` to change (#3005).
+    #[test]
+    fn updated_input_from_a_blocking_handler_is_dropped() {
+        let mut result = HookDispatchResult::default();
+        result.merge(HookOutput {
+            additional_context: None,
+            decision: Some(crate::services::hooks::HookDecision::Block),
+            reason: Some("denied".to_string()),
+            continue_loop: None,
+            updated_input: Some(serde_json::json!({"path": "changed.txt"})),
+        });
+        assert_eq!(result.updated_input, None);
+    }
+
+    /// The last allowing handler's rewrite wins, matching Claude Code's single
+    /// `updatedInput` per call (#3005).
+    #[test]
+    fn last_allow_rewrite_wins() {
+        let mut result = HookDispatchResult::default();
+        for path in ["first.txt", "second.txt"] {
+            result.merge(HookOutput {
+                additional_context: None,
+                decision: Some(crate::services::hooks::HookDecision::Allow),
+                reason: None,
+                continue_loop: None,
+                updated_input: Some(serde_json::json!({ "path": path })),
+            });
+        }
+        assert_eq!(
+            result.updated_input,
+            Some(serde_json::json!({"path": "second.txt"}))
+        );
+    }
+
     #[tokio::test]
     async fn session_start_json_context_stored() {
         #[cfg(target_os = "windows")]
@@ -1099,6 +1209,7 @@ mod tests {
                     created_at: 0,
                     plugin: None,
                     hook_files: vec![],
+                    inline_hooks: vec![],
                     enabled: true,
                     installed_commit: None,
                 },
@@ -1309,6 +1420,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                inline_hooks: vec![],
                 enabled: true,
                 installed_commit: None,
             },
@@ -1367,6 +1479,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec!["custom-hooks/extra.json".to_string()],
+                inline_hooks: vec![],
                 enabled: true,
                 installed_commit: None,
             },
@@ -2188,6 +2301,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                inline_hooks: vec![],
                 enabled: true,
                 installed_commit: None,
             },
@@ -2231,6 +2345,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                inline_hooks: vec![],
                 mcp_servers: vec![],
                 mcp_approved: false,
                 enabled: true,
@@ -2350,6 +2465,7 @@ mod tests {
                 created_at: 0,
                 plugin: None,
                 hook_files: vec![],
+                inline_hooks: vec![],
                 mcp_servers: vec![],
                 mcp_approved: false,
                 enabled: true,

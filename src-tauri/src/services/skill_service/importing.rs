@@ -1263,10 +1263,23 @@ fn try_load_plugin_hooks(
     manifest: Option<&PluginManifest>,
 ) -> Result<Option<HooksConfig>, String> {
     let files = collect_plugin_hook_files(scan_root, manifest)?;
-    if files.is_empty() {
+    let inline = plugin_manifest::hook_inline_values(manifest);
+    if files.is_empty() && inline.is_empty() {
         return Ok(None);
     }
-    crate::services::hooks::schema::load_hooks_from_config_files(&files).map(Some)
+    let mut config = if files.is_empty() {
+        HooksConfig::empty()
+    } else {
+        crate::services::hooks::schema::load_hooks_from_config_files(&files)?
+    };
+    // Inline manifest hooks (#3005) are add-semantics like the file entries,
+    // and are validated here so a bad object fails the install preview.
+    crate::services::hooks::schema::merge_hooks_inline(
+        &mut config,
+        &inline,
+        "plugin manifest hooks",
+    )?;
+    Ok(Some(config))
 }
 
 /// #2924 (D3, gatekeeper G1.3): preview everything the plugin can run —
@@ -1564,6 +1577,7 @@ fn install_plugin_source(
             created_at: chrono::Utc::now().timestamp(),
             plugin: plugin_metadata_from_manifest(manifest.as_ref()),
             hook_files: hook_file_paths,
+            inline_hooks: plugin_manifest::hook_inline_values(manifest.as_ref()),
             mcp_servers,
             mcp_approved,
             enabled,

@@ -490,6 +490,7 @@ mod user_prompt_hook_tests {
             additional_context: vec!["should not be queued".to_string()],
             decision: Some(HookDecision::Block),
             reason: Some("prompt rejected by policy".to_string()),
+            updated_input: None,
         };
         let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
         assert_eq!(err, "prompt rejected by policy");
@@ -504,6 +505,7 @@ mod user_prompt_hook_tests {
             additional_context: vec!["inject for this turn".to_string()],
             decision: None,
             reason: None,
+            updated_input: None,
         };
         evaluate_user_prompt_hook_outcome(sid, outcome).unwrap();
         assert_eq!(

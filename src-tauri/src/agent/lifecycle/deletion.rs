@@ -197,19 +197,21 @@ pub async fn delete_session_only_with_dispatcher(
     Ok((session_id, orphaned_ids))
 }
 
-/// Dispatch the `SessionEnd` plugin hook stub for a deleted session
-/// (#2812). The stub only logs "not yet executed" and prepares the stdin
-/// envelope; no hook command runs in v1.
+/// Dispatch the `SessionEnd` plugin hook for a deleted session (#2812, #3005).
+///
+/// The reason is `other`, the Claude Code value for an exit it does not name:
+/// Claude Code has no per-session delete, and "clear all sessions" / "reset all
+/// data" end sessions through this same deletion path.
 async fn notify_session_end_stub(session_id: &str) {
     let mut params = crate::services::hooks::HookEnvelopeParams::new(
         session_id,
         std::path::PathBuf::from("."),
         crate::services::hooks::HookEvent::SessionEnd,
     );
-    params.session_end_reason = Some(crate::services::hooks::SessionEndReason::Delete);
+    params.session_end_reason = Some(crate::services::hooks::SessionEndReason::Other);
     let _ = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::SessionEnd,
-        "delete",
+        crate::services::hooks::SessionEndReason::Other.as_str(),
         &params,
         session_id,
     )

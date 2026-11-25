@@ -1,5 +1,6 @@
 use super::schema::{
-    load_hooks_from_config_files, load_hooks_from_root, HookEvent, HookHandler, HooksConfig,
+    load_hooks_from_config_files, load_hooks_from_root, merge_hooks_inline, HookEvent, HookHandler,
+    HooksConfig,
 };
 use crate::session::get_session_manager;
 use log::warn;
@@ -48,6 +49,12 @@ pub struct PluginSourceManifest {
     /// discovery, which is what those installs could only have had.
     #[serde(default)]
     pub hook_files: Vec<String>,
+    /// Inline hooks objects the manifest declared instead of, or alongside,
+    /// hook config files (#3005). Stored as the raw declared JSON so dispatch
+    /// loads exactly the config the user approved, and so a plugin without a
+    /// `hooks/` directory can still ship hooks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inline_hooks: Vec<serde_json::Value>,
     /// MCP servers the plugin declared (`.mcp.json` + manifest
     /// `mcpServers`, #2924), stored as the raw declared entries so session
     /// load can resolve `${CLAUDE_PLUGIN_ROOT}` against this record's
@@ -563,7 +570,8 @@ pub fn save_source_in(
 
     // Validate hooks on disk: exactly the persisted file list when present
     // (manifest-declared files included, gatekeeper G2.2), else the default
-    // `hooks/` discovery for legacy stores.
+    // `hooks/` discovery for legacy stores. Inline manifest hooks (#3005) are
+    // validated from the persisted JSON, not from disk.
     let hooks_snapshot = if !manifest.hook_files.is_empty() {
         let files: Vec<PathBuf> = manifest
             .hook_files
@@ -577,6 +585,17 @@ pub fn save_source_in(
         })
     } else if root_dir.join("hooks").is_dir() {
         let cfg = load_hooks_from_root(&root_dir)?;
+        Some(HooksConfigSnapshot {
+            version: cfg.version,
+            validated: true,
+        })
+    } else if !manifest.inline_hooks.is_empty() {
+        let mut cfg = HooksConfig::empty();
+        merge_hooks_inline(
+            &mut cfg,
+            &manifest.inline_hooks,
+            &format!("{} manifest hooks", manifest.source_id),
+        )?;
         Some(HooksConfigSnapshot {
             version: cfg.version,
             validated: true,
@@ -603,20 +622,32 @@ pub fn save_source_in(
 }
 
 /// Load a source's hook config exactly the way it was validated and approved
-/// at install: the persisted `hook_files` when present, falling back to the
-/// default `hooks/` discovery for stores recorded before the list existed
-/// (gatekeeper G2.2 — one loader for install, dispatch and overview).
+/// at install: the persisted `hook_files` when present, plus the inline hooks
+/// the manifest declared (#3005), falling back to the default `hooks/`
+/// discovery for stores recorded before the file list existed (gatekeeper
+/// G2.2 — one loader for install, dispatch and overview).
 pub fn hook_config_for_record(record: &PluginSourceRecord) -> Result<HooksConfig, String> {
-    if record.manifest.hook_files.is_empty() {
-        return load_hooks_from_root(&record.root_dir);
-    }
-    let files: Vec<PathBuf> = record
-        .manifest
-        .hook_files
-        .iter()
-        .map(|rel| record.root_dir.join(rel))
-        .collect();
-    load_hooks_from_config_files(&files)
+    let mut cfg = if record.manifest.hook_files.is_empty() {
+        if record.root_dir.join("hooks").is_dir() {
+            load_hooks_from_root(&record.root_dir)?
+        } else {
+            HooksConfig::empty()
+        }
+    } else {
+        let files: Vec<PathBuf> = record
+            .manifest
+            .hook_files
+            .iter()
+            .map(|rel| record.root_dir.join(rel))
+            .collect();
+        load_hooks_from_config_files(&files)?
+    };
+    merge_hooks_inline(
+        &mut cfg,
+        &record.manifest.inline_hooks,
+        &format!("{} manifest hooks", record.manifest.source_id),
+    )?;
+    Ok(cfg)
 }
 
 pub fn delete_source(source_id: &str) -> Result<(), String> {
@@ -724,6 +755,16 @@ pub fn approval_hash_value(plugin_root: &Path, handler: &HookHandler) -> String 
         for var in &http.allowed_env_vars {
             hasher.update(b"\0env\0");
             hasher.update(var.as_bytes());
+        }
+    }
+    // Exec-form arguments are part of what runs, so they are part of what the
+    // user approved (#3005). Only appended when present, so a handler without
+    // `args` keeps the hash an earlier install recorded.
+    if let Some(args) = &handler.args {
+        hasher.update(b"\0args\0");
+        for arg in args {
+            hasher.update(arg.as_bytes());
+            hasher.update(b"\0");
         }
     }
     for (rel, file_hash) in collect_referenced_script_hashes(plugin_root, handler) {
@@ -914,6 +955,7 @@ mod tests {
                 approval_hashes: BTreeMap::new(),
                 created_at: 0,
                 hook_files: vec!["./hooks/hooks.json".to_string()],
+                inline_hooks: vec![],
                 plugin: Some(PluginMetadata {
                     name: "superpowers".to_string(),
                     version: Some("1.2.3".to_string()),
@@ -950,6 +992,75 @@ mod tests {
 
         let cfg = hook_config_for_record(&loaded).unwrap();
         assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+    }
+
+    /// Inline manifest hooks (#3005): a plugin with no `hooks/` directory still
+    /// dispatches the hooks its manifest declares, and the stored JSON is what
+    /// dispatch reads.
+    #[test]
+    fn inline_manifest_hooks_load_for_a_plugin_without_a_hooks_dir() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "2".repeat(16));
+        let root_dir = base.path().join(&source_id);
+        fs::create_dir_all(&root_dir).unwrap();
+        let manifest = PluginSourceManifest {
+            source_url: "test://local".to_string(),
+            source_id: source_id.clone(),
+            skill_names: vec![],
+            hooks: None,
+            hooks_approved: true,
+            approval_hashes: BTreeMap::new(),
+            created_at: 0,
+            plugin: None,
+            hook_files: vec![],
+            inline_hooks: vec![serde_json::json!({
+                "PreToolUse": [{ "matcher": "Bash", "command": "echo inline" }],
+                "SessionEnd": [{ "command": "echo bye" }]
+            })],
+            mcp_servers: Vec::new(),
+            mcp_approved: false,
+            enabled: true,
+            installed_commit: None,
+        };
+        let record = save_source_in(base.path(), manifest).unwrap();
+        assert!(
+            record.manifest.hooks.as_ref().is_some_and(|h| h.validated),
+            "inline hooks must be validated at save time"
+        );
+
+        let cfg = hook_config_for_record(&record).unwrap();
+        assert_eq!(
+            cfg.events[&HookEvent::PreToolUse][0].handlers[0].command,
+            "echo inline"
+        );
+        assert!(cfg.events.contains_key(&HookEvent::SessionEnd));
+    }
+
+    /// A record whose inline hooks are invalid fails the save instead of
+    /// installing a plugin that would dispatch nothing (#3005).
+    #[test]
+    fn invalid_inline_manifest_hooks_fail_the_save() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "3".repeat(16));
+        fs::create_dir_all(base.path().join(&source_id)).unwrap();
+        let manifest = PluginSourceManifest {
+            source_url: "test://local".to_string(),
+            source_id,
+            skill_names: vec![],
+            hooks: None,
+            hooks_approved: true,
+            approval_hashes: BTreeMap::new(),
+            created_at: 0,
+            plugin: None,
+            hook_files: vec![],
+            inline_hooks: vec![serde_json::json!({ "PreToolUse": "not-an-array" })],
+            mcp_servers: Vec::new(),
+            mcp_approved: false,
+            enabled: true,
+            installed_commit: None,
+        };
+        let error = save_source_in(base.path(), manifest).unwrap_err();
+        assert!(error.contains("PreToolUse"), "{error}");
     }
 
     /// #2927: a disabled plugin keeps its files and approval record, but the
@@ -1030,6 +1141,7 @@ mod tests {
             created_at: 0,
             plugin: None,
             hook_files: vec![],
+            inline_hooks: vec![],
             mcp_servers: if approved {
                 vec![PluginMcpServerSnapshot {
                     name: "srv".to_string(),

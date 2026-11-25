@@ -980,6 +980,7 @@ mod tests {
                     additional_context: vec![],
                     decision: Some(HookDecision::Block),
                     reason: Some(format!("keep going #{i}")),
+                    updated_input: None,
                 },
             );
             assert!(cont, "continuation #{i} must be allowed");
@@ -995,6 +996,7 @@ mod tests {
                 additional_context: vec![],
                 decision: Some(HookDecision::Block),
                 reason: Some("one too many".to_string()),
+                updated_input: None,
             },
         );
         assert!(
