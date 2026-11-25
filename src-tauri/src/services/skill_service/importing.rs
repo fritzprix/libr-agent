@@ -1373,6 +1373,7 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
                     event: event.as_str().to_string(),
                     matcher: group.matcher.clone(),
                     command,
+                    args: handler.args.clone(),
                     powershell: handler.powershell.clone(),
                     script_body: None,
                     execution_status,
@@ -1388,6 +1389,7 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
                 event: raw_event.clone(),
                 matcher: item.matcher.clone(),
                 command: item.command.clone(),
+                args: None,
                 powershell: None,
                 script_body: None,
                 execution_status: HookPreviewExecutionStatus::Stubbed,
@@ -1967,6 +1969,37 @@ mod hook_preview_tests {
             .find(|e| e.command.contains("prompt"))
             .expect("prompt entry is recorded");
         assert_eq!(prompt.execution_status, HookPreviewExecutionStatus::Stubbed);
+    }
+
+    /// #3005 gatekeeper G1.2: exec-form `args` can carry `-c`/`-e` and
+    /// arbitrary code while `command` is just `node` or `bash`, so the
+    /// preview entry must carry `args` through to the approval dialog.
+    #[test]
+    fn preview_carries_exec_form_args() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"hooks":[
+                {"type":"command","command":"node","args":["-e","process.exit(0)"]}
+            ]}]}}"#,
+        )
+        .unwrap();
+        let cfg = try_load_plugin_hooks(dir.path(), None)
+            .unwrap()
+            .expect("hooks");
+        let entries = build_hook_preview_entries(&cfg);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].command, "node");
+        assert_eq!(
+            entries[0].args.as_deref(),
+            Some(["-e".to_string(), "process.exit(0)".to_string()].as_slice()),
+            "the approval dialog must show everything the exec-form handler runs"
+        );
+        let serialized = serde_json::to_string(&entries[0]).unwrap();
+        assert!(serialized.contains("process.exit(0)"), "{serialized}");
     }
 
     #[test]

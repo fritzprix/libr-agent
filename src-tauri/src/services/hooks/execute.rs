@@ -1142,6 +1142,80 @@ mod tests {
         );
     }
 
+    /// #3005 gatekeeper G1.3: two exec-form handlers with the same command
+    /// but different `args` are separate approvals and both run — sharing one
+    /// approval key would silently skip the second as "unapproved or
+    /// modified".
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn same_command_different_args_both_run_through_dispatch() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let source_id = "plugin-0123456789abcdef".to_string();
+        let root = temp.path().join(&source_id);
+        fs::create_dir_all(root.join("hooks")).unwrap();
+        // The scripts must exist before approval: the dispatch-time hash
+        // check covers every script the handler references.
+        for (name, marker) in [("a.sh", "marker-a.txt"), ("b.sh", "marker-b.txt")] {
+            let path = root.join("hooks").join(name);
+            fs::write(&path, format!("#!/bin/sh\ntouch {marker}\n")).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&path, perms).unwrap();
+        }
+        fs::write(
+            root.join("hooks").join("hooks.json"),
+            r#"{ "hooks": { "PreToolUse": [ { "matcher": "workspace__readFile", "hooks": [
+                { "type": "command", "command": "sh", "args": ["hooks/a.sh"] },
+                { "type": "command", "command": "sh", "args": ["hooks/b.sh"] }
+            ] } ] } }"#,
+        )
+        .unwrap();
+        let cfg = load_hooks_from_root(&root).unwrap();
+        save_source_in(
+            temp.path(),
+            PluginSourceManifest {
+                mcp_servers: Vec::new(),
+                mcp_approved: false,
+                source_url: "test://local".to_string(),
+                source_id,
+                skill_names: vec![],
+                hooks: None,
+                hooks_approved: true,
+                approval_hashes: compute_handler_approval_hashes(&root, &cfg),
+                created_at: 0,
+                plugin: None,
+                hook_files: vec![],
+                inline_hooks: vec![],
+                enabled: true,
+                installed_commit: None,
+            },
+        )
+        .unwrap();
+
+        let sid = format!("hook-args-keys-{}", uuid::Uuid::new_v4());
+        let mut params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        params.tool_name = Some("workspace__readFile".to_string());
+        params.tool_input = Some(serde_json::json!({ "path": "x.txt" }));
+
+        dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__readFile",
+            &params,
+            &sid,
+        )
+        .await;
+
+        assert!(
+            root.join("marker-a.txt").exists() && root.join("marker-b.txt").exists(),
+            "both same-command different-args handlers must run; \
+             a: {}, b: {}",
+            root.join("marker-a.txt").exists(),
+            root.join("marker-b.txt").exists()
+        );
+    }
+
     /// A `block` decision drops the rewrite: the call never runs, so there is
     /// nothing for `updatedInput` to change (#3005).
     #[test]

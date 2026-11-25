@@ -227,7 +227,7 @@ export function SkillsConflictDialog({
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground break-all font-mono">
-                        {hook.command}
+                        {[hook.command, ...(hook.args ?? [])].join(' ')}
                       </p>
                       {hook.httpHeaders ? (
                         <p className="whitespace-pre-line text-xs text-muted-foreground break-all font-mono">

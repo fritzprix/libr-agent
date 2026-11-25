@@ -90,10 +90,33 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
 
     let continue_loop = raw.continue_loop;
 
+    // `updatedInput` replaces the whole tool-argument object, and every
+    // guard and tool assumes that object shape. A string, number, or array
+    // would make key-reading policy checks see nothing, so only a JSON
+    // object is accepted; anything else is ignored with a visible warning
+    // (#3005 gatekeeper G1.4).
     let updated_input = raw
         .hook_specific_output
         .as_ref()
-        .and_then(|h| h.updated_input.clone());
+        .and_then(|h| h.updated_input.clone())
+        .filter(|value| {
+            if value.is_object() {
+                true
+            } else {
+                log::warn!(
+                    "Ignoring PreToolUse updatedInput of type {} — expected a JSON object",
+                    match value {
+                        serde_json::Value::Null => "null",
+                        serde_json::Value::Bool(_) => "boolean",
+                        serde_json::Value::Number(_) => "number",
+                        serde_json::Value::String(_) => "string",
+                        serde_json::Value::Array(_) => "array",
+                        serde_json::Value::Object(_) => "object",
+                    }
+                );
+                false
+            }
+        });
 
     HookOutput {
         additional_context,
@@ -204,5 +227,24 @@ mod tests {
         let out =
             parse_hook_stdout_json(r#"{"hookSpecificOutput":{"permissionDecision":"allow"}}"#);
         assert_eq!(out.updated_input, None);
+    }
+
+    /// #3005 gatekeeper G1.4: only a JSON object may replace the tool
+    /// arguments. A string, number, or array makes every key-reading guard
+    /// see nothing, so it is ignored (the call keeps its original arguments).
+    #[test]
+    fn non_object_updated_input_is_ignored() {
+        for value in [r#""rm -rf /""#, "42", "true", r#"["cmd","rm"]"#, "null"] {
+            let json = format!(
+                r#"{{"hookSpecificOutput":{{"permissionDecision":"allow","updatedInput":{value}}}}}"#
+            );
+            let out = parse_hook_stdout_json(&json);
+            assert_eq!(
+                out.updated_input, None,
+                "updatedInput {value} must be ignored, not applied"
+            );
+            // The allow decision itself still applies — only the rewrite is dropped.
+            assert_eq!(out.decision, Some(HookDecision::Allow));
+        }
     }
 }

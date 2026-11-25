@@ -699,12 +699,18 @@ pub fn compute_handler_approval_hashes(
 }
 
 pub fn approval_hash_key(event: HookEvent, matcher: Option<&str>, handler: &HookHandler) -> String {
+    let args_suffix = handler
+        .args
+        .as_ref()
+        .map(|args| format!("|args:{}", args.join("\u{1}")))
+        .unwrap_or_default();
     let mut key = format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}|{}{}",
         event.as_str(),
         matcher.unwrap_or("*"),
         handler.command,
-        handler.powershell.as_deref().unwrap_or("")
+        handler.powershell.as_deref().unwrap_or(""),
+        args_suffix
     );
     // HTTP handlers carry no command, so the target URL distinguishes them
     // (#3009). Appended only when present, so keys of command handlers stay
@@ -786,43 +792,63 @@ fn collect_referenced_script_hashes(
         .unwrap_or_else(|_| plugin_root.to_path_buf());
     let root_str = plugin_root.to_string_lossy();
 
+    let expand = |text: &str| {
+        text.replace("${LIBRAGENT_PLUGIN_ROOT}", root_str.as_ref())
+            .replace("${CLAUDE_PLUGIN_ROOT}", root_str.as_ref())
+            .replace("${CURSOR_PLUGIN_ROOT}", root_str.as_ref())
+            .replace("$LIBRAGENT_PLUGIN_ROOT", root_str.as_ref())
+            .replace("$CLAUDE_PLUGIN_ROOT", root_str.as_ref())
+            .replace("$CURSOR_PLUGIN_ROOT", root_str.as_ref())
+    };
+    let record_candidate = |hashes: &mut BTreeMap<String, String>, tok: &str| {
+        let candidate = if Path::new(tok).is_absolute() {
+            PathBuf::from(tok)
+        } else {
+            plugin_root.join(tok)
+        };
+        if !candidate.is_file() {
+            return;
+        }
+        let Ok(canonical_file) = candidate.canonicalize() else {
+            return;
+        };
+        let Ok(rel) = canonical_file.strip_prefix(&canonical_root) else {
+            return;
+        };
+        if let Ok(file_hash) = compute_script_hash(&canonical_file) {
+            let rel_key = rel.to_string_lossy().replace('\\', "/");
+            hashes.insert(rel_key, file_hash);
+        }
+    };
+
     let mut texts = vec![handler.command.as_str()];
     if let Some(ps) = handler.powershell.as_deref() {
         texts.push(ps);
     }
 
     for text in texts {
-        let expanded = text
-            .replace("${LIBRAGENT_PLUGIN_ROOT}", root_str.as_ref())
-            .replace("${CLAUDE_PLUGIN_ROOT}", root_str.as_ref())
-            .replace("${CURSOR_PLUGIN_ROOT}", root_str.as_ref())
-            .replace("$LIBRAGENT_PLUGIN_ROOT", root_str.as_ref())
-            .replace("$CLAUDE_PLUGIN_ROOT", root_str.as_ref())
-            .replace("$CURSOR_PLUGIN_ROOT", root_str.as_ref());
-
+        let expanded = expand(text);
         for raw_tok in expanded.split_whitespace() {
             let tok = raw_tok.trim_matches(|c| matches!(c, '"' | '\'' | ';' | ','));
             if tok.is_empty() {
                 continue;
             }
-            let candidate = if Path::new(tok).is_absolute() {
-                PathBuf::from(tok)
-            } else {
-                plugin_root.join(tok)
-            };
-            if !candidate.is_file() {
+            record_candidate(&mut hashes, tok);
+        }
+    }
+
+    // Exec form (`args` present, #3005): each argument is passed verbatim to
+    // the spawned command, so a script path in argv runs exactly as written —
+    // hash each element whole, with no whitespace tokenization. Without this,
+    // `"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/x.js"]` would leave
+    // x.js unhashed and editable after approval (gatekeeper G1.1).
+    if let Some(args) = handler.args.as_deref() {
+        for arg in args {
+            let expanded = expand(arg);
+            if expanded.trim().is_empty() {
                 continue;
             }
-            let Ok(canonical_file) = candidate.canonicalize() else {
-                continue;
-            };
-            let Ok(rel) = canonical_file.strip_prefix(&canonical_root) else {
-                continue;
-            };
-            if let Ok(file_hash) = compute_script_hash(&canonical_file) {
-                let rel_key = rel.to_string_lossy().replace('\\', "/");
-                hashes.insert(rel_key, file_hash);
-            }
+            record_candidate(&mut hashes, expanded.trim());
         }
     }
     hashes
@@ -1365,6 +1391,75 @@ mod tests {
                 .manifest
                 .enabled,
             "a missing trust file must not disable a plugin"
+        );
+    }
+
+    fn exec_handler(command: &str, args: Option<Vec<String>>) -> HookHandler {
+        HookHandler {
+            command: command.to_string(),
+            args,
+            powershell: None,
+            timeout_ms: crate::services::hooks::schema::default_hook_timeout_ms(
+                HookEvent::PreToolUse,
+            ),
+            r#async: false,
+            shell: None,
+        }
+    }
+
+    /// #3005 gatekeeper G1.1: in exec form the script usually lives in
+    /// `args`, so its content must be part of the approval hash — editing it
+    /// after approval invalidates the handler.
+    #[test]
+    fn exec_form_args_script_edit_invalidates_the_approval_hash() {
+        let root = tempfile::tempdir().unwrap();
+        let script = root.path().join("x.js");
+        fs::write(&script, "console.log('v1')").unwrap();
+        let handler = exec_handler("node", Some(vec!["${CLAUDE_PLUGIN_ROOT}/x.js".to_string()]));
+
+        let before = approval_hash_value(root.path(), &handler);
+        fs::write(&script, "console.log('evil')").unwrap();
+        let after = approval_hash_value(root.path(), &handler);
+
+        assert_ne!(
+            before, after,
+            "editing a script referenced by exec-form args must change the approval hash"
+        );
+    }
+
+    /// #3005 gatekeeper G1.3: two handlers with the same event, matcher and
+    /// command but different `args` get different approval keys, while a
+    /// handler without `args` keeps the key earlier installs recorded.
+    #[test]
+    fn approval_hash_key_separates_handlers_by_args() {
+        let first = exec_handler("node", Some(vec!["a.js".to_string()]));
+        let second = exec_handler("node", Some(vec!["b.js".to_string()]));
+        let plain = exec_handler("node", None);
+
+        assert_ne!(
+            approval_hash_key(HookEvent::PreToolUse, None, &first),
+            approval_hash_key(HookEvent::PreToolUse, None, &second),
+            "same command with different argv must not share one approval key"
+        );
+
+        // Keys of handlers without `args` are unchanged: the digest input of
+        // the pre-#3005 formula.
+        let expected_legacy = format!(
+            "{:x}",
+            Sha256::digest(
+                format!(
+                    "{}|*|{}|{}",
+                    HookEvent::PreToolUse.as_str(),
+                    plain.command,
+                    ""
+                )
+                .as_bytes(),
+            )
+        );
+        assert_eq!(
+            approval_hash_key(HookEvent::PreToolUse, None, &plain),
+            expected_legacy,
+            "a handler without args must keep the key an earlier install recorded"
         );
     }
 }

@@ -161,6 +161,24 @@ describe('SkillsConflictDialog long hook command wrapping (#2896)', () => {
     expect(matcher).toHaveClass('break-all');
     expect(matcher).toHaveClass('min-w-0');
   });
+
+  it('shows exec-form args so everything the hook runs is visible (#3005)', () => {
+    renderDialog(
+      buildPendingInstall({
+        hooks: [
+          {
+            event: 'PreToolUse',
+            command: 'node',
+            args: ['-e', 'process.exit(0)'],
+            executionStatus: 'executed',
+          },
+        ],
+      }),
+    );
+
+    // The dialog must render the whole argv, not just `node`.
+    expect(screen.getByText('node -e process.exit(0)')).toBeInTheDocument();
+  });
 });
 
 describe('SkillsConflictDialog http hook header disclosure (#3041 G1.1)', () => {
