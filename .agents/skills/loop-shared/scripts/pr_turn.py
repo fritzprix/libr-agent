@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Iterable, Literal
 
 from comment_markers import (
     latest_worker_response,
@@ -18,6 +18,21 @@ VERDICT_LABELS: dict[str, str] = {
 }
 
 PRIMARY_VERDICT_LABELS = frozenset(VERDICT_LABELS.values())
+
+# Shared order for overlapping PR/issue states (issue #2995): when several
+# apply, the lowest rank decides what the loop reports and does.
+OVERLAP_ORDER = ("needs-owner", "gatekeeper:escalated", "open-blocker", "merge-conflict", "verdict-label")
+
+
+def overlap_rank(states: Iterable[str]) -> int | None:
+    """Rank of the highest-priority state in `states`; None when none applies.
+
+    `states` may contain any of the names in OVERLAP_ORDER (other names are
+    ignored). A state with rank 0 (needs-owner) outranks an escalation, which
+    outranks an open blocker, then a merge conflict, then a verdict-label fix.
+    """
+    names = set(states or ())
+    return next((i for i, name in enumerate(OVERLAP_ORDER) if name in names), None)
 
 
 @dataclass(frozen=True)

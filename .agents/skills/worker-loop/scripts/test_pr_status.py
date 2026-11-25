@@ -13,7 +13,7 @@ class SelectNextActionTest(unittest.TestCase):
         turn="none",
         conflicting=False, gatekeeper=None,
         has_comments=False, failing=[], pending=[],
-        base_drift=False,
+        blockers=None, rebase_ready=False,
     )
 
     def action(self, **overrides):
@@ -24,11 +24,12 @@ class SelectNextActionTest(unittest.TestCase):
             turn="worker",
             conflicting=True, gatekeeper={"awaitingWorker": True},
             has_comments=True, failing=["ci"], pending=["ci"],
+            blockers=[9], rebase_ready=True,
         )
-        everything["base_drift"] = True
         expected = [
+            ("blockers", "wait-blocker"),
             ("conflicting", "resolve-conflict"),
-            ("base_drift", "rebase-base"),
+            ("rebase_ready", "rebase"),
             ("gatekeeper", "address-gatekeeper"),
             ("has_comments", "triage-comments"),
             ("failing", "fix-ci"),
@@ -65,29 +66,63 @@ class SelectNextActionTest(unittest.TestCase):
         )
 
 
-class BaseDriftTest(unittest.TestCase):
-    def drift(self, merge_state="CLEAN", ahead=0, base_files=(), pr_files=("src/a.rs",)):
-        return pr_status.base_drift_needs_rebase(
-            merge_state=merge_state, base_ahead_by=ahead, base_files=base_files, pr_files=pr_files,
+class WaitBlockerTest(unittest.TestCase):
+    def test_open_blocker_waits(self):
+        self.assertEqual(self.action(blockers=[9]), "wait-blocker")
+
+    def test_no_blockers_is_not_wait_blocker(self):
+        self.assertEqual(self.action(blockers=[]), "none")
+
+    def test_wait_owner_outranks_wait_blocker(self):
+        self.assertEqual(
+            self.action(blockers=[9], waiting_owner=True),
+            "wait-owner",
         )
 
-    def test_up_to_date_pr_is_not_rebased(self):
-        self.assertFalse(self.drift(merge_state="CLEAN", ahead=0))
+    def action(self, **overrides):
+        return pr_status.select_next_action(
+            turn="worker", conflicting=False, gatekeeper=None,
+            has_comments=False, failing=[], pending=[], **overrides,
+        )
 
-    def test_behind_below_threshold_on_unrelated_files_is_not_rebased(self):
-        threshold = pr_status.BASE_DRIFT_COMMITS
-        self.assertFalse(self.drift(merge_state="UNSTABLE", ahead=threshold - 1, base_files=["docs/x.md"]))
 
-    def test_behind_at_or_above_threshold_is_rebased(self):
-        threshold = pr_status.BASE_DRIFT_COMMITS
-        self.assertTrue(self.drift(merge_state="UNSTABLE", ahead=threshold))
-        self.assertTrue(self.drift(merge_state="CLEAN", ahead=threshold + 5))
+class RebaseReadyTest(unittest.TestCase):
+    CLEAN = "2026-11-25T00:00:00Z"
 
-    def test_base_commit_touching_a_pr_file_is_rebased(self):
-        self.assertTrue(self.drift(ahead=1, base_files=["docs/x.md", "src/a.rs"]))
+    def marker(self, verdict, head, at=CLEAN):
+        return {"author": {"login": "me"}, "createdAt": at,
+                "body": f"<!-- gatekeeper-loop: verdict={verdict} head={head} -->",
+                "url": f"http://example.com/{verdict}-{head}"}
 
-    def test_github_behind_state_is_rebased(self):
-        self.assertTrue(self.drift(merge_state="BEHIND", ahead=1, base_files=["docs/x.md"]))
+    def comments(self, *bodies_verdicts_heads):
+        return [self.marker(v, h, f"2026-11-25T0{i}:00:00Z")
+                for i, (v, h) in enumerate(bodies_verdicts_heads, start=1)]
+
+    def blockers(self, *states):
+        return [{"number": i + 1, "state": s} for i, s in enumerate(states)]
+
+    def test_all_closed_blockers_with_clean_at_head_is_ready(self):
+        comments = self.comments(("clean", "sha1"))
+        self.assertTrue(pr_status.rebase_ready(self.blockers("closed"), comments, "me", "sha1"))
+
+    def test_pr_without_blocker_link_is_never_ready(self):
+        comments = self.comments(("clean", "sha1"))
+        self.assertFalse(pr_status.rebase_ready([], comments, "me", "sha1"))
+
+    def test_open_blocker_is_not_ready(self):
+        comments = self.comments(("clean", "sha1"))
+        self.assertFalse(pr_status.rebase_ready(self.blockers("closed", "open"), comments, "me", "sha1"))
+
+    def test_latest_marker_must_be_clean_at_head(self):
+        comments = self.comments(("clean", "sha1"), ("changes-requested", "sha1"))
+        self.assertFalse(pr_status.rebase_ready(self.blockers("closed"), comments, "me", "sha1"))
+
+    def test_clean_at_older_head_is_not_ready(self):
+        comments = self.comments(("clean", "sha0"))
+        self.assertFalse(pr_status.rebase_ready(self.blockers("closed"), comments, "me", "sha1"))
+
+    def test_no_verdict_at_all_is_not_ready(self):
+        self.assertFalse(pr_status.rebase_ready(self.blockers("closed"), [], "me", "sha1"))
 
 
 class MergeableUnknownTest(unittest.TestCase):

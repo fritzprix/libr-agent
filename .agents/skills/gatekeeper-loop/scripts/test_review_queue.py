@@ -772,5 +772,39 @@ class EscalationAndOwnerVisibilityTests(unittest.TestCase):
         self.assertEqual(entry["labelMismatch"], [], "the resume must not re-add the label")
 
 
+class BlockedStatusTests(unittest.TestCase):
+    """Issue #2995: a PR with an open blocker is parked, not reviewed."""
+
+    def test_open_blocker_is_blocked_at_priority_9(self):
+        status, reason, priority = classify(**base_args(open_blockers=[9]))
+        self.assertEqual(status, "blocked")
+        self.assertEqual(priority, 9)
+        self.assertIn("#9", reason)
+
+    def test_multiple_open_blockers_are_listed(self):
+        status, reason, _ = classify(**base_args(open_blockers=[3, 7]))
+        self.assertEqual(status, "blocked")
+        self.assertIn("#3", reason)
+        self.assertIn("#7", reason)
+
+    def test_only_closed_blockers_are_not_blocked(self):
+        status, _, priority = classify(**base_args(open_blockers=[]))
+        self.assertNotEqual(status, "blocked")
+
+    def test_escalated_outranks_blocked_outranks_conflict(self):
+        # Shared overlap order: escalated > open blocker > merge conflict.
+        escalated, _, _ = classify(**base_args(
+            open_blockers=[9],
+            last_verdict={"verdict": "escalate", "head": "head1", "createdAt": "2026-11-01T00:00:00Z"},
+            rounds_used=99,
+        ))
+        self.assertEqual(escalated, "escalate")
+        conflict, _, _ = classify(**base_args(open_blockers=[9], mergeable="CONFLICTING"))
+        self.assertEqual(conflict, "blocked")
+
+    def test_determine_status_accepts_open_blockers(self):
+        self.assertEqual(determine_status(**base_args(open_blockers=[9])), "blocked")
+
+
 if __name__ == "__main__":
     unittest.main()

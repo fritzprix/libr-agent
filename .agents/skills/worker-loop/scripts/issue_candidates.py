@@ -28,6 +28,8 @@ if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
 from comment_markers import NEEDS_OWNER_LABEL, owner_answer  # noqa: E402
+from issue_deps import DepsError  # noqa: E402
+from issue_deps import open_blockers as gh_open_blockers  # noqa: E402
 
 EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question", "epic", "auto:e2e"}
 APPROVED_LABEL = "approved"
@@ -109,17 +111,14 @@ def exclusion_reason(
 
 
 def _open_blocked_by(number: int, run_gh: Callable[..., str]) -> list[int]:
-    """Open issues GitHub records as blocking this one; empty where the API is unavailable (404)."""
+    """Open issues GitHub records as blocking this one, via the shared helper (issue #2995).
+
+    A 404 is a `DepsError`: a missing item is an error, not an empty list.
+    """
     try:
-        out = run_gh(
-            "api", f"repos/{{owner}}/{{repo}}/issues/{number}/dependencies/blocked_by",
-            "--jq", '[.[] | select(.state == "open") | .number]',
-        )
-    except GhError as e:
-        if _is_not_found(e):
-            return []
-        raise
-    return [int(n) for n in json.loads(out or "[]")]
+        return gh_open_blockers(number, run_gh)
+    except DepsError as e:
+        raise GhError(str(e)) from e
 
 
 def waiting_reason(
