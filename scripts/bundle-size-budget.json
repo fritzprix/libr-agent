@@ -1,6 +1,6 @@
 {
   "totalCssBytes": 215000,
-  "largestJsBytes": 3050000,
+  "largestJsBytes": 3060000,
   "largestCssBytes": 185000,
-  "_comment_largestJsBytes": "Raised for #2796 (Rust-routed stream deltas; useRustStreamListener in main index chunk)"
+  "_comment_largestJsBytes": "Raised for #2991 (v0.9.32 changelog/spotlight/locale content in the index chunk: 3,048,730 -> 3,051,486 bytes, +0.09% over last green; owner-approved raise with margin). Previous raise #2796 (Rust-routed stream deltas; useRustStreamListener in main index chunk)"
 }
