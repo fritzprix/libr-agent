@@ -349,12 +349,17 @@ describe('ServerCard', () => {
       const card = container.firstElementChild as HTMLElement;
       expect(card).toHaveClass('flex', 'h-full', 'flex-col');
 
-      // Header aligns Active toggle to the top consistently
-      const header = card.querySelector('.items-start');
-      expect(header).not.toBeNull();
+      // Header aligns Active toggle to the top consistently (assert on CardHeader itself, not inner div)
+      const header = Array.from(card.children).find((el) =>
+        el.contains(screen.getByText('Active')),
+      );
+      expect(header).not.toBeUndefined();
+      expect(header).toHaveClass('items-start', 'gap-2');
+      expect(header).not.toHaveClass('items-center');
 
       // Action row container is pinned to bottom and wraps to prevent button clipping
       const deleteButton = screen.getByText('Delete').closest('button')!;
+      expect(deleteButton).toHaveClass('ml-auto');
       const actionRow = deleteButton.parentElement!;
       expect(actionRow).toHaveClass('flex', 'flex-wrap', 'gap-2');
       expect(actionRow.parentElement).toHaveClass('mt-auto');

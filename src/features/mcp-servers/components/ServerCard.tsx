@@ -477,6 +477,7 @@ export const ServerCard = React.memo(
             <Button
               variant="destructive"
               size="sm"
+              className="ml-auto"
               disabled={Boolean(server.pluginSource)}
               onClick={() => onDelete(server)}
               title={
