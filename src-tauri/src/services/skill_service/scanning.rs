@@ -1,6 +1,9 @@
+use super::contracts::DiscoveredSkillRoot;
 use super::contracts::{SkillFrontmatter, SkillMetadata, PLUGIN_SKILL_OWNER_FILE, SKILL_FILE_NAME};
 use super::directories::{collect_allowed_skill_roots, resolve_skill_directories};
 use log::{info, warn};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
@@ -184,4 +187,139 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub(super) fn discover_existing_skill_roots(
+    root_path: &Path,
+) -> Result<HashMap<String, PathBuf>, String> {
+    if !root_path.exists() {
+        return Ok(HashMap::new());
+    }
+
+    let mut roots = HashMap::new();
+    for entry in WalkDir::new(root_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        if entry.file_name() != SKILL_FILE_NAME {
+            continue;
+        }
+
+        let path = entry.path();
+        match parse_skill_metadata(path) {
+            Ok(metadata) => {
+                if let Some(parent) = path.parent() {
+                    roots.insert(metadata.name.to_lowercase(), parent.to_path_buf());
+                }
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to parse existing skill while scanning {}: {}",
+                    path.display(),
+                    error
+                );
+            }
+        }
+    }
+
+    Ok(roots)
+}
+
+pub(super) fn find_skill_root_by_name(
+    root_path: &Path,
+    skill_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    let existing_roots = discover_existing_skill_roots(root_path)?;
+    Ok(existing_roots.get(&skill_name.to_lowercase()).cloned())
+}
+
+pub(super) fn remove_skill_name_from_directory(
+    root_path: &Path,
+    skill_name: &str,
+) -> Result<(), String> {
+    let Some(target_root) = find_skill_root_by_name(root_path, skill_name)? else {
+        return Err(format!("Skill '{}' not found", skill_name));
+    };
+
+    fs::remove_dir_all(target_root).map_err(|error| error.to_string())
+}
+
+pub(super) fn discover_skill_roots(root_path: &Path) -> Result<Vec<DiscoveredSkillRoot>, String> {
+    let mut discovered = Vec::new();
+    let mut seen_names = HashSet::new();
+
+    for entry in WalkDir::new(root_path)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        if entry.file_name() != SKILL_FILE_NAME {
+            continue;
+        }
+
+        let skill_path = entry.path();
+        let metadata = parse_skill_metadata(skill_path)?;
+        let normalized_name = metadata.name.to_lowercase();
+        if !seen_names.insert(normalized_name) {
+            return Err(format!(
+                "Duplicate skill name '{}' found in the import source",
+                metadata.name
+            ));
+        }
+
+        let root_dir = skill_path.parent().map(Path::to_path_buf).ok_or_else(|| {
+            format!(
+                "Failed to determine skill root for {}",
+                skill_path.display()
+            )
+        })?;
+
+        discovered.push(DiscoveredSkillRoot { metadata, root_dir });
+    }
+
+    if discovered.is_empty() {
+        return Err("No skills (SKILL.md) found in the imported files".to_string());
+    }
+
+    discovered.sort_by_cached_key(|skill| skill.metadata.name.to_lowercase());
+    Ok(discovered)
+}
+
+pub fn skill_storage_directory_name(skill_name: &str) -> Result<String, String> {
+    let trimmed = skill_name.trim();
+    if trimmed.is_empty() {
+        return Err("Skill name cannot be empty".to_string());
+    }
+    if trimmed == "." || trimmed == ".." {
+        return Err(format!(
+            "Skill name '{}' cannot be used as a storage directory",
+            skill_name
+        ));
+    }
+
+    let mut slug = String::new();
+    let mut previous_was_separator = false;
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            previous_was_separator = false;
+            continue;
+        }
+
+        if !previous_was_separator && !slug.is_empty() {
+            slug.push('-');
+            previous_was_separator = true;
+        }
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    let stem = if slug.is_empty() {
+        "skill"
+    } else {
+        slug.as_str()
+    };
+    let digest = Sha256::digest(trimmed.as_bytes());
+    let digest_hex = format!("{:x}", digest);
+    Ok(format!("{}-{}", stem, &digest_hex[..12]))
 }
