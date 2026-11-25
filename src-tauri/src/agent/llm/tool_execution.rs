@@ -969,14 +969,9 @@ async fn apply_hook_input_rewrite(
     let Some(rewritten) = rewrite else {
         return HookInputRewrite::Unchanged(original_guards);
     };
-    if !rewritten.is_object() {
-        log::warn!(
-            "Ignoring non-object PreToolUse updatedInput for {} ({}) — the argument object is kept",
-            tool_name,
-            rewritten
-        );
-        return HookInputRewrite::Unchanged(original_guards);
-    }
+    // Non-object rewrites are already rejected at parse time in
+    // `hooks/output.rs`, so `updated_input` is object-or-none by contract
+    // (#3005 G2.3): no second check here.
     let args_json =
         serde_json::to_string(&rewritten).unwrap_or_else(|_| original_args_json.to_string());
     let guards = pre_execution_guards(
@@ -1465,30 +1460,6 @@ mod hook_input_rewrite_tests {
         .await;
 
         assert!(matches!(rewrite, HookInputRewrite::Unchanged(_)));
-    }
-
-    /// G1.4 in the execution step: a non-object `updatedInput` would make
-    /// every key-reading guard see nothing, so it is ignored and the
-    /// original arguments stand.
-    #[tokio::test]
-    async fn non_object_rewrite_is_ignored_in_execution() {
-        for updated in [json!("rm -rf /"), json!(42), json!(["cmd", "rm"])] {
-            let outcome = allow_rewrite(updated.clone());
-            let rewrite = apply_hook_input_rewrite(
-                &empty_sessions(),
-                "sess-rewrite-scalar",
-                false,
-                "workspace__runShell",
-                &outcome,
-                r#"{"command":"echo safe"}"#,
-                original_guards(),
-            )
-            .await;
-            assert!(
-                matches!(rewrite, HookInputRewrite::Unchanged(_)),
-                "updatedInput {updated} must be ignored in execution"
-            );
-        }
     }
 
     /// The approval card shows the rewritten arguments, not the model's:

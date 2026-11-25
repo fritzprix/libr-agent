@@ -839,9 +839,12 @@ fn collect_referenced_script_hashes(
 
     // Exec form (`args` present, #3005): each argument is passed verbatim to
     // the spawned command, so a script path in argv runs exactly as written —
-    // hash each element whole, with no whitespace tokenization. Without this,
-    // `"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/x.js"]` would leave
-    // x.js unhashed and editable after approval (gatekeeper G1.1).
+    // hash each element whole. Without this, `"command": "node",
+    // "args": ["${CLAUDE_PLUGIN_ROOT}/x.js"]` would leave x.js unhashed and
+    // editable after approval (gatekeeper G1.1). A whole argument is not
+    // enough either: `"bash", ["-c", "./hooks/x.sh --fix"]` runs a script
+    // wrapped inside a command string, so the path tokens inside each
+    // argument are hashed too, exactly as for shell-form text (G2.2).
     if let Some(args) = handler.args.as_deref() {
         for arg in args {
             let expanded = expand(arg);
@@ -849,6 +852,13 @@ fn collect_referenced_script_hashes(
                 continue;
             }
             record_candidate(&mut hashes, expanded.trim());
+            for raw_tok in expanded.split_whitespace() {
+                let tok = raw_tok.trim_matches(|c| matches!(c, '"' | '\'' | ';' | ','));
+                if tok.is_empty() {
+                    continue;
+                }
+                record_candidate(&mut hashes, tok);
+            }
         }
     }
     hashes
@@ -1424,6 +1434,32 @@ mod tests {
         assert_ne!(
             before, after,
             "editing a script referenced by exec-form args must change the approval hash"
+        );
+    }
+
+    /// #3005 gatekeeper G2.2: an exec-form argument can wrap a whole command
+    /// string (`bash -c "./hooks/x.sh --fix"`), where no argument is a file
+    /// path on its own. The path tokens inside each argument must be hashed
+    /// too, or x.sh can be edited after approval and still run.
+    #[test]
+    fn exec_form_command_string_path_tokens_are_hashed() {
+        let root = tempfile::tempdir().unwrap();
+        let hooks = root.path().join("hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        let script = hooks.join("x.sh");
+        fs::write(&script, "#!/bin/sh\necho v1").unwrap();
+        let handler = exec_handler(
+            "bash",
+            Some(vec!["-c".to_string(), "./hooks/x.sh --fix".to_string()]),
+        );
+
+        let before = approval_hash_value(root.path(), &handler);
+        fs::write(&script, "#!/bin/sh\necho evil").unwrap();
+        let after = approval_hash_value(root.path(), &handler);
+
+        assert_ne!(
+            before, after,
+            "editing a script wrapped inside an exec-form argument must change the approval hash"
         );
     }
 
