@@ -86,6 +86,34 @@ class WaitBlockerTest(unittest.TestCase):
         )
 
 
+class BlockerLookupErrorTest(unittest.TestCase):
+    """Issue #2995 G3.1: a failed blocker lookup is a fail-closed skip."""
+
+    def action(self, **overrides):
+        args = dict(
+            turn="error", conflicting=False, gatekeeper=None, has_comments=False,
+            failing=[], pending=[], blocker_lookup_error="gh api -> HTTP 403",
+        )
+        args.update(overrides)
+        return pr_status.select_next_action(**args)
+
+    def test_lookup_error_reports_and_skips(self):
+        self.assertEqual(self.action(), "report-lookup-error")
+        self.assertNotEqual(self.action(), "none", "an unread blocker list is never 'not blocked'")
+
+    def test_lookup_error_outranks_every_push_action(self):
+        for overrides in (
+            {"blockers": [9]},
+            {"conflicting": True},
+            {"rebase_ready": True},
+            {"behind": True},
+            {"base_drift": True},
+            {"gatekeeper": {"awaitingWorker": True}, "turn": "worker"},
+            {"has_comments": True, "failing": ["Test"], "pending": ["Test"]},
+        ):
+            self.assertEqual(self.action(**overrides), "report-lookup-error", overrides)
+
+
 class RebaseReadyTest(unittest.TestCase):
     CLEAN = "2026-11-25T00:00:00Z"
 

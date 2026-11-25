@@ -9,7 +9,7 @@ from comment_markers import (
     parse_markers,
 )
 
-Turn = Literal["worker", "gatekeeper", "human", "none"]
+Turn = Literal["worker", "gatekeeper", "human", "none", "error"]
 
 VERDICT_LABELS: dict[str, str] = {
     "changes-requested": "gatekeeper:changes-requested",
@@ -104,8 +104,25 @@ def decide_pr_turn(
     labels: list[str] | None = None,
     open_blockers: list[int] | None = None,
     rebase_ready: bool = False,
+    blocker_lookup_error: str | None = None,
 ) -> PrTurn:
     """Return turn owner and verdict snapshot for worker and gatekeeper ticks."""
+    if blocker_lookup_error:
+        # Fail closed (#2995 G3.1): without the blocker lookup we cannot tell a
+        # parked PR from a reviewable one, so nobody acts on it this tick: the
+        # loop skips it and reports the error instead of guessing "not blocked".
+        return PrTurn(
+            turn="error",
+            currentVerdict=None,
+            verdictHead=None,
+            currentHead=head_sha,
+            atVerdictHead=False,
+            labelMismatch=[],
+            reason=(
+                f"blocker lookup failed: {blocker_lookup_error}; "
+                "skip this PR this tick and report the error"
+            ),
+        )
     if open_blockers:
         return PrTurn(
             turn="none",

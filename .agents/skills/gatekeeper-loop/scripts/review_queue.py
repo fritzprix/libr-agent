@@ -183,6 +183,7 @@ def classify(
     escalate_label_present: bool = True,
     open_blockers: list[int] | None = None,
     rebase_ready: bool = False,
+    blocker_lookup_error: str | None = None,
 ) -> tuple[str, str, int]:
     """Return (status, one-line reason, priority). Lower priority number is handled first.
 
@@ -205,6 +206,14 @@ def classify(
     )
     if top_overlap == "gatekeeper:escalated":
         return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
+    if blocker_lookup_error:
+        # Fail closed (#2995 G3.1): without the blocker lookup this PR could be
+        # parked, so do not review or diagnose it; skip it and report the error.
+        return (
+            "blocked-unknown",
+            f"blocker lookup failed: {blocker_lookup_error}; skip this PR this tick and report the error",
+            9,
+        )
     if top_overlap == "open-blocker":
         return "blocked", f"open blocker #{', #'.join(map(str, open_blockers))}; parked until it closes", 9
     if top_overlap == "merge-conflict":
@@ -434,6 +443,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         escalate_label_present=ESCALATED_LABEL in labels,
         open_blockers=open_dep,
         rebase_ready=ready_to_rebase,
+        blocker_lookup_error=blocker_error,
     )
 
     if status != "review" or not reviewed_head or reviewed_head == head:
@@ -449,6 +459,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         labels=labels,
         open_blockers=open_dep,
         rebase_ready=ready_to_rebase,
+        blocker_lookup_error=blocker_error,
     )
 
     # Place review state first so the model and operator see review status before CI details.

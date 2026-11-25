@@ -881,15 +881,31 @@ class BlockedStatusTests(unittest.TestCase):
             self.assertEqual(entry["status"], "review")
             self.assertEqual(entry["whoseTurn"], "gatekeeper")
 
-    def test_blocker_lookup_error_does_not_exit_queue(self):
+    def test_blocker_lookup_error_is_blocked_unknown(self):
+        """#2995 G3.1: fail closed — an unread blocker list is never "not blocked"."""
+        status, reason, priority = classify(**base_args(blocker_lookup_error="gh api -> HTTP 403"))
+        self.assertEqual(status, "blocked-unknown")
+        self.assertEqual(priority, 9)
+        self.assertIn("HTTP 403", reason)
+
+    def test_escalate_still_outranks_a_lookup_error(self):
+        status, _, _ = classify(**base_args(
+            blocker_lookup_error="gh api -> HTTP 403",
+            last_verdict={"verdict": "escalate", "head": "head1"},
+        ))
+        self.assertEqual(status, "escalate")
+
+    def test_blocker_lookup_error_parks_that_pr_and_keeps_the_queue_running(self):
+        """#2995 G3.1: a failed lookup is reported per PR and does not abort the tick."""
         def fake_gh(*args):
             if args[:2] == ("pr", "view"):
+                number = int(args[2])
                 return json.dumps({
-                    "number": 3026,
-                    "title": "Test PR",
-                    "body": "Fixes #99999",
-                    "url": "https://github.com/fritzprix/libr-agent/pull/3026",
-                    "headRefName": "skills/test-99999",
+                    "number": number,
+                    "title": f"Test PR {number}",
+                    "body": f"Fixes #{number}",
+                    "url": f"https://github.com/fritzprix/libr-agent/pull/{number}",
+                    "headRefName": f"skills/test-{number}",
                     "headRefOid": "h1",
                     "baseRefName": "dev/0.9.x",
                     "isDraft": False,
@@ -900,12 +916,19 @@ class BlockedStatusTests(unittest.TestCase):
                     "labels": [],
                     "files": [{"path": "src/app.ts"}],
                 })
-            raise RuntimeError("HTTP 404 Not Found")
+            if "/issues/3026/" in args[1]:
+                raise RuntimeError("gh: HTTP 403 (Forbidden)")
+            return json.dumps([])
 
         with patch.object(review_queue, "gh", fake_gh):
-            entry = summarize(3026, "fritzprix")
-        self.assertIsNotNone(entry["blockerLookupError"])
-        self.assertEqual(entry["status"], "review")
+            broken = summarize(3026, "fritzprix")
+            healthy = summarize(3027, "fritzprix")
+
+        self.assertIn("403", broken["blockerLookupError"])
+        self.assertEqual(broken["status"], "blocked-unknown")
+        self.assertEqual(broken["whoseTurn"], "error")
+        self.assertIsNone(healthy["blockerLookupError"])
+        self.assertEqual(healthy["status"], "review")
 
 
 if __name__ == "__main__":

@@ -142,6 +142,37 @@ class PrTurnTests(unittest.TestCase):
         )
         self.assertEqual(turn.turn, "worker")
 
+    def test_blocker_lookup_error_parks_the_pr_for_nobody(self) -> None:
+        """G3.1: a failed blocker lookup must never fall back to "not blocked"."""
+        turn = decide_pr_turn(
+            head_sha="sha2",
+            mergeable="MERGEABLE",
+            comments=[gk("clean", "sha2")],
+            me="me",
+            blocker_lookup_error="gh api ... -> HTTP 403",
+        )
+        self.assertEqual(turn.turn, "error")
+        self.assertIn("HTTP 403", turn.reason)
+        self.assertIsNone(turn.currentVerdict)
+        self.assertEqual(turn.labelMismatch, [])
+
+    def test_blocker_lookup_error_outranks_worker_actions(self) -> None:
+        """The error wins over an empty blocker list, a clean marker and rebase_ready."""
+        for kwargs in (
+            {"open_blockers": []},
+            {"rebase_ready": True},
+            {"open_blockers": [99]},
+        ):
+            turn = decide_pr_turn(
+                head_sha="sha2",
+                mergeable="CONFLICTING",
+                comments=[gk("clean", "sha2"), wr("1", "sha2")],
+                me="me",
+                blocker_lookup_error="boom",
+                **kwargs,
+            )
+            self.assertEqual(turn.turn, "error", kwargs)
+
 
 class FixedMarkerKindsTests(unittest.TestCase):
     """Issue #2994: unknown markers are ignored; no turn is ever a stall state."""

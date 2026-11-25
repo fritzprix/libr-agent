@@ -163,7 +163,11 @@ def select_next_action(
     rebase_ready: bool = False,
     behind: bool = False,
     base_drift: bool = False,
+    blocker_lookup_error: str | None = None,
 ) -> str:
+    if blocker_lookup_error:
+        # Fail closed (#2995 G3.1): skip the PR and report, never push on a guess.
+        return "report-lookup-error"
     top_overlap = highest_overlap_state(
         (["needs-owner"] if waiting_owner else [])
         + (["open-blocker"] if blockers else [])
@@ -261,6 +265,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         labels=labels,
         open_blockers=open_dep,
         rebase_ready=ready_to_rebase,
+        blocker_lookup_error=blocker_error,
     )
     checks = pr.get("statusCheckRollup") or []
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
@@ -315,6 +320,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         rebase_ready=ready_to_rebase,
         behind=pr.get("mergeStateStatus") == "BEHIND",
         base_drift=needs_rebase,
+        blocker_lookup_error=blocker_error,
     )
     if claimed_by:
         next_action = "claimed"
