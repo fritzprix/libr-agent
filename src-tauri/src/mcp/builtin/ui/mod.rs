@@ -164,8 +164,8 @@ impl UiServer {
     }
 
     async fn ask_user(&self, args: Value, session_id: Option<String>) -> Result<MCPResult, String> {
-        let questions = match ask_user::parse_ask_user_args(&args) {
-            Ok(questions) => questions,
+        let (questions, warnings) = match ask_user::parse_ask_user_args(&args) {
+            Ok(parsed) => parsed,
             Err(result) => return Ok(result),
         };
         let Some(session_id) = session_id else {
@@ -184,7 +184,9 @@ impl UiServer {
             questions: questions.clone(),
         };
         match manager.request_user_prompt(&session_id, payload).await {
-            Ok(outcome) => Ok(ask_user::ask_user_outcome_result(&questions, &outcome)),
+            Ok(outcome) => Ok(ask_user::ask_user_outcome_result(
+                &questions, &outcome, &warnings,
+            )),
             Err(message) => Ok(MCPResult::error(&message)),
         }
     }
@@ -257,6 +259,21 @@ impl UiServer {
         // Only enforce on-disk existence when we actually probed a session workspace.
         // Without session_id we must not reject (cannot safely touch the host FS).
         let mut missing_export_paths: Vec<String> = Vec::new();
+        // Load attach metadata once: the sync branch below and the Docker hint in
+        // the missing-paths error both need it (#2972 item 5).
+        let attach_metadata = match session_id.as_deref() {
+            Some(sid) if !export_paths.is_empty() => {
+                crate::services::container_attach_fs::load_session(sid)
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        };
+        let docker_session = attach_metadata.as_ref().is_some_and(|session| {
+            session.workspace_isolation
+                == crate::models::workspace_isolation::WorkspaceIsolationMode::Docker
+        });
         if !export_paths.is_empty() {
             for path_str in &export_paths {
                 let (exists, size_bytes, extension, name, absolute_path) = if let Some(ref sid) =
@@ -270,11 +287,9 @@ impl UiServer {
                             // deliverables are visible before the host exists() probe.
                             // Propagate non-missing docker failures (same as
                             // sync_attach_before_host_read) — never trust stale staging.
-                            if let Ok(Some(session)) =
-                                crate::services::container_attach_fs::load_session(sid).await
-                            {
+                            if let Some(session) = attach_metadata.as_ref() {
                                 if let Err(err) = crate::services::container_attach_fs::pull_container_file_to_host(
-                                    &session,
+                                    session,
                                     &full_path,
                                 )
                                 .await
@@ -286,12 +301,7 @@ impl UiServer {
                                         ),
                                         ToolGroup::UI,
                                     )
-                                    .with_guidance(vec![
-                                        "Retry after the attach container is reachable (docker cp / sync)."
-                                            .to_string(),
-                                        "Do not claim status=success until export_paths can be synced from the container."
-                                            .to_string(),
-                                    ])
+                                    .with_guidance(attach_sync_failure_guidance(&err))
                                     .to_mcp_result_with_data(Some(json!({
                                         "attach_sync_failed_path": path_str,
                                         "error": err,
@@ -357,23 +367,47 @@ impl UiServer {
         // parent checkSession (#2044) promote a hollow deliverable.
         if status == "success" && !missing_export_paths.is_empty() {
             let missing_list = missing_export_paths.join(", ");
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Cannot report status=success: export_paths not found on disk: {missing_list}"
-                ),
-                ToolGroup::UI,
-            )
-            .with_guidance(vec![
+            // #2731 2697 D-1, #2972 review G1.1: this branch is only reached
+            // after any attach sync succeeded (or none was needed), so daemon
+            // unreachability cannot be claimed here — the attach-sync-failure
+            // path above names it when a Docker call actually failed. What is
+            // known: a Docker session can hold files inside the container,
+            // outside the mounted workspace, where no sync can see them.
+            let docker_suffix = if docker_session {
+                " This session is Docker-isolated: files written inside the \
+                 container outside the mounted workspace stay there and never \
+                 appear on the host."
+            } else {
+                ""
+            };
+            let mut guidance = vec![
                 "Write each missing deliverable with workspace__writeFile (or correct the path)."
                     .to_string(),
                 "Verify the file exists (workspace__readFile / listDirectory), then call ui__reportResult again."
                     .to_string(),
+            ];
+            if docker_session {
+                guidance.push(
+                    "Write deliverables inside the session's mounted workspace so they \
+                     can be synced to the host."
+                        .to_string(),
+                );
+            }
+            guidance.push(
                 "Use status=partial only when intentionally delivering with known gaps — never claim success for missing files."
                     .to_string(),
-            ])
+            );
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Cannot report status=success: export_paths not found on disk: {missing_list}.{docker_suffix}"
+                ),
+                ToolGroup::UI,
+            )
+            .with_guidance(guidance)
             .to_mcp_result_with_data(Some(json!({
                 "missing_export_paths": missing_export_paths,
+                "docker_session": docker_session,
                 "deliverables": deliverables,
             }))));
         }
@@ -493,9 +527,53 @@ impl BuiltinMCPServer for UiServer {
     }
 }
 
+/// Guidance for a failed attach sync in `reportResult`: name the Docker
+/// daemon only when the error actually reports one unreachable — a missing
+/// or stopped container needs a different fix than a stopped daemon
+/// (#2972 review G1.1).
+pub(crate) fn attach_sync_failure_guidance(err: &str) -> Vec<String> {
+    let first = if crate::services::container_attach_fs::is_daemon_unreachable_error(err) {
+        "The Docker daemon is unreachable — start Docker (or Docker Desktop) so the \
+         container file can be synced, then retry."
+            .to_string()
+    } else {
+        "Retry after the attach container is reachable (docker cp / sync).".to_string()
+    };
+    vec![
+        first,
+        "Do not claim status=success until export_paths can be synced from the container."
+            .to_string(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attach_sync_guidance_names_daemon_only_when_observed() {
+        // #2972 review G1.1: "daemon unreachable" must come from the actual
+        // Docker error, never just from the session being Docker-isolated.
+        let daemon_err = "docker cp abc123:/app/work/task.txt /tmp/task.txt failed: \
+                          Cannot connect to the Docker daemon at unix:///var/run/docker.sock. \
+                          Is the docker daemon running?";
+        let guidance = attach_sync_failure_guidance(daemon_err);
+        assert!(
+            guidance[0].contains("Docker daemon is unreachable"),
+            "observed daemon failure must name the daemon: {guidance:?}"
+        );
+
+        let container_err = "docker cp failed: Error response from daemon: No such container: xyz";
+        let guidance = attach_sync_failure_guidance(container_err);
+        assert!(
+            !guidance[0].contains("daemon is unreachable"),
+            "a missing container must not be reported as a dead daemon: {guidance:?}"
+        );
+        assert!(
+            guidance[0].contains("attach container is reachable"),
+            "{guidance:?}"
+        );
+    }
 
     fn first_text(result: MCPResult) -> String {
         result

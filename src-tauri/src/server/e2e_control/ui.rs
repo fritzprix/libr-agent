@@ -289,9 +289,70 @@ async fn handle_elements(body: ElementsBody) -> Result<JsonReply, Infallible> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    Ok(json_ok(
-        &json!({ "elements": elements, "count": elements.len() }),
-    ))
+    // #2972 item 3: element bounds are CSS pixels (getBoundingClientRect)
+    // while `ui/input` viewport coordinates are logical window pixels. Echo
+    // the webview zoom the app reported so clients can convert bounds by
+    // multiplying with `scaleFactor`.
+    let scale_factor = match scale_factor_from_report(&report) {
+        Ok(scale) => scale,
+        Err(reason) => {
+            return Ok(json_error(
+                StatusCode::BAD_GATEWAY,
+                format!(
+                    "frontend bridge answered inspect but {reason}; refusing to guess the zoom for converting CSS-pixel bounds to logical window pixels"
+                ),
+            ));
+        }
+    };
+    Ok(json_ok(&json!({
+        "elements": elements,
+        "count": elements.len(),
+        "scaleFactor": scale_factor,
+    })))
+}
+
+/// Webview zoom reported by the frontend inspect payload. The bridge ships
+/// in the same app as the control plane, so every inspect report must carry
+/// a valid `uiScale`. Missing or non-finite/non-positive values are rejected
+/// rather than defaulted to 1.0: the app default zoom is 1.1, so a silently
+/// defaulted factor would reproduce the 1.1x click offset behind a success
+/// response (#2972 review G1.3).
+fn scale_factor_from_report(report: &Value) -> Result<f64, String> {
+    report
+        .get("uiScale")
+        .and_then(Value::as_f64)
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+        .ok_or_else(|| "uiScale is missing or invalid".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scale_factor_from_report;
+    use serde_json::json;
+
+    #[test]
+    fn reported_ui_scale_is_echoed_as_scale_factor() {
+        // #2972 item 3: CSS-pixel bounds convert to ui/input window pixels.
+        assert_eq!(
+            scale_factor_from_report(&json!({ "uiScale": 1.1 })),
+            Ok(1.1)
+        );
+    }
+
+    #[test]
+    fn missing_or_invalid_ui_scale_is_rejected() {
+        // No silent 1.0 fallback: the in-app bridge always reports uiScale,
+        // so an absent or broken value must fail loudly (#2972 review G1.3).
+        for report in [
+            json!({}),
+            json!({ "uiScale": null }),
+            json!({ "uiScale": "1.1" }),
+            json!({ "uiScale": 0 }),
+            json!({ "uiScale": -2 }),
+        ] {
+            assert!(scale_factor_from_report(&report).is_err(), "{report}");
+        }
+    }
 }
 
 /// Deliver one `ui/input` action (#2902, owner ruling on the G1.1 input

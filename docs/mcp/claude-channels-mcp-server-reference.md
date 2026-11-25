@@ -216,7 +216,7 @@ LibrAgent sends a **client notification** to servers advertising `claude/channel
   "params": {
     "request_id": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
     "tool_name": "workspace__writeFile",
-    "description": "Claude requested approval to run tool workspace__writeFile with the provided arguments",
+    "description": "The agent requested approval to run tool workspace__writeFile with the provided arguments",
     "input_preview": "path: /tmp/test.txt\ncontent: hello world ..."
   }
 }

@@ -3,6 +3,7 @@
 
 use crate::agent::state::{UserPromptOutcome, UserQuestion};
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::utils::{annotate_warnings, parse_bool_value};
 use crate::mcp::types::MCPResult;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -23,8 +24,11 @@ struct AskUserQuestionArg {
     question: String,
     description: Option<String>,
     options: Option<Vec<String>>,
-    multi_select: Option<bool>,
-    allow_custom: Option<bool>,
+    // Parsed with the shared string-boolean helper (#2972 item 2), not serde.
+    #[serde(default)]
+    multi_select: Option<Value>,
+    #[serde(default)]
+    allow_custom: Option<Value>,
 }
 
 /// A submitted answer: a string, or a list of strings for a multi-select.
@@ -41,8 +45,9 @@ fn invalid(message: impl Into<String>, guidance: &[&str]) -> MCPResult {
         .to_mcp_result()
 }
 
-/// Validate the tool arguments and return the questions to ask.
-pub fn parse_ask_user_args(args: &Value) -> Result<Vec<UserQuestion>, MCPResult> {
+/// Validate the tool arguments and return the questions to ask, plus any
+/// string-boolean warnings to append to the tool result.
+pub fn parse_ask_user_args(args: &Value) -> Result<(Vec<UserQuestion>, Vec<String>), MCPResult> {
     let parsed: AskUserArgs = serde_json::from_value(args.clone()).map_err(|error| {
         invalid(
             format!("Invalid ui__askUser arguments: {error}"),
@@ -62,7 +67,8 @@ pub fn parse_ask_user_args(args: &Value) -> Result<Vec<UserQuestion>, MCPResult>
 
     let mut seen_ids = HashSet::new();
     let mut questions = Vec::with_capacity(parsed.questions.len());
-    for item in parsed.questions {
+    let mut warnings = Vec::new();
+    for (index, item) in parsed.questions.into_iter().enumerate() {
         let id = item.id.trim().to_string();
         if id.is_empty() || item.question.trim().is_empty() {
             return Err(invalid(
@@ -91,8 +97,29 @@ pub fn parse_ask_user_args(args: &Value) -> Result<Vec<UserQuestion>, MCPResult>
                 ));
             }
         }
+        let multi_select = match parse_bool_value(
+            item.multi_select.as_ref(),
+            &format!("questions[{index}].multiSelect"),
+            false,
+        ) {
+            Ok(arg) => {
+                warnings.extend(arg.warning);
+                arg.value
+            }
+            Err(message) => return Err(invalid(message, &[])),
+        };
+        let allow_custom_arg = match parse_bool_value(
+            item.allow_custom.as_ref(),
+            &format!("questions[{index}].allowCustom"),
+            true,
+        ) {
+            Ok(arg) => {
+                warnings.extend(arg.warning);
+                arg.value
+            }
+            Err(message) => return Err(invalid(message, &[])),
+        };
         let has_options = item.options.is_some();
-        let multi_select = item.multi_select.unwrap_or(false);
         if multi_select && !has_options {
             return Err(invalid(
                 format!("Question '{id}' sets multiSelect without options"),
@@ -106,11 +133,11 @@ pub fn parse_ask_user_args(args: &Value) -> Result<Vec<UserQuestion>, MCPResult>
             description: item.description,
             options: item.options,
             multi_select,
-            allow_custom: has_options && item.allow_custom.unwrap_or(true),
+            allow_custom: has_options && allow_custom_arg,
         });
     }
 
-    Ok(questions)
+    Ok((questions, warnings))
 }
 
 /// Build the result object: `{ "<id>": { "question": ..., "answer": ... } }`.
@@ -157,8 +184,9 @@ pub fn format_ask_user_answer(questions: &[UserQuestion], raw: &str) -> Result<S
 pub fn ask_user_outcome_result(
     questions: &[UserQuestion],
     outcome: &UserPromptOutcome,
+    warnings: &[String],
 ) -> MCPResult {
-    match outcome {
+    let result = match outcome {
         UserPromptOutcome::Answered(raw) => match format_ask_user_answer(questions, raw) {
             Ok(text) => MCPResult::success(&text),
             Err(message) => MCPResult::error(&message),
@@ -169,7 +197,8 @@ pub fn ask_user_outcome_result(
         UserPromptOutcome::TimedOut | UserPromptOutcome::Restarted => {
             MCPResult::error(&outcome.caller_message())
         }
-    }
+    };
+    annotate_warnings(result, warnings.iter().cloned())
 }
 
 #[cfg(test)]
@@ -198,6 +227,7 @@ mod tests {
             ]
         }))
         .expect("valid questions")
+        .0
     }
 
     #[test]
@@ -213,11 +243,50 @@ mod tests {
     }
 
     #[test]
+    fn string_booleans_in_nested_fields_are_accepted_with_a_warning() {
+        // #2972 item 2: nested multiSelect/allowCustom use the shared helper.
+        let (questions, warnings) = parse_ask_user_args(&json!({
+            "questions": [{
+                "id": "targets",
+                "question": "Targets?",
+                "options": ["linux", "win"],
+                "multiSelect": "true",
+                "allowCustom": "FALSE"
+            }]
+        }))
+        .expect("string booleans are accepted");
+        assert!(questions[0].multi_select);
+        assert!(!questions[0].allow_custom);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(warnings[0].contains("multiSelect was the string \"true\""));
+        assert!(warnings[1].contains("allowCustom was the string \"FALSE\""));
+
+        // The warning reaches the caller through the tool result. `result_text`
+        // here serializes JSON, so inner quotes are escaped: match without them.
+        let result = ask_user_outcome_result(&questions, &UserPromptOutcome::Cancelled, &warnings);
+        let text = result_text(&result);
+        assert!(text.contains("multiSelect was the string"), "{text}");
+        assert!(text.contains("allowCustom was the string"), "{text}");
+
+        let error = parse_ask_user_args(&json!({
+            "questions": [{
+                "id": "a",
+                "question": "Q?",
+                "options": ["x"],
+                "multiSelect": "yes"
+            }]
+        }))
+        .expect_err("a non-boolean string is refused");
+        assert_eq!(error.is_error, Some(true));
+    }
+
+    #[test]
     fn the_word_password_in_an_id_or_question_is_allowed() {
         let questions = parse_ask_user_args(&json!({
             "questions": [{ "id": "password", "question": "Should the password policy change?" }]
         }))
-        .expect("ids and text are not checked for secret words");
+        .expect("ids and text are not checked for secret words")
+        .0;
         assert_eq!(questions.len(), 1);
     }
 
@@ -252,7 +321,8 @@ mod tests {
         })
         .to_string();
 
-        let result = ask_user_outcome_result(&questions, &UserPromptOutcome::Answered(raw.clone()));
+        let result =
+            ask_user_outcome_result(&questions, &UserPromptOutcome::Answered(raw.clone()), &[]);
         assert_eq!(result.is_error, Some(false));
 
         let text = format_ask_user_answer(&questions, &raw).expect("valid answer");
@@ -317,16 +387,16 @@ mod tests {
         let questions = three_questions();
 
         for outcome in [UserPromptOutcome::Cancelled, UserPromptOutcome::Stopped] {
-            let result = ask_user_outcome_result(&questions, &outcome);
+            let result = ask_user_outcome_result(&questions, &outcome, &[]);
             assert_eq!(result.is_error, Some(false));
             assert!(result_text(&result).contains(USER_PROMPT_CANCELLED_MESSAGE));
         }
 
-        let timeout = ask_user_outcome_result(&questions, &UserPromptOutcome::TimedOut);
+        let timeout = ask_user_outcome_result(&questions, &UserPromptOutcome::TimedOut, &[]);
         assert_eq!(timeout.is_error, Some(true));
         assert!(result_text(&timeout).contains(USER_PROMPT_TIMEOUT_MESSAGE));
 
-        let restart = ask_user_outcome_result(&questions, &UserPromptOutcome::Restarted);
+        let restart = ask_user_outcome_result(&questions, &UserPromptOutcome::Restarted, &[]);
         assert_eq!(restart.is_error, Some(true));
         assert!(result_text(&restart).contains(USER_PROMPT_RESTART_MESSAGE));
     }

@@ -11,7 +11,10 @@ import { SessionNotificationsBell } from '../SessionNotificationsBell';
 import type { AgentSession } from '@/models/agent';
 
 const mockNavigate = vi.fn();
-const mockMarkSessionViewed = vi.fn().mockResolvedValue(undefined);
+const mockMarkSessionViewed = vi.fn(async (id: string) => {
+  notificationSessions = notificationSessions.filter((s) => s.id !== id);
+  rerenderBell?.();
+});
 const mockMarkAllNotificationsViewed = vi.fn().mockResolvedValue(undefined);
 
 function session(id: string, name: string): AgentSession {
@@ -32,6 +35,13 @@ function session(id: string, name: string): AgentSession {
 }
 
 const sessions = [session('session-a', 'Alpha'), session('session-b', 'Beta')];
+
+/**
+ * Stateful list for the focus-restore test (#2972): dismissing removes the
+ * session and the test re-renders, so the row actually leaves the DOM.
+ */
+let notificationSessions: AgentSession[] = [...sessions];
+let rerenderBell: (() => void) | null = null;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -55,8 +65,8 @@ vi.mock('@/context/AgentSessionListContext', () => ({
     markAllNotificationsViewed: mockMarkAllNotificationsViewed,
   }),
   useAgentSessionListState: () => ({
-    notificationSessions: sessions,
-    unreadNotificationCount: sessions.length,
+    notificationSessions,
+    unreadNotificationCount: notificationSessions.length,
   }),
 }));
 
@@ -97,6 +107,8 @@ describe('SessionNotificationsBell keyboard access (#2537)', () => {
     mockNavigate.mockClear();
     mockMarkSessionViewed.mockClear();
     mockMarkAllNotificationsViewed.mockClear();
+    notificationSessions = [...sessions];
+    rerenderBell = null;
   });
 
   it('nests no interactive control inside a menu item', async () => {
@@ -139,5 +151,67 @@ describe('SessionNotificationsBell keyboard access (#2537)', () => {
 
     expect(mockMarkAllNotificationsViewed).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps focus on the next row after a keyboard dismiss (#2972)', async () => {
+    const { rerender } = render(<SessionNotificationsBell />);
+    rerenderBell = () => rerender(<SessionNotificationsBell />);
+    await openWithKeyboard();
+
+    const dismiss = await arrowTo('notifications.dismiss');
+    await act(async () => {
+      fireEvent.keyDown(dismiss, { key: 'Enter' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // Alpha's row left the menu; focus must land on Beta's dismiss, not on
+    // "Mark all read" (the first item Radix falls back to, #2731 2565 N-2).
+    const remaining = screen.getAllByRole('menuitem', {
+      name: 'notifications.dismiss',
+    });
+    expect(remaining).toHaveLength(1);
+    await waitFor(() => expect(remaining[0]).toHaveFocus(), {
+      timeout: 2000,
+    });
+  });
+
+  it('restores focus when the backend removes the row late (#2972 review G1.2)', async () => {
+    // The old implementation gave up after ~10 animation frames (~167 ms);
+    // a slower backend then dropped focus back to "Mark all read" anyway.
+    // Removal now waits for the real disconnection, whatever the delay.
+    mockMarkSessionViewed.mockImplementationOnce(
+      async (id: string) => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        notificationSessions = notificationSessions.filter((s) => s.id !== id);
+        rerenderBell?.();
+      },
+    );
+
+    const { rerender } = render(<SessionNotificationsBell />);
+    rerenderBell = () => rerender(<SessionNotificationsBell />);
+    await openWithKeyboard();
+
+    const dismiss = await arrowTo('notifications.dismiss');
+    await act(async () => {
+      fireEvent.keyDown(dismiss, { key: 'Enter' });
+    });
+
+    // The row is still in the menu (backend busy) and focus must not have
+    // been yanked to the first item behind the user's back.
+    expect(
+      screen.getAllByRole('menuitem', { name: 'notifications.dismiss' }),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    const remaining = screen.getAllByRole('menuitem', {
+      name: 'notifications.dismiss',
+    });
+    expect(remaining).toHaveLength(1);
+    await waitFor(() => expect(remaining[0]).toHaveFocus(), {
+      timeout: 2000,
+    });
   });
 });

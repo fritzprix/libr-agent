@@ -29,19 +29,51 @@ function formatSessionName(
 /**
  * Dismissing a row removes the focused menu item. Move focus to the item now at
  * the same position (or the menu itself) so keyboard users stay in the menu.
+ *
+ * Two traps fixed in #2972 (#2731 2565 N-2): Radix synchronously re-dumps
+ * focus onto the first item ("Mark all read") when the roving item is removed,
+ * so an "if focus is still in the menu, leave it alone" guard locks focus onto
+ * that wrong item. The row only leaves the DOM once `markSessionViewed`
+ * resolves and the list re-renders, so focus is restored when the dismissal
+ * actually happens — after the promise settles and the item disconnects —
+ * instead of a frame budget that gives up while the backend is still slow
+ * (#2972 review G1.2).
  */
-function keepMenuFocusAfterRemoval(item: EventTarget | null) {
+function keepMenuFocusAfterRemoval(
+  item: EventTarget | null,
+  dismissal: Promise<unknown>,
+) {
   if (!(item instanceof HTMLElement)) return;
   const menu = item.closest<HTMLElement>('[role="menu"]');
   if (!menu) return;
   const menuItems = () =>
     Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'));
   const index = menuItems().indexOf(item);
-  requestAnimationFrame(() => {
-    if (menu.contains(document.activeElement)) return;
+  const restore = () => {
     const remaining = menuItems();
     (remaining[Math.min(index, remaining.length - 1)] ?? menu).focus();
-  });
+  };
+  void dismissal.then(
+    () => {
+      if (!item.isConnected) {
+        restore();
+        return;
+      }
+      // The list re-render lands after the promise settles; restore focus the
+      // moment the dismissed row actually leaves the DOM.
+      const observer = new MutationObserver(() => {
+        if (!item.isConnected) {
+          observer.disconnect();
+          restore();
+        } else if (!menu.isConnected) {
+          observer.disconnect();
+        }
+      });
+      observer.observe(menu, { childList: true, subtree: true });
+    },
+    // Dismissal failed: the row stays, so leave focus where the user is.
+    () => undefined,
+  );
 }
 
 export function SessionNotificationsBell() {
@@ -161,8 +193,10 @@ export function SessionNotificationsBell() {
                   aria-label={t('notifications.dismiss')}
                   onSelect={(event) => {
                     event.preventDefault();
-                    keepMenuFocusAfterRemoval(event.target);
-                    void markSessionViewed(session.id);
+                    keepMenuFocusAfterRemoval(
+                      event.target,
+                      markSessionViewed(session.id),
+                    );
                   }}
                 >
                   <X size={14} />

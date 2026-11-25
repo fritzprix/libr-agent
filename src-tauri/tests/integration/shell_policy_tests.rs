@@ -336,7 +336,7 @@ async fn tool_policy_requires_normal_approval_for_unresolved_variable_path() {
             assert!(
                 request
                     .description
-                    .contains("Claude requested approval to run tool workspace__runShell"),
+                    .contains("The agent requested approval to run tool workspace__runShell"),
                 "expected normal approval description, got: {}",
                 request.description
             );
