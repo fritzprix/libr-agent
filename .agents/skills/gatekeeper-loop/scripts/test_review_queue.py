@@ -805,6 +805,51 @@ class BlockedStatusTests(unittest.TestCase):
     def test_determine_status_accepts_open_blockers(self):
         self.assertEqual(determine_status(**base_args(open_blockers=[9])), "blocked")
 
+    def test_rebase_ready_is_wait_worker_even_with_old_failing_ci(self):
+        status, reason, priority = classify(**base_args(
+            clean_head="head1",
+            failing_checks=["Test (ubuntu-latest)"],
+            rebase_ready=True,
+        ))
+        self.assertEqual(status, "wait-worker")
+        self.assertEqual(priority, 9)
+        self.assertIn("rebase", reason)
+
+    def test_summarize_reads_blockers_from_closing_issue_using_stubbed_gh(self):
+        seen_api = []
+
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3026,
+                    "title": "Test PR",
+                    "body": "Fixes #2995",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3026",
+                    "headRefName": "skills/test-2995",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "FAILURE"}],
+                    "comments": [{
+                        "author": {"login": "fritzprix"},
+                        "createdAt": "2026-11-19T01:00:00Z",
+                        "body": "<!-- gatekeeper-loop: round=1 verdict=clean head=h1 base=dev/0.9.x -->",
+                    }],
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                })
+            seen_api.append(args)
+            return json.dumps([{"number": 99, "state": "open"}])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3026, "fritzprix")
+
+        self.assertEqual(entry["status"], "blocked")
+        self.assertEqual(entry["whoseTurn"], "none")
+        self.assertEqual(seen_api, [("api", "repos/{owner}/{repo}/issues/2995/dependencies/blocked_by")])
+
 
 if __name__ == "__main__":
     unittest.main()

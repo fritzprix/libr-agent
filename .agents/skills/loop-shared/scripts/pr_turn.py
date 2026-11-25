@@ -35,6 +35,29 @@ def overlap_rank(states: Iterable[str]) -> int | None:
     return next((i for i, name in enumerate(OVERLAP_ORDER) if name in names), None)
 
 
+def highest_overlap_state(states: Iterable[str]) -> str | None:
+    """Name of the highest-priority state in `states` per OVERLAP_ORDER; None if none."""
+    rank = overlap_rank(states)
+    return OVERLAP_ORDER[rank] if rank is not None else None
+
+
+def rebase_ready(blockers: list[dict], comments: list[dict], me: str, head_sha: str) -> bool:
+    """True when every blocker is closed and the head matches the latest clean marker.
+
+    Shared by `pr_status.py` and `review_queue.py` (issue #2995). `blockers` is
+    the full blocked-by list from `issue_deps.pr_blockers` / `blocked_by`. The
+    PR must carry at least one blocker link; the latest gatekeeper marker
+    (verdicts including clean) must be a `clean` at the current head. After the
+    push the head is new, so this is false until the gatekeeper reviews again.
+    """
+    if not blockers:
+        return False
+    if any(b["state"] == "open" for b in blockers):
+        return False
+    verdicts, _ = parse_markers(comments, me)
+    return bool(verdicts) and verdicts[-1].get("verdict") == "clean" and verdicts[-1].get("head") == head_sha
+
+
 @dataclass(frozen=True)
 class PrTurn:
     turn: Turn
@@ -74,8 +97,20 @@ def decide_pr_turn(
     comments: list[dict],
     me: str,
     labels: list[str] | None = None,
+    open_blockers: list[int] | None = None,
+    rebase_ready: bool = False,
 ) -> PrTurn:
     """Return turn owner and verdict snapshot for worker and gatekeeper ticks."""
+    if open_blockers:
+        return PrTurn(
+            turn="none",
+            currentVerdict=None,
+            verdictHead=None,
+            currentHead=head_sha,
+            atVerdictHead=False,
+            labelMismatch=[],
+            reason=f"blocked by open #{', #'.join(map(str, open_blockers))}",
+        )
     if mergeable == "CONFLICTING":
         return PrTurn(
             turn="worker",
@@ -85,6 +120,16 @@ def decide_pr_turn(
             atVerdictHead=False,
             labelMismatch=[],
             reason="merge conflict",
+        )
+    if rebase_ready:
+        return PrTurn(
+            turn="worker",
+            currentVerdict="clean",
+            verdictHead=head_sha,
+            currentHead=head_sha,
+            atVerdictHead=True,
+            labelMismatch=[],
+            reason="blockers closed; worker must rebase",
         )
 
     verdicts, responses = parse_markers(comments, me)

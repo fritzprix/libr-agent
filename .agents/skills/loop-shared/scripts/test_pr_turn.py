@@ -252,6 +252,25 @@ class OverlapRankTest(unittest.TestCase):
         self.assertEqual(overlap_rank([]), None)
         self.assertIsNone(overlap_rank(None))
 
+    def test_highest_overlap_state_and_parked_turns(self):
+        from pr_turn import highest_overlap_state, rebase_ready
+
+        self.assertEqual(highest_overlap_state(["merge-conflict", "open-blocker"]), "open-blocker")
+        self.assertIsNone(highest_overlap_state([]))
+
+        blocked_turn = decide_pr_turn(
+            head_sha="sha2", mergeable="MERGEABLE", comments=[gk("clean", "sha2")], me="me",
+            open_blockers=[99],
+        )
+        self.assertEqual(blocked_turn.turn, "none")
+
+        self.assertTrue(rebase_ready([{"number": 99, "state": "closed"}], [gk("clean", "sha2")], "me", "sha2"))
+        rebase_turn = decide_pr_turn(
+            head_sha="sha2", mergeable="MERGEABLE", comments=[gk("clean", "sha2")], me="me",
+            rebase_ready=True,
+        )
+        self.assertEqual(rebase_turn.turn, "worker")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -129,5 +129,26 @@ class AddBlockerTest(unittest.TestCase):
             issue_deps.add_blocker(5, 7, gh)
 
 
+class PrBlockersTest(unittest.TestCase):
+    """Owner decision (a): PR blockers live on the PR's closing issue."""
+
+    def test_pr_blockers_reads_closing_issue_not_pr_number(self):
+        seen_paths = []
+
+        def gh(*args):
+            seen_paths.append(args[1])
+            return json.dumps([{"number": 99, "state": "open"}])
+
+        pr = {"number": 3026, "title": "Fix thing", "body": "Fixes #2995", "headRefName": "fix/thing-2995"}
+        self.assertEqual(issue_deps.pr_open_blockers(pr, gh), [99])
+        self.assertEqual(seen_paths, ["repos/{owner}/{repo}/issues/2995/dependencies/blocked_by"])
+
+    def test_pr_without_closing_issue_returns_empty_without_calling_gh(self):
+        called = []
+        pr = {"number": 3026, "title": "Chore", "body": "", "headRefName": "chore/cleanup"}
+        self.assertEqual(issue_deps.pr_blockers(pr, lambda *a: called.append(a) or "[]"), [])
+        self.assertEqual(called, [])
+
+
 if __name__ == "__main__":
     unittest.main()

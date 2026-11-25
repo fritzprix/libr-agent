@@ -43,8 +43,13 @@ if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
 from comment_markers import START_MARKER, parse_markers  # noqa: E402
-from issue_deps import DepsError, open_blockers  # noqa: E402
-from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
+from issue_deps import DepsError, pr_blockers  # noqa: E402
+from pr_turn import (  # noqa: E402
+    decide_pr_turn,
+    format_turn_report,
+    highest_overlap_state,
+    rebase_ready as is_rebase_ready,
+)
 
 MAX_ROUNDS = 5
 ESCALATED_LABEL = "gatekeeper:escalated"
@@ -177,6 +182,7 @@ def classify(
     ci_ran: bool = True,
     escalate_label_present: bool = True,
     open_blockers: list[int] | None = None,
+    rebase_ready: bool = False,
 ) -> tuple[str, str, int]:
     """Return (status, one-line reason, priority). Lower priority number is handled first.
 
@@ -187,18 +193,24 @@ def classify(
 
     A PR with an open blocker is `blocked` at priority 9: the gatekeeper does
     not review it and does not diagnose it again (issue #2995). The order
-    follows `pr_turn.overlap_rank`: an unresolved escalation outranks an open
-    blocker, which outranks a merge conflict.
+    uses `pr_turn.highest_overlap_state`: an unresolved escalation outranks an
+    open blocker, which outranks a merge conflict.
     """
     # An escalated PR is not reviewed until the owner removes the label (#2996 G1.3).
-    # The order follows `pr_turn.overlap_rank`: an unresolved escalation outranks an
-    # open blocker, which outranks a merge conflict (issue #2995).
-    if last_verdict and last_verdict.get("verdict") == "escalate" and escalate_label_present:
+    # Shared overlap precedence from `pr_turn.highest_overlap_state` (issue #2995).
+    top_overlap = highest_overlap_state(
+        (["gatekeeper:escalated"] if (last_verdict and last_verdict.get("verdict") == "escalate" and escalate_label_present) else [])
+        + (["open-blocker"] if open_blockers else [])
+        + (["merge-conflict"] if mergeable == "CONFLICTING" else [])
+    )
+    if top_overlap == "gatekeeper:escalated":
         return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
-    if open_blockers:
+    if top_overlap == "open-blocker":
         return "blocked", f"open blocker #{', #'.join(map(str, open_blockers))}; parked until it closes", 9
-    if mergeable == "CONFLICTING":
+    if top_overlap == "merge-conflict":
         return "wait-worker", "merge conflict; worker must rebase", 9
+    if rebase_ready:
+        return "wait-worker", "blockers closed; worker must rebase and push", 9
 
     ci_applies = is_dev_base(base)
     ci_failed = ci_applies and bool(failing_checks)
@@ -339,10 +351,10 @@ def determine_status(**kwargs) -> str:
     return classify(**kwargs)[0]
 
 
-def gh_blocked_by(number: int) -> list[int]:
-    """Open blocker numbers of an issue or PR, via the shared helper (issue #2995)."""
+def gh_blocked_by(pr: dict) -> list[dict]:
+    """Blockers of a PR's closing issues, via the shared helper (issue #2995)."""
     try:
-        return open_blockers(number)
+        return pr_blockers(pr, run_gh=gh)
     except DepsError as e:
         sys.exit(f"review_queue: {e}")
 
@@ -350,7 +362,7 @@ def gh_blocked_by(number: int) -> list[int]:
 def summarize(number: int, me: str, state: dict | None = None) -> dict:
     pr = json.loads(
         gh("pr", "view", str(number), "--json",
-           "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,createdAt,"
+           "number,title,body,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,createdAt,"
            "statusCheckRollup,comments,labels,files")
     )
     base = pr["baseRefName"]
@@ -394,6 +406,10 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     human_only = touches_human_only_paths(paths)
     sensitive_info = classify_sensitive_paths(paths)
 
+    blockers = gh_blocked_by(pr)
+    open_dep = [b["number"] for b in blockers if b["state"] == "open"]
+    ready_to_rebase = is_rebase_ready(blockers, comments, me, head)
+
     status, reason, priority = classify(
         mergeable=pr.get("mergeable"),
         head=head,
@@ -412,7 +428,8 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         owner_comment=bool(owner),
         ci_ran=bool(checks),
         escalate_label_present=ESCALATED_LABEL in labels,
-        open_blockers=gh_blocked_by(number),
+        open_blockers=open_dep,
+        rebase_ready=ready_to_rebase,
     )
 
     if status != "review" or not reviewed_head or reviewed_head == head:
@@ -426,6 +443,8 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         comments=comments,
         me=me,
         labels=labels,
+        open_blockers=open_dep,
+        rebase_ready=ready_to_rebase,
     )
 
     # Place review state first so the model and operator see review status before CI details.

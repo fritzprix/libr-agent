@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """GitHub issue dependencies for worker-loop and gatekeeper-loop.
 
-The only module that may call `gh` for blocked-by links (issue #2995). A PR
-shares the issue number space, so `number` may be a PR number.
+The only module that may call `gh` for blocked-by links (issue #2995).
 
-- `blocked_by(number)` — the blockers of an item: `{"number", "state"}` entries.
+- `blocked_by(number)` — the blockers of an issue: `{"number", "state"}` entries.
 - `add_blocker(number, blocker_number)` — add a blocker link, idempotent.
 - `open_blockers(number)` — the blocker numbers whose state is `open`.
+- `closing_refs(pr)` — issue numbers closed by `pr` (title/body keywords + branch suffix).
+- `pr_blockers(pr)` / `pr_open_blockers(pr)` — blockers across `pr`'s closing issues.
 
 A missing item is an error: a 404 is `DepsError`, never an empty list. Writes
 use the blocker's integer `id` (from `GET /repos/{owner}/{repo}/issues/N`),
@@ -14,14 +15,32 @@ not its number.
 
 GitHub accepts the write for **issues only** (issue #2995): a PR number as
 source or target is refused with HTTP 422 ("Source/Target issue may only be
-an issue"), even though the read works for a PR number. A PR's blocked-by
-link is set by a human in the GitHub UI; the loops only read it.
+an issue"). To park a PR, add the blocked-by link to the PR's closing issue
+(`issue_deps.py add <closing-issue> <blocker-issue>`) and read it via
+`pr_blockers(pr)` / `open_blockers(closing_issue)`.
 """
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from typing import Callable
+
+CLOSING_PATTERN = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", re.I)
+# Branch names end with the issue number (`fix/keychain-fallback-stale-2588`).
+BRANCH_REF_PATTERN = re.compile(r"-(\d{3,})\b")
+
+
+def closing_refs(pr: dict) -> set[int]:
+    """Issues this PR closes: `Fixes #N` style keywords in title/body, plus the branch number.
+
+    Single source of truth shared by `issue_candidates.py`, `tick_gate.py`,
+    `pr_status.py`, and `review_queue.py`.
+    """
+    text = f"{pr.get('title') or ''} {pr.get('body') or ''}"
+    refs = {int(n) for n in CLOSING_PATTERN.findall(text)}
+    refs |= {int(n) for n in BRANCH_REF_PATTERN.findall(pr.get("headRefName") or "")}
+    return refs
 
 
 class DepsError(RuntimeError):
@@ -70,8 +89,24 @@ def blocked_by(number: int, run_gh: Callable[..., str] = _default_gh) -> list[di
 
 
 def open_blockers(number: int, run_gh: Callable[..., str] = _default_gh) -> list[int]:
-    """Blocker numbers of issue or PR `number` whose state is `open`."""
+    """Blocker numbers of issue `number` whose state is `open`."""
     return [b["number"] for b in blocked_by(number, run_gh) if b["state"] == "open"]
+
+
+def pr_blockers(pr: dict, run_gh: Callable[..., str] = _default_gh) -> list[dict]:
+    """Deduplicated blockers across all closing issues of `pr`."""
+    seen: dict[int, dict] = {}
+    for issue_num in sorted(closing_refs(pr)):
+        for b in blocked_by(issue_num, run_gh):
+            prev = seen.get(b["number"])
+            if prev is None or b["state"] == "open":
+                seen[b["number"]] = b
+    return [seen[k] for k in sorted(seen)]
+
+
+def pr_open_blockers(pr: dict, run_gh: Callable[..., str] = _default_gh) -> list[int]:
+    """Open blocker numbers across all closing issues of `pr`."""
+    return [b["number"] for b in pr_blockers(pr, run_gh) if b["state"] == "open"]
 
 
 def add_blocker(number: int, blocker_number: int, run_gh: Callable[..., str] = _default_gh) -> None:

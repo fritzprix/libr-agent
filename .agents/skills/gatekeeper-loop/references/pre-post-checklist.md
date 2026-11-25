@@ -58,7 +58,7 @@ When a finding is `CI failure (<job>)`:
 2. Do **not** treat the worker's explanation as root cause until logs support it.
 3. If the proposed fix is only a **timeout increase** on a **pre-existing** test, you must: (a) show the log proves timeout (not cancel/fail-fast elsewhere), and (b) note whether the same CI step is green on other open PRs at the same base. If other PRs pass, the bump alone is insufficient — identify flake vs regression vs infra.
 4. Distinguish PR-introduced failures from base-branch or toolchain drift (failures in files the PR did not touch).
-5. A failure outside the PR diff is parked behind a blocked-by link to the issue that tracks the cause while that issue is open (the link is set by a human in the GitHub UI — the API write accepts issues only, verified #2995) — it is never a required `G` item on the PR under review.
+5. A failure outside the PR diff is parked behind a blocked-by link on the PR's **closing issue** (`python3 .agents/skills/loop-shared/scripts/issue_deps.py add <closing-issue> <blocker-issue>`) while that blocker issue is open — it is never a required `G` item on the PR under review.
 
 ## 7. Code quality score (gate: ≥86 to approve)
 

@@ -39,8 +39,13 @@ from comment_markers import (  # noqa: E402
     parse_markers,
     reply_targets,
 )
-from issue_deps import blocked_by  # noqa: E402
-from pr_turn import decide_pr_turn, format_turn_report, overlap_rank  # noqa: E402
+from issue_deps import pr_blockers  # noqa: E402
+from pr_turn import (  # noqa: E402
+    decide_pr_turn,
+    format_turn_report,
+    highest_overlap_state,
+    rebase_ready,
+)
 
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
@@ -64,9 +69,13 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PR_FIELDS = (
-    "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
+    "number,title,body,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
     "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels,files"
 )
+# Base commits missing from the PR before the worker rebases it. GitHub reports
+# mergeStateStatus BEHIND only when branch protection requires up-to-date
+# branches, so drift is measured with the compare API as well.
+BASE_DRIFT_COMMITS = 10
 UNKNOWN_RETRY_DELAYS = (2.0, 4.0, 8.0)
 
 
@@ -121,6 +130,26 @@ def fetch_until_mergeable_known(
     return pr
 
 
+def base_drift_needs_rebase(
+    *,
+    merge_state: str | None,
+    base_ahead_by: int,
+    base_files: Iterable[str],
+    pr_files: Iterable[str],
+    threshold: int = BASE_DRIFT_COMMITS,
+) -> bool:
+    """True when the base moved enough that CI on the PR head is out of date.
+
+    That is: GitHub reports BEHIND, the base has `threshold` or more commits the
+    PR lacks, or a base commit since the merge base touched a file the PR changes.
+    """
+    if base_ahead_by <= 0:
+        return False
+    if merge_state == "BEHIND" or base_ahead_by >= threshold:
+        return True
+    return not set(base_files).isdisjoint(pr_files)
+
+
 def select_next_action(
     *,
     turn: str,
@@ -132,15 +161,24 @@ def select_next_action(
     waiting_owner: bool = False,
     blockers: list[int] | None = None,
     rebase_ready: bool = False,
+    behind: bool = False,
+    base_drift: bool = False,
 ) -> str:
-    if waiting_owner:
+    top_overlap = highest_overlap_state(
+        (["needs-owner"] if waiting_owner else [])
+        + (["open-blocker"] if blockers else [])
+        + (["merge-conflict"] if conflicting else [])
+    )
+    if top_overlap == "needs-owner":
         return "wait-owner"
-    if blockers:
+    if top_overlap == "open-blocker":
         return "wait-blocker"
-    if conflicting:
+    if top_overlap == "merge-conflict":
         return "resolve-conflict"
-    if rebase_ready:
+    if rebase_ready or behind:
         return "rebase"
+    if base_drift:
+        return "rebase-base"
     if turn == "worker" and gatekeeper and gatekeeper["awaitingWorker"]:
         return "address-gatekeeper"
     if turn == "gatekeeper":
@@ -184,35 +222,40 @@ def new_triage_comments(
     return new_comments
 
 
-def rebase_ready(blockers: list[dict], comments: list[dict], me: str, head_sha: str) -> bool:
-    """True when every blocker is closed and the head matches the latest clean marker.
-
-    `blockers` is the full blocked-by list from `issue_deps.blocked_by`. The PR
-    must carry at least one blocker link; the latest gatekeeper marker (verdicts
-    including clean) must be a `clean` at the current head. After the push the
-    head is new, so this is false until the gatekeeper reviews again.
-    """
-    if not blockers:
-        return False
-    if any(b["state"] == "open" for b in blockers):
-        return False
-    verdicts, _ = parse_markers(comments, me)
-    return bool(verdicts) and verdicts[-1].get("verdict") == "clean" and verdicts[-1].get("head") == head_sha
+def base_drift(owner: str, name: str, pr: dict) -> tuple[int, list[str]]:
+    """Commits on the base that the PR head lacks, and the files they changed."""
+    compare = json.loads(gh(
+        "api", f"repos/{owner}/{name}/compare/{pr['headRefOid']}...{pr['baseRefName']}",
+        "--jq", "{ahead_by, files: [.files[]?.filename]}",
+    ))
+    return compare.get("ahead_by") or 0, compare.get("files") or []
 
 
 def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | None = None) -> dict:
     pr = fetch_until_mergeable_known(lambda: json.loads(gh("pr", "view", str(number), "--json", PR_FIELDS)))
     mergeable_unknown = pr.get("mergeable") == "UNKNOWN"
+    base_ahead_by, base_files = base_drift(owner, name, pr)
+    needs_rebase = base_drift_needs_rebase(
+        merge_state=pr.get("mergeStateStatus"),
+        base_ahead_by=base_ahead_by,
+        base_files=base_files,
+        pr_files=[f["path"] for f in pr.get("files") or []],
+    )
     comments = pr.get("comments") or []
     head_sha = pr["headRefOid"]
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     gatekeeper = gatekeeper_state(comments, me, head_sha)
+    blockers = pr_blockers(pr, run_gh=gh)  # DepsError on missing item is fatal for this tick
+    open_dep = [b["number"] for b in blockers if b["state"] == "open"]
+    ready_to_rebase = rebase_ready(blockers, comments, me, head_sha)
     turn = decide_pr_turn(
         head_sha=head_sha,
         mergeable=pr.get("mergeable"),
         comments=comments,
         me=me,
         labels=labels,
+        open_blockers=open_dep,
+        rebase_ready=ready_to_rebase,
     )
     checks = pr.get("statusCheckRollup") or []
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
@@ -255,8 +298,6 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
     new_comments = new_triage_comments(comments, last_commit_at, reply_targets(comments, me))
 
     answer = owner_answer(comments, me) if NEEDS_OWNER_LABEL in labels else None
-    blockers = blocked_by(int(number))  # DepsError on missing item is fatal for this tick
-    open_dep = [b["number"] for b in blockers if b["state"] == "open"]
     next_action = select_next_action(
         turn=turn.turn,
         conflicting=pr.get("mergeable") == "CONFLICTING",
@@ -266,23 +307,10 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         pending=pending,
         waiting_owner=NEEDS_OWNER_LABEL in labels and answer is None,
         blockers=open_dep,
-        rebase_ready=rebase_ready(blockers, comments, me, head_sha),
+        rebase_ready=ready_to_rebase,
+        behind=pr.get("mergeStateStatus") == "BEHIND",
+        base_drift=needs_rebase,
     )
-    # Shared order for overlapping states (issue #2995): needs-owner outranks an
-    # open blocker, which outranks a merge conflict, then a verdict-label fix.
-    waiting_owner_flag = NEEDS_OWNER_LABEL in labels and answer is None
-    overlap = overlap_rank(
-        (["needs-owner"] if waiting_owner_flag else [])
-        + (["open-blocker"] if open_dep else [])
-        + (["merge-conflict"] if pr.get("mergeable") == "CONFLICTING" else [])
-        + (["verdict-label"] if turn.labelMismatch else [])
-    )
-    if overlap is not None and next_action in ("fix-ci", "wait-ci", "none", "triage-comments"):
-        next_action = {
-            0: "wait-owner",
-            2: "wait-blocker",
-            3: "resolve-conflict",
-        }.get(overlap, next_action)
     if claimed_by:
         next_action = "claimed"
     turn_report = format_turn_report(turn, pr_number=pr["number"])
@@ -299,6 +327,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "mergeable": pr.get("mergeable"),
         "mergeState": pr.get("mergeStateStatus"),
         "mergeableUnknown": mergeable_unknown,
+        "baseAheadBy": base_ahead_by,
         "reviewDecision": pr.get("reviewDecision"),
         "failingChecks": failing,
         "pendingChecks": pending,

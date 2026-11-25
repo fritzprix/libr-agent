@@ -322,6 +322,23 @@ class OwnerQuestionAndCiAttemptsTest(unittest.TestCase):
         ]
         self.assertEqual(pr_status.ci_attempts(comments, "me"), 2)
 
+    def test_behind_triggers_rebase_and_base_drift_triggers_rebase_base(self):
+        behind_action = pr_status.select_next_action(
+            turn="gatekeeper", conflicting=False, gatekeeper=None,
+            has_comments=False, failing=[], pending=[], behind=True,
+        )
+        self.assertEqual(behind_action, "rebase")
+
+        drift_action = pr_status.select_next_action(
+            turn="gatekeeper", conflicting=False, gatekeeper=None,
+            has_comments=False, failing=[], pending=[], base_drift=True,
+        )
+        self.assertEqual(drift_action, "rebase-base")
+
+        self.assertTrue(pr_status.base_drift_needs_rebase(
+            merge_state="BEHIND", base_ahead_by=1, base_files=[], pr_files=[],
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()
