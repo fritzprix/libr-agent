@@ -318,4 +318,49 @@ describe('ServerCard', () => {
       expect(screen.getByText('Delete').closest('button')).not.toBeDisabled();
     });
   });
+
+  describe('card layout and action row wrapping', () => {
+    it('uses equal-height flex column, top-aligned header, bottom-pinned wrapping action row with four buttons', () => {
+      const oauthServer: MCPServerEntity = {
+        ...baseServer,
+        id: 'srv-oauth',
+        name: 'remote-mcp',
+        toolCount: 4,
+        transport: { type: 'http-sse', url: 'https://example.com/sse' },
+        authentication: { type: 'oauth2.1' },
+      };
+
+      const { container } = renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      // All four action buttons are rendered
+      expect(screen.getByText('Tools')).toBeInTheDocument();
+      expect(screen.getByText('Edit')).toBeInTheDocument();
+      expect(screen.getByText('Authorize')).toBeInTheDocument();
+      expect(screen.getByText('Delete')).toBeInTheDocument();
+
+      // Root card uses full-height flex column for equal grid row heights
+      const card = container.firstElementChild as HTMLElement;
+      expect(card).toHaveClass('flex', 'h-full', 'flex-col');
+
+      // Header aligns Active toggle to the top consistently
+      const header = card.querySelector('.items-start');
+      expect(header).not.toBeNull();
+
+      // Action row container is pinned to bottom and wraps to prevent button clipping
+      const deleteButton = screen.getByText('Delete').closest('button')!;
+      const actionRow = deleteButton.parentElement!;
+      expect(actionRow).toHaveClass('flex', 'flex-wrap', 'gap-2');
+      expect(actionRow.parentElement).toHaveClass('mt-auto');
+
+      const leftGroup = screen.getByText('Tools').closest('button')!.parentElement!;
+      expect(leftGroup).toHaveClass('flex', 'flex-wrap', 'gap-2');
+    });
+  });
 });

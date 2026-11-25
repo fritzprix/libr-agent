@@ -189,7 +189,7 @@ export const ServerCard = React.memo(
     );
 
     return (
-      <Card className="relative overflow-hidden">
+      <Card className="relative flex h-full flex-col overflow-hidden">
         {/* Verification progress bar - animating shimmer when pending */}
         {verificationStatus === 'pending' && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden">
@@ -202,7 +202,7 @@ export const ServerCard = React.memo(
         {verificationStatus === 'error' && (
           <div className="absolute top-0 left-0 right-0 h-0.5 bg-destructive/70" />
         )}
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             {/* Server logo */}
             <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 mt-0.5 border border-border/50">
@@ -391,9 +391,9 @@ export const ServerCard = React.memo(
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex justify-between items-center w-full">
-            <div className="flex gap-2">
+        <CardContent className="mt-auto">
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {server.toolCount !== undefined &&
                 server.toolCount !== null &&
                 server.toolCount > 0 && (
