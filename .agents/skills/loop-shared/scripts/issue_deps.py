@@ -11,6 +11,11 @@ shares the issue number space, so `number` may be a PR number.
 A missing item is an error: a 404 is `DepsError`, never an empty list. Writes
 use the blocker's integer `id` (from `GET /repos/{owner}/{repo}/issues/N`),
 not its number.
+
+GitHub accepts the write for **issues only** (issue #2995): a PR number as
+source or target is refused with HTTP 422 ("Source/Target issue may only be
+an issue"), even though the read works for a PR number. A PR's blocked-by
+link is set by a human in the GitHub UI; the loops only read it.
 """
 from __future__ import annotations
 
