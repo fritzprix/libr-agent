@@ -29,7 +29,14 @@ _LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
 if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
-from comment_markers import NEEDS_OWNER_LABEL, START_MARKER, ci_attempts, owner_answer  # noqa: E402
+from comment_markers import (  # noqa: E402
+    GATEKEEPER_VERDICTS,
+    NEEDS_OWNER_LABEL,
+    START_MARKER,
+    ci_attempts,
+    owner_answer,
+    reply_targets,
+)
 from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
 
 THREADS_QUERY = """
@@ -91,6 +98,10 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
             continue
         fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
         if match.group(1) == "gatekeeper-loop":
+            if fields.get("verdict") not in GATEKEEPER_VERDICTS:
+                continue
+            if fields.get("verdict") == "clean":
+                fields.pop("blocked-by", None)
             verdict = {**fields, "url": c.get("url"), "createdAt": c["createdAt"]}
         elif verdict and c["createdAt"] > verdict["createdAt"] and "round" in fields:
             responded_rounds.add(fields["round"])
@@ -152,8 +163,6 @@ def select_next_action(
 ) -> str:
     if waiting_owner:
         return "wait-owner"
-    if turn == "error":
-        return "no-owner"
     if conflicting:
         return "resolve-conflict"
     if base_drift:
@@ -171,6 +180,34 @@ def select_next_action(
     if pending:
         return "wait-ci"
     return "none"
+
+
+def new_triage_comments(
+    comments: list[dict], last_commit_at: str, replied: set[str]
+) -> list[dict]:
+    """Comments that need triage: non-bot, unmarked, posted after the latest commit.
+
+    Includes human owner comments even when the owner shares login @me.
+    A comment whose id is in `replied` (answered by a worker-loop `reply`
+    marker, see comment_markers.reply_targets) is settled and excluded.
+    """
+    new_comments = []
+    for c in comments:
+        author_login = (c.get("author") or {}).get("login") or ""
+        body = c.get("body") or ""
+        if author_login.endswith("[bot]") or START_MARKER.match(body):
+            continue
+        if str(c.get("id")) in replied:
+            continue
+        if c.get("createdAt", "") > last_commit_at:
+            new_comments.append({
+                "id": c.get("id"),
+                "author": author_login,
+                "createdAt": c["createdAt"],
+                "body": short(body),
+                "url": c.get("url"),
+            })
+    return new_comments
 
 
 def base_drift(owner: str, name: str, pr: dict) -> tuple[int, list[str]]:
@@ -239,21 +276,9 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
 
     commits = pr.get("commits") or []
     last_commit_at = commits[-1]["committedDate"] if commits else ""
-    # Filter comments: keep non-bot comments posted after the latest commit that do NOT
-    # carry loop markers. This includes human owner comments even when the owner shares login @me.
-    new_comments = []
-    for c in pr.get("comments") or []:
-        author_login = (c.get("author") or {}).get("login") or ""
-        body = c.get("body") or ""
-        if author_login.endswith("[bot]") or START_MARKER.match(body):
-            continue
-        if c.get("createdAt", "") > last_commit_at:
-            new_comments.append({
-                "author": author_login,
-                "createdAt": c["createdAt"],
-                "body": short(body),
-                "url": c.get("url"),
-            })
+    # A comment answered by a worker-loop `reply` marker (reply-to=<comment id>)
+    # is settled and not a triage item.
+    new_comments = new_triage_comments(comments, last_commit_at, reply_targets(comments, me))
 
     answer = owner_answer(comments, me) if NEEDS_OWNER_LABEL in labels else None
     next_action = select_next_action(
@@ -294,7 +319,6 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "verdictHeadSha": turn.verdictHead,
         "currentHeadSha": head_sha,
         "labelMismatch": turn.labelMismatch,
-        "noOwnerError": turn.noOwner,
         "turnReport": turn_report,
         "ciAttempts": ci_attempts(comments, me),
         "ownerAnswer": answer,

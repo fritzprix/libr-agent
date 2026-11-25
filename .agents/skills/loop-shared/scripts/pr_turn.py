@@ -9,7 +9,7 @@ from comment_markers import (
     parse_markers,
 )
 
-Turn = Literal["worker", "gatekeeper", "human", "none", "error"]
+Turn = Literal["worker", "gatekeeper", "human", "none"]
 
 VERDICT_LABELS: dict[str, str] = {
     "changes-requested": "gatekeeper:changes-requested",
@@ -29,10 +29,6 @@ class PrTurn:
     atVerdictHead: bool
     labelMismatch: list[str]
     reason: str
-
-    @property
-    def noOwner(self) -> bool:
-        return self.turn == "error"
 
 
 def label_mismatches(
@@ -173,8 +169,11 @@ def decide_pr_turn(
             reason="new head since last verdict",
         )
 
+    # Unreachable for markers parsed by comment_markers.parse_markers: verdicts
+    # outside GATEKEEPER_VERDICTS are filtered there, and every fixed verdict is
+    # handled above. Kept as a total-function fallback, never as a stall state.
     return PrTurn(
-        turn="error",
+        turn="none",
         currentVerdict=verdict,
         verdictHead=verdict_head,
         currentHead=head_sha,
@@ -196,6 +195,4 @@ def format_turn_report(turn: PrTurn, *, pr_number: int | None = None) -> str:
     )
     if turn.labelMismatch:
         line += f" labelFix={'; '.join(turn.labelMismatch)}"
-    if turn.noOwner:
-        line += " ERROR=no-owner"
     return line

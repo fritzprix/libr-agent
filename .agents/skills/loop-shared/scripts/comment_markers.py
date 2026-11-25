@@ -13,6 +13,14 @@ NEEDS_OWNER_LABEL = "needs-owner"
 # repository owner, member, or collaborator can answer an owner question.
 _ANSWER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 
+# Fixed marker kinds (issue #2994). These are the only kinds the loops act on:
+# a marker whose kind or verdict is outside these sets is ignored entirely —
+# not a verdict, not a worker response, not an owner comment.
+# Gatekeeper verdict values (`verdict=` on a gatekeeper-loop marker):
+GATEKEEPER_VERDICTS = frozenset({"changes-requested", "approve", "clean", "escalate"})
+# Worker marker kinds (first word after `worker-loop:`):
+WORKER_KINDS = frozenset({"response", "needs-owner", "ci-attempt", "reply"})
+
 
 def _worker_marker_kind(comment: dict, me: str) -> str | None:
     """First word of a worker-loop marker written by me (`needs-owner`, `ci-attempt`, ...)."""
@@ -54,7 +62,14 @@ def ci_attempts(comments: list[dict], me: str) -> int:
 def parse_markers(
     comments: list[dict], me: str
 ) -> tuple[list[dict], list[dict]]:
-    """Return (gatekeeper markers incl. clean, worker responses) authored by me."""
+    """Return (gatekeeper markers incl. clean, worker responses) authored by me.
+
+    Only the fixed marker kinds count (issue #2994): a gatekeeper marker whose
+    `verdict=` is outside `GATEKEEPER_VERDICTS`, and a worker marker whose kind
+    (first word) is outside `WORKER_KINDS`, are ignored entirely. Only `response`
+    worker markers count as responses to a gatekeeper round. A `clean` marker
+    carries no `blocked-by` field; any such field is dropped when parsing.
+    """
     verdicts: list[dict] = []
     responses: list[dict] = []
     for comment in comments:
@@ -68,10 +83,42 @@ def parse_markers(
         )
         entry = {**fields, "createdAt": comment["createdAt"], "url": comment.get("url")}
         if match.group(1) == "gatekeeper-loop":
+            if entry.get("verdict") not in GATEKEEPER_VERDICTS:
+                continue
+            if entry.get("verdict") == "clean":
+                entry.pop("blocked-by", None)
             verdicts.append(entry)
         else:
-            responses.append(entry)
+            words = match.group(2).split()
+            kind = words[0] if words else ""
+            if kind not in WORKER_KINDS:
+                continue
+            entry["kind"] = kind
+            if kind == "response":
+                responses.append(entry)
     return verdicts, responses
+
+
+def reply_targets(comments: list[dict], me: str) -> set[str]:
+    """Comment ids answered by my worker-loop `reply` markers (`reply-to=<id>`).
+
+    The worker posts a `reply` marker when it answers a triage comment without a
+    push. A comment whose id is targeted by a later `reply` marker is not a
+    triage item (issue #2994).
+    """
+    targets: set[str] = set()
+    for comment in comments:
+        if _worker_marker_kind(comment, me) != "reply":
+            continue
+        match = START_MARKER.match(comment.get("body") or "")
+        if not match:
+            continue
+        fields = dict(
+            kv.split("=", 1) for kv in match.group(2).split() if "=" in kv
+        )
+        if fields.get("reply-to"):
+            targets.add(str(fields["reply-to"]))
+    return targets
 
 
 def latest_worker_response(

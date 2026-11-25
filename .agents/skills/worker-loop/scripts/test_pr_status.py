@@ -156,6 +156,31 @@ class MarkerAndGatekeeperStateTest(unittest.TestCase):
         state = pr_status.gatekeeper_state(comments, "me", "sha2")
         self.assertFalse(state["awaitingWorker"])
 
+    def test_unknown_gatekeeper_verdict_is_ignored(self):
+        """Issue #2994: a verdict outside the fixed list is not a verdict."""
+        comments = [
+            {
+                "author": {"login": "me"},
+                "createdAt": "2026-10-31T08:00:00Z",
+                "body": "<!-- gatekeeper-loop: verdict=ci-report round=1 head=sha1 -->",
+                "url": "http://example.com/c1",
+            }
+        ]
+        self.assertIsNone(pr_status.gatekeeper_state(comments, "me", "sha1"))
+
+    def test_clean_marker_accepts_no_blocked_by_field(self):
+        comments = [
+            {
+                "author": {"login": "me"},
+                "createdAt": "2026-10-31T08:00:00Z",
+                "body": "<!-- gatekeeper-loop: verdict=clean head=sha1 blocked-by=2995 -->",
+                "url": "http://example.com/c1",
+            }
+        ]
+        state = pr_status.gatekeeper_state(comments, "me", "sha1")
+        self.assertEqual(state["verdict"], "clean")
+        self.assertNotIn("blocked-by", state)
+
     def test_worker_response_settles_the_round(self):
         comments = [
             {
@@ -188,6 +213,32 @@ class MarkerAndGatekeeperStateTest(unittest.TestCase):
             },
         ]
         self.assertTrue(pr_status.gatekeeper_state(comments, "me", "sha1")["awaitingWorker"])
+
+
+class NewTriageCommentsTest(unittest.TestCase):
+    """Issue #2994: a comment answered by a worker-loop `reply` is settled."""
+
+    COMMENTS = [
+        {"id": 101, "author": {"login": "owner"}, "createdAt": "2026-11-01T10:00:00Z",
+         "body": "Please check the timeout.", "url": "http://example.com/c101"},
+        {"id": 102, "author": {"login": "owner"}, "createdAt": "2026-11-01T11:00:00Z",
+         "body": "And the retry count too.", "url": "http://example.com/c102"},
+        {"id": 103, "author": {"login": "me"}, "createdAt": "2026-11-01T12:00:00Z",
+         "body": "<!-- worker-loop: reply reply-to=101 -->\nChecked.", "url": "http://example.com/c103"},
+    ]
+
+    def test_unanswered_comments_stay_triage_items(self):
+        items = pr_status.new_triage_comments(self.COMMENTS, "2026-11-01T09:00:00Z", {"101"})
+        self.assertEqual([item["id"] for item in items], [102])
+
+    def test_without_replies_everything_after_the_commit_is_a_triage_item(self):
+        items = pr_status.new_triage_comments(self.COMMENTS, "2026-11-01T09:00:00Z", set())
+        # The reply marker comment itself is marker-prefixed, so never a triage item.
+        self.assertEqual([item["id"] for item in items], [101, 102])
+
+    def test_ids_are_matched_as_strings(self):
+        replied = {"101", "102"}
+        self.assertEqual(pr_status.new_triage_comments(self.COMMENTS, "2026-11-01T09:00:00Z", replied), [])
 
 
 class OwnerQuestionAndCiAttemptsTest(unittest.TestCase):
