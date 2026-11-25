@@ -1,0 +1,215 @@
+mod db;
+mod entities;
+mod skills;
+mod tables;
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::HashMap;
+use std::fs;
+use std::io::Read;
+use tauri::{command, Emitter};
+
+use crate::lifecycle::database_backup::BackupManager;
+use crate::state::get_database_connection;
+
+use super::crypto::decrypt_data;
+use super::inspect::check_compatibility;
+use super::models::{
+    AssistantRecord, CompatibilityStatus, McpServerRecord, MigrationImportResult,
+    MigrationSectionReport, PlaybookRecord, ScheduledTaskRecord, SettingsRecord,
+};
+
+#[allow(unused_imports)]
+pub(crate) use entities::{delete_non_plugin_assistants, import_assistants_data, import_mcp_data};
+
+fn read_and_decrypt_zip(file_path: &str, password: Option<&str>) -> Result<Vec<u8>, String> {
+    let file_bytes = fs::read(file_path).map_err(|e| format!("파일을 읽을 수 없습니다: {}", e))?;
+    match decrypt_data(&file_bytes, password)? {
+        Some(decrypted) => Ok(decrypted),
+        None => Ok(file_bytes),
+    }
+}
+
+fn validate_archive_and_strategy(
+    archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+    conflict_strategy: &str,
+) -> Result<(), String> {
+    let mut format_version = 1;
+    if let Ok(mut manifest_entry) = archive.by_name("manifest.json") {
+        let mut content = String::new();
+        if manifest_entry.read_to_string(&mut content).is_ok() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                format_version = v
+                    .get("format_version")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(1) as u32;
+            }
+        }
+    }
+
+    if let CompatibilityStatus::Incompatible { message } = check_compatibility(format_version) {
+        return Err(format!("가져오기 중단: {}", message));
+    }
+
+    if conflict_strategy != "skip"
+        && conflict_strategy != "overwrite"
+        && conflict_strategy != "merge"
+    {
+        return Err("지원되지 않는 충돌 해결 전략입니다.".to_string());
+    }
+
+    Ok(())
+}
+
+fn read_json_entry<T: serde::de::DeserializeOwned>(
+    archive: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+    entry_name: &str,
+) -> Result<Vec<T>, String> {
+    let mut data = Vec::new();
+    if let Ok(mut entry) = archive.by_name(entry_name) {
+        let mut content = String::new();
+        entry
+            .read_to_string(&mut content)
+            .map_err(|e| e.to_string())?;
+        data = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    }
+    Ok(data)
+}
+
+fn record_section(
+    reports: &mut HashMap<String, MigrationSectionReport>,
+    total_imported: &mut usize,
+    total_skipped: &mut usize,
+    total_errors: &mut usize,
+    key: &str,
+    report: MigrationSectionReport,
+) {
+    *total_imported += report.success;
+    *total_skipped += report.skipped;
+    *total_errors += report.errors.len();
+    reports.insert(key.to_string(), report);
+}
+
+#[command]
+pub async fn import_migration(
+    window: tauri::Window,
+    file_path: String,
+    conflict_strategy: String, // "skip" | "overwrite" | "merge"
+    password: Option<String>,
+) -> Result<MigrationImportResult, String> {
+    window.emit("migration:progress", 5).ok();
+
+    let zip_bytes = read_and_decrypt_zip(&file_path, password.as_deref())?;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&zip_bytes[..]))
+        .map_err(|e| format!("올바른 ZIP 파일이 아닙니다: {}", e))?;
+    validate_archive_and_strategy(&mut archive, &conflict_strategy)?;
+
+    let db = get_database_connection();
+    let base_dir = crate::session::get_session_manager()?.get_base_data_dir();
+    let backup_manager = BackupManager::new(base_dir.join("libragent.db"));
+    let backup_file = backup_manager
+        .create_backup(db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    window.emit("migration:progress", 20).ok();
+
+    let txn = db::begin_import_transaction(db).await?;
+    if conflict_strategy == "overwrite" {
+        db::clear_existing_rows_for_overwrite(&txn).await?;
+    }
+
+    window.emit("migration:progress", 30).ok();
+
+    let mut reports = HashMap::new();
+    let (mut total_imported, mut total_skipped, mut total_errors) = (0, 0, 0);
+
+    let settings_data: Vec<SettingsRecord> = read_json_entry(&mut archive, "settings.json")?;
+    let report = tables::import_settings_data(&txn, settings_data, &conflict_strategy).await?;
+    record_section(
+        &mut reports,
+        &mut total_imported,
+        &mut total_skipped,
+        &mut total_errors,
+        "settings",
+        report,
+    );
+    window.emit("migration:progress", 45).ok();
+
+    let mcp_data: Vec<McpServerRecord> = read_json_entry(&mut archive, "mcp_servers.json")?;
+    let report = entities::import_mcp_data(&txn, mcp_data, &conflict_strategy).await?;
+    record_section(
+        &mut reports,
+        &mut total_imported,
+        &mut total_skipped,
+        &mut total_errors,
+        "mcp_servers",
+        report,
+    );
+    window.emit("migration:progress", 60).ok();
+
+    let assistants_data: Vec<AssistantRecord> = read_json_entry(&mut archive, "assistants.json")?;
+    let report =
+        entities::import_assistants_data(&txn, assistants_data, &conflict_strategy).await?;
+    record_section(
+        &mut reports,
+        &mut total_imported,
+        &mut total_skipped,
+        &mut total_errors,
+        "assistants",
+        report,
+    );
+    window.emit("migration:progress", 75).ok();
+
+    let playbooks_data: Vec<PlaybookRecord> = read_json_entry(&mut archive, "playbooks.json")?;
+    let report = tables::import_playbooks_data(&txn, playbooks_data, &conflict_strategy).await?;
+    record_section(
+        &mut reports,
+        &mut total_imported,
+        &mut total_skipped,
+        &mut total_errors,
+        "playbooks",
+        report,
+    );
+    window.emit("migration:progress", 85).ok();
+
+    let tasks_data: Vec<ScheduledTaskRecord> =
+        read_json_entry(&mut archive, "scheduled_tasks.json")?;
+    let report = tables::import_tasks_data(&txn, tasks_data, &conflict_strategy).await?;
+    record_section(
+        &mut reports,
+        &mut total_imported,
+        &mut total_skipped,
+        &mut total_errors,
+        "scheduled_tasks",
+        report,
+    );
+    window.emit("migration:progress", 90).ok();
+
+    let transaction_ok = db::validate_foreign_keys(&txn).await;
+
+    if transaction_ok && total_errors == 0 {
+        db::commit_and_restore_fk(db, txn).await?;
+        let report_skills = skills::restore_user_skills(&window, &zip_bytes, &conflict_strategy)?;
+        record_section(
+            &mut reports,
+            &mut total_imported,
+            &mut total_skipped,
+            &mut total_errors,
+            "user_skills",
+            report_skills,
+        );
+        window.emit("migration:progress", 100).ok();
+
+        Ok(MigrationImportResult {
+            sections_imported: reports,
+            total_imported,
+            total_skipped,
+            total_errors,
+        })
+    } else {
+        db::rollback_and_restore_backup(db, txn, &backup_manager, &backup_file, total_errors).await
+    }
+}
