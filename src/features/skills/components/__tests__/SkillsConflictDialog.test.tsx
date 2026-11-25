@@ -163,6 +163,47 @@ describe('SkillsConflictDialog long hook command wrapping (#2896)', () => {
   });
 });
 
+describe('SkillsConflictDialog http hook header disclosure (#3041 G1.1)', () => {
+  it('shows declared header templates and allowed env-var names', () => {
+    renderDialog(
+      buildPendingInstall({
+        hooks: [
+          {
+            event: 'PreToolUse',
+            matcher: 'workspace__runShell',
+            command: 'http://127.0.0.1:9/hook',
+            executionStatus: 'executed',
+            httpHeaders: { Authorization: 'Bearer $API_KEY' },
+            httpAllowedEnvVars: ['API_KEY', 'OTHER_VAR'],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByText(/Authorization: Bearer \$API_KEY/)).toBeInTheDocument();
+    expect(screen.getByText(/API_KEY, OTHER_VAR/)).toBeInTheDocument();
+  });
+
+  it('omits the header and env-var lines for command hooks', () => {
+    renderDialog(
+      buildPendingInstall({
+        hooks: [
+          {
+            event: 'SessionStart',
+            command: 'echo hi',
+            executionStatus: 'executed',
+          },
+        ],
+      }),
+    );
+
+    expect(screen.queryByText(/Headers:/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/May read environment variables/),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('SkillsConflictDialog PreToolUse tool-approval disclosure (#2925 D3)', () => {
   it('shows tool-approval warning when preview contains a PreToolUse hook', () => {
     renderDialog(

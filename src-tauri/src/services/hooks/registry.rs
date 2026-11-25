@@ -677,10 +677,23 @@ pub fn approval_hash_key(event: HookEvent, matcher: Option<&str>, handler: &Hook
     );
     // HTTP handlers carry no command, so the target URL distinguishes them
     // (#3009). Appended only when present, so keys of command handlers stay
-    // byte-identical to earlier installs.
+    // byte-identical to earlier installs. Headers and allowed env-var names
+    // are part of what the handler sends, so they must distinguish the key
+    // too — otherwise two handlers that differ only by headers share one
+    // key and one is skipped as "unapproved or modified" (#3041 G1.4).
     if let Some(http) = &handler.http {
         key.push_str("|url=");
         key.push_str(&http.url);
+        for (name, value) in &http.headers {
+            key.push_str("|header=");
+            key.push_str(name);
+            key.push('=');
+            key.push_str(value);
+        }
+        for name in &http.allowed_env_vars {
+            key.push_str("|env=");
+            key.push_str(name);
+        }
     }
     let digest = Sha256::digest(key.as_bytes());
     format!("{:x}", digest)

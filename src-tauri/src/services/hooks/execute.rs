@@ -660,6 +660,22 @@ fn interpolate_http_header(value: &str, allowed: &[String]) -> String {
 /// (2xx + empty body = success with no output, 2xx + JSON object = the same
 /// JSON output schema as command hooks, anything else = non-blocking error)
 /// (#3009).
+/// Hard bound on the body an `http` hook response may deliver (#3041 G1.3):
+/// hook output is a small JSON decision document, and an unbounded read lets
+/// a hostile or broken server grow memory without limit.
+const MAX_HTTP_HOOK_BODY_BYTES: usize = 1024 * 1024;
+
+enum HttpHookError {
+    Request(reqwest::Error),
+    TooLarge,
+}
+
+impl From<reqwest::Error> for HttpHookError {
+    fn from(error: reqwest::Error) -> Self {
+        Self::Request(error)
+    }
+}
+
 async fn run_http_hook(
     event: HookEvent,
     http: &HookHttpConfig,
@@ -668,7 +684,19 @@ async fn run_http_hook(
 ) -> HookRunOutcome {
     use std::str::FromStr;
 
-    let client = reqwest::Client::new();
+    let client = match reqwest::Client::builder()
+        // Never follow redirects (#3041 G1.2): a 301/302/307/308 would
+        // re-POST the envelope (prompt, tool input and output) and the
+        // custom headers to a host the user never approved. With redirects
+        // off, a 3xx is simply a non-2xx — a non-blocking error.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return HookRunOutcome::Skipped(format!("http hook client failed: {error}"));
+        }
+    };
     let mut request = client
         .post(&http.url)
         .header(reqwest::header::CONTENT_TYPE, "application/json");
@@ -676,20 +704,65 @@ async fn run_http_hook(
         match reqwest::header::HeaderName::from_str(name.as_str()) {
             Ok(header_name) => {
                 let resolved = interpolate_http_header(value, &http.allowed_env_vars);
-                let header_value = reqwest::header::HeaderValue::from_str(&resolved)
-                    .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static(""));
-                request = request.header(header_name, header_value);
+                match reqwest::header::HeaderValue::from_str(&resolved) {
+                    Ok(header_value) => request = request.header(header_name, header_value),
+                    Err(error) => {
+                        // Silently substituting an empty string would send a
+                        // request the user never approved (#3041 G1.5):
+                        // skip the hook and warn instead.
+                        log::warn!("http hook: invalid header value for {name:?}: {error}");
+                        return HookRunOutcome::Skipped(format!(
+                            "http hook: invalid header value for {name:?}: {error}"
+                        ));
+                    }
+                }
             }
             Err(error) => {
+                // Same reasoning for the name: a declared header the hook
+                // cannot send means the hook does not run as approved.
                 log::warn!("http hook: invalid header name {name:?}: {error}");
+                return HookRunOutcome::Skipped(format!(
+                    "http hook: invalid header name {name:?}: {error}"
+                ));
             }
         }
     }
     let request = request.body(envelope_json.to_string());
 
-    let response = match timeout(deadline, request.send()).await {
-        Ok(Ok(response)) => response,
-        Ok(Err(error)) => {
+    // One deadline covers the whole exchange — connect, send, and the body
+    // read — so a server that answers headers and then stalls cannot block
+    // the tool call past the handler timeout (#3041 G1.3).
+    let exchange = timeout(deadline, async move {
+        let response = request.send().await?;
+        let status_code = response.status().as_u16();
+        if !response.status().is_success() {
+            return Ok((status_code, Vec::new()));
+        }
+        if response
+            .content_length()
+            .is_some_and(|len| len > MAX_HTTP_HOOK_BODY_BYTES as u64)
+        {
+            return Err(HttpHookError::TooLarge);
+        }
+        let mut response = response;
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if bytes.len() + chunk.len() > MAX_HTTP_HOOK_BODY_BYTES {
+                return Err(HttpHookError::TooLarge);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok((status_code, bytes))
+    })
+    .await;
+    let (status_code, body) = match exchange {
+        Ok(Ok(exchange)) => exchange,
+        Ok(Err(HttpHookError::TooLarge)) => {
+            return HookRunOutcome::Skipped(format!(
+                "http hook body over {MAX_HTTP_HOOK_BODY_BYTES} bytes"
+            ));
+        }
+        Ok(Err(HttpHookError::Request(error))) => {
             return HookRunOutcome::Skipped(format!("http hook request failed: {error}"));
         }
         Err(_) => {
@@ -699,16 +772,10 @@ async fn run_http_hook(
             ));
         }
     };
-    let status = response.status();
-    if !status.is_success() {
-        return HookRunOutcome::Skipped(format!("http hook status {}", status.as_u16()));
+    if !(200..300).contains(&status_code) {
+        return HookRunOutcome::Skipped(format!("http hook status {status_code}"));
     }
-    let body = match response.text().await {
-        Ok(body) => body,
-        Err(error) => {
-            return HookRunOutcome::Skipped(format!("http hook body read failed: {error}"));
-        }
-    };
+    let body = String::from_utf8_lossy(&body);
     let trimmed = body.trim();
     if trimmed.is_empty() {
         return HookRunOutcome::Applied(HookOutput::default());
@@ -1533,6 +1600,277 @@ mod tests {
         assert_eq!(outcome.decision, None, "non-2xx must not block");
 
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), server).await;
+        clear_hook_context(&sid);
+    }
+
+    /// #3041 G1.2: redirects must never be followed — a 3xx would re-POST
+    /// the envelope and custom headers to a host the user never approved.
+    /// The redirect target must receive nothing, and the 3xx itself is a
+    /// non-blocking error.
+    #[tokio::test]
+    async fn http_handler_does_not_follow_redirects() {
+        let redirect_target = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind redirect target");
+        let target_addr = redirect_target.local_addr().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let (mut conn, _) = listener.accept().await.expect("accept");
+            let response = format!(
+                "HTTP/1.1 302 Found\r\nlocation: http://{target_addr}/stolen\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            );
+            conn.write_all(response.as_bytes()).await.expect("write");
+            drop(conn);
+            // The client must not connect to the redirect target.
+            tokio::time::timeout(std::time::Duration::from_secs(1), redirect_target.accept())
+                .await
+                .is_err()
+        });
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{ "type": "http", "url": format!("http://{addr}/redirect") }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-redirect-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(outcome.decision, None, "3xx must not block");
+        // server returns true when the redirect target accepted nothing.
+        assert!(
+            server.await.expect("server task"),
+            "redirect target must receive no connection"
+        );
+        clear_hook_context(&sid);
+    }
+
+    /// #3041 G1.3: one deadline covers send AND body read — a server that
+    /// accepts and then stalls must not block the tool call past the
+    /// handler timeout.
+    #[tokio::test]
+    async fn http_handler_stalled_body_times_out() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let (mut conn, _) = listener.accept().await.expect("accept");
+            let mut buf = [0u8; 1024];
+            let _ = conn.read(&mut buf).await;
+            // Respond with nothing; outlive the handler timeout so the
+            // client must give up on its own.
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            drop(conn);
+        });
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{ "type": "http", "url": format!("http://{addr}/stall"), "timeout": 1 }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-stall-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        let started = std::time::Instant::now();
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(outcome.decision, None);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(4),
+            "deadline must cover the body read, not just send"
+        );
+        let _ = server;
+        clear_hook_context(&sid);
+    }
+
+    /// #3041 G1.3: an oversized response body is rejected rather than
+    /// slurped into memory.
+    #[tokio::test]
+    async fn http_handler_rejects_oversized_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut conn, _) = listener.accept().await.expect("accept");
+            let mut buf = [0u8; 1024];
+            let _ = conn.read(&mut buf).await;
+            let big = "a".repeat(2 * 1024 * 1024);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{big}",
+                big.len()
+            );
+            let _ = conn.write_all(response.as_bytes()).await;
+        });
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{ "type": "http", "url": format!("http://{addr}/big") }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-big-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(outcome.decision, None, "oversized body must not block");
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), server).await;
+        clear_hook_context(&sid);
+    }
+
+    /// #3041 G1.5: an invalid header value must skip the hook with a
+    /// warning — never send a mangled request the user did not approve.
+    #[tokio::test]
+    async fn http_handler_invalid_header_value_skips_hook() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            // The hook must skip before connecting: no accept within 1s.
+            tokio::time::timeout(std::time::Duration::from_secs(1), listener.accept())
+                .await
+                .is_err()
+        });
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{
+                        "type": "http",
+                        "url": format!("http://{addr}/bad-header"),
+                        "headers": { "X-Bad": "line\nbreak" }
+                    }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-badhdr-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(outcome.decision, None);
+        assert!(
+            server.await.expect("server task"),
+            "hook must skip before connecting"
+        );
+        clear_hook_context(&sid);
+    }
+
+    /// #3041 G1.4: two handlers on the same event, matcher, and URL that
+    /// differ only by headers must each get dispatched — the approval key
+    /// has to include everything that distinguishes them.
+    #[tokio::test]
+    async fn two_http_handlers_differing_only_by_headers_each_dispatch() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut seen = String::new();
+            for _ in 0..2 {
+                let (mut conn, _) = listener.accept().await.expect("accept");
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = conn.read(&mut chunk).await.expect("read");
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                seen.push_str(&String::from_utf8_lossy(&buf).to_lowercase());
+                let response = "HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+                conn.write_all(response.as_bytes()).await.expect("write");
+            }
+            seen
+        });
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [
+                        { "type": "http", "url": format!("http://{addr}/dual"), "headers": { "X-One": "1" } },
+                        { "type": "http", "url": format!("http://{addr}/dual"), "headers": { "X-Two": "2" } }
+                    ]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-dual-{}", uuid::Uuid::new_v4());
+        let mut params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        params.tool_name = Some("workspace__runShell".to_string());
+        let _outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        let seen = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .expect("both requests")
+            .expect("server join");
+        assert!(seen.contains("x-one: 1"), "first handler must run: {seen}");
+        assert!(seen.contains("x-two: 2"), "second handler must run: {seen}");
         clear_hook_context(&sid);
     }
 

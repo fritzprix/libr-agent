@@ -461,6 +461,22 @@ fn parse_handler(
                 path.display()
             )
         })?;
+        // Reject unparsable or non-http(s) URLs at install (#3041 G1.5), so
+        // a typo fails the preview instead of silently failing the hook on
+        // every event.
+        let parsed = url::Url::parse(&url).map_err(|e| {
+            format!(
+                "{}: {label}: http handler \"url\" is not a valid URL ({e}): {url}",
+                path.display()
+            )
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(format!(
+                "{}: {label}: http handler \"url\" must use http or https, got {:?}: {url}",
+                path.display(),
+                parsed.scheme()
+            ));
+        }
         Some(HookHttpConfig {
             url,
             headers: raw.headers.unwrap_or_default(),
@@ -699,6 +715,23 @@ mod tests {
                 .unwrap_err()
                 .contains("url")
         );
+    }
+
+    /// Non-http(s) or unparsable URLs must fail at install/parse (#3041
+    /// G1.5), not silently fail the hook on every event at runtime.
+    #[test]
+    fn rejects_invalid_http_handler_url_at_parse_time() {
+        for url in ["ftp://example.com/hook", "not a url", "file:///etc/passwd"] {
+            let json = serde_json::json!({
+                "hooks": { "PreToolUse": [{ "hooks": [{ "type": "http", "url": url }] }] }
+            });
+            let error = parse_hooks_value(&json, Path::new("t.json"))
+                .expect_err("{url:?} must be rejected at parse time");
+            assert!(
+                error.contains("url"),
+                "error should name the offending field, got: {error}"
+            );
+        }
     }
 
     #[test]
