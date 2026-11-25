@@ -5,6 +5,15 @@ use crate::services::hooks::registry::PluginMcpServerSnapshot;
 #[cfg(test)]
 use std::path::Path;
 
+/// Create the plugin-owned rows for `servers` in the global MCP server
+/// store. Callers must remove any rows previously owned by `source_id`
+/// first (see [`remove_global_plugin_mcp_servers`]) so re-install and
+/// update converge exactly on `servers` (gatekeeper G1.1).
+///
+/// Returns one warning per server that could not be installed; the caller
+/// must surface them to the user — the user approved these servers, so a
+/// silent drop is not acceptable (gatekeeper G1.2). A failure to read or
+/// write the store itself is an `Err`.
 #[cfg(test)]
 pub async fn create_plugin_mcp_server_rows(
     source_id: &str,
@@ -15,8 +24,15 @@ pub async fn create_plugin_mcp_server_rows(
         .await
 }
 
-/// As [`create_plugin_mcp_server_rows`], with the plugin's data directory and
-/// `userConfig` values available to each entry (#2926).
+/// Create the plugin-owned rows for `servers` in the global MCP server
+/// store, with the plugin's data directory and `userConfig` values available
+/// to each entry (#2926).
+///
+/// Callers must remove any rows previously owned by `source_id` first (see
+/// [`remove_global_plugin_mcp_servers`]) so re-install and update converge
+/// exactly on `servers` (gatekeeper G1.1). Returns one warning per server
+/// that could not be installed; the caller must surface them to the user —
+/// a silent drop is not acceptable (gatekeeper G1.2).
 pub async fn create_plugin_mcp_server_rows_in(
     source_id: &str,
     expansion: &PluginExpansion<'_>,

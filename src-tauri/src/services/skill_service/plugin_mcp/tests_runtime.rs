@@ -3,6 +3,8 @@ use crate::services::hooks::registry::PluginMcpServerSnapshot;
 use std::fs;
 use std::path::Path;
 
+/// Write a session-store source record the way `save_source_in` does:
+/// `<base>/<source_id>/manifest.json` with a matching `source_id`.
 fn write_store_manifest(
     base: &Path,
     source_id: &str,

@@ -3,6 +3,8 @@ use serde_json::Value;
 #[cfg(test)]
 use std::path::Path;
 
+/// Expand the plugin-root placeholders in every string of `entry` (command,
+/// args, env values, url, headers — wherever they appear).
 #[cfg(test)]
 pub fn resolve_plugin_root(entry: &Value, plugin_root: &Path) -> Value {
     resolve_plugin_placeholders(entry, &PluginExpansion::root_only(plugin_root))

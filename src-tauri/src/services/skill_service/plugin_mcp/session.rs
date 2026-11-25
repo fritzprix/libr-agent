@@ -5,6 +5,19 @@ use crate::services::hooks::registry::PluginMcpServerSnapshot;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
+/// Approved MCP servers effective for one session, from the session's own
+/// plugin store only (#2924 D1: session servers never enter the global
+/// store), keeping each one's whole source record so load can also apply the
+/// plugin's `userConfig` values and `${CLAUDE_PLUGIN_DATA}` (#2926). Returns
+/// `(source_record, snapshot)` pairs plus the set of all source ids present
+/// in the session store (approved or not) that shadow global plugins.
+/// Unapproved snapshots are skipped.
+///
+/// Approval is read through `list_session_store_sources`, i.e. from the
+/// out-of-workspace trust record overlaid on the store manifest (#2942
+/// S3.2): the store now lives in the agent-writable session workspace, so
+/// its own `mcp_approved` field is never trusted. `trust_dir: None` means
+/// no approval can exist — every server is skipped.
 pub fn session_plugin_mcp_records(
     session_store: &Path,
     trust_dir: Option<&Path>,

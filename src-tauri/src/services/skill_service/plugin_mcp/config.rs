@@ -8,6 +8,8 @@ use crate::services::hooks::registry::PluginMcpServerSnapshot;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
+/// Convert one resolved plugin entry into the `MCPServerConfig` JSON shape
+/// the global MCP server store keeps (`{"name", "transport": {...}}`).
 #[cfg(test)]
 pub fn entry_to_mcp_config_json(
     name: &str,
