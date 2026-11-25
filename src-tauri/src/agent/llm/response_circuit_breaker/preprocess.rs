@@ -1,3 +1,4 @@
+use super::resample;
 use super::ui_break::{
     circuit_break_tool_call, circuit_breaker_action_label, emit_circuit_breaker_triggered,
     ui_alias_enabled,
@@ -15,21 +16,89 @@ use tokio::sync::RwLock;
 
 pub(super) type HardBreakInfo = (usize, usize, String, String);
 
-#[allow(clippy::too_many_arguments)]
+/// Loop-prevention settings loaded once per preprocessing pass.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct LoopPreventionConfig {
+    pub loop_threshold: usize,
+    pub loop_break_offset: usize,
+    pub wait_settings: circuit_breaker::WaitPreventionSettings,
+    pub tool_loop_resample_enabled: bool,
+    pub tool_loop_max_resample_retries: usize,
+}
+
+impl LoopPreventionConfig {
+    pub(super) async fn load() -> Self {
+        let (loop_threshold, loop_break_offset, wait_settings) =
+            circuit_breaker::load_loop_prevention_settings().await;
+        let (tool_loop_resample_enabled, tool_loop_max_resample_retries) =
+            resample::load_tool_loop_resample_settings().await;
+        Self {
+            loop_threshold,
+            loop_break_offset,
+            wait_settings,
+            tool_loop_resample_enabled,
+            tool_loop_max_resample_retries,
+        }
+    }
+}
+
+/// Outcome of one loop-prevention pass over an assistant tool-call batch.
+#[derive(Default)]
+pub(super) struct LoopPreventionOutcome {
+    pub session_metadata: Option<SessionMetadata>,
+    pub hard_break: Option<HardBreakInfo>,
+    pub short_circuits: HashMap<String, LoopPreventionShortCircuit>,
+    pub tool_loop_resample: Option<super::ToolLoopResampleDecision>,
+}
+
+/// Load settings, detect loops, choose a resample plan when eligible, and
+/// log/emit short-circuit guidance. The hard break is returned, not applied,
+/// so the caller keeps exclusive access to the assistant message.
+pub(super) async fn run_loop_prevention(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    tool_calls: &[ToolCall],
+) -> LoopPreventionOutcome {
+    let config = LoopPreventionConfig::load().await;
+    let (session_metadata, hard_break, short_circuits) =
+        collect_loop_prevention_signals(active_sessions, session_id, tool_calls, &config).await;
+    let mut tool_loop_resample = None;
+    if hard_break.is_none() && !short_circuits.is_empty() {
+        if config.tool_loop_resample_enabled {
+            tool_loop_resample = resample::select_resample_decision(
+                active_sessions,
+                session_id,
+                &short_circuits,
+                tool_calls,
+                config.tool_loop_max_resample_retries,
+            )
+            .await;
+        }
+        log_and_emit_short_circuits(session_id, &short_circuits, tool_loop_resample.is_none());
+    }
+    LoopPreventionOutcome {
+        session_metadata,
+        hard_break,
+        short_circuits,
+        tool_loop_resample,
+    }
+}
+
 pub(super) async fn collect_loop_prevention_signals(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     tool_calls: &[ToolCall],
-    loop_threshold: usize,
-    loop_break_offset: usize,
-    wait_settings: &circuit_breaker::WaitPreventionSettings,
-    tool_loop_resample_enabled: bool,
-    tool_loop_max_resample_retries: usize,
+    config: &LoopPreventionConfig,
 ) -> (
     Option<SessionMetadata>,
     Option<HardBreakInfo>,
     HashMap<String, LoopPreventionShortCircuit>,
 ) {
+    let loop_threshold = config.loop_threshold;
+    let loop_break_offset = config.loop_break_offset;
+    let wait_settings = &config.wait_settings;
+    let tool_loop_resample_enabled = config.tool_loop_resample_enabled;
+    let tool_loop_max_resample_retries = config.tool_loop_max_resample_retries;
     let mut loop_prevention_short_circuits = HashMap::new();
     let sessions = active_sessions.read().await;
     let Some(session) = sessions.get(session_id) else {

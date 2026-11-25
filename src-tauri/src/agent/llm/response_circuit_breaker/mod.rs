@@ -9,7 +9,6 @@ mod resample;
 mod token_fence;
 mod ui_break;
 
-use crate::agent::llm::circuit_breaker;
 use crate::agent::llm::natural_recovery::{LoopPreventionKind, LoopPreventionShortCircuit};
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;
@@ -67,57 +66,32 @@ pub(crate) async fn preprocess_assistant_tool_calls(
     session_id: &str,
     assistant_message: &mut Message,
 ) -> CircuitBreakerPreprocessResult {
-    let mut forced_circuit_break_message = None;
-    let mut loop_prevention_short_circuits = HashMap::new();
-    let mut tool_loop_resample: Option<ToolLoopResampleDecision> = None;
+    let outcome = match assistant_message.tool_calls.as_ref() {
+        Some(tool_calls) => {
+            preprocess::run_loop_prevention(active_sessions, session_id, tool_calls).await
+        }
+        None => preprocess::LoopPreventionOutcome::default(),
+    };
+    let preprocess::LoopPreventionOutcome {
+        session_metadata,
+        hard_break,
+        mut short_circuits,
+        tool_loop_resample,
+    } = outcome;
 
-    if let Some(tool_calls) = assistant_message.tool_calls.clone() {
-        let (loop_threshold, loop_break_offset, wait_settings) =
-            circuit_breaker::load_loop_prevention_settings().await;
-        let (tool_loop_resample_enabled, tool_loop_max_resample_retries) =
-            resample::load_tool_loop_resample_settings().await;
-
-        let (session_metadata, hard_break, short_circuits) =
-            preprocess::collect_loop_prevention_signals(
-                active_sessions,
-                session_id,
-                &tool_calls,
-                loop_threshold,
-                loop_break_offset,
-                &wait_settings,
-                tool_loop_resample_enabled,
-                tool_loop_max_resample_retries,
-            )
-            .await;
-        loop_prevention_short_circuits = short_circuits;
-
-        if let Some(hard_break_info) = hard_break {
-            loop_prevention_short_circuits.clear();
-            forced_circuit_break_message = preprocess::apply_hard_break(
+    let forced_circuit_break_message = match hard_break {
+        Some(info) => {
+            short_circuits.clear();
+            preprocess::apply_hard_break(
                 session_id,
                 session_metadata.as_ref(),
                 assistant_message,
-                hard_break_info,
+                info,
             )
-            .await;
-        } else if !loop_prevention_short_circuits.is_empty() {
-            if tool_loop_resample_enabled {
-                tool_loop_resample = resample::select_resample_decision(
-                    active_sessions,
-                    session_id,
-                    &loop_prevention_short_circuits,
-                    &tool_calls,
-                    tool_loop_max_resample_retries,
-                )
-                .await;
-            }
-            preprocess::log_and_emit_short_circuits(
-                session_id,
-                &loop_prevention_short_circuits,
-                tool_loop_resample.is_none(),
-            );
+            .await
         }
-    }
+        None => None,
+    };
 
     if let Some(circuit_break_message) = forced_circuit_break_message {
         assistant_message.tool_calls = None;
@@ -141,7 +115,7 @@ pub(crate) async fn preprocess_assistant_tool_calls(
     };
 
     CircuitBreakerPreprocessResult {
-        loop_prevention_short_circuits,
+        loop_prevention_short_circuits: short_circuits,
         tool_loop_resample,
         forced_stop,
     }
