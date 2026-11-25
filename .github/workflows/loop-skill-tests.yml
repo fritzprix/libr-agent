@@ -3,7 +3,9 @@ name: Loop skill tests
 on:
   pull_request:
     paths:
+      - '.agents/skills/loop-shared/**'
       - '.agents/skills/worker-loop/**'
+      - '.agents/skills/gatekeeper-loop/**'
       - '.agents/skills/producer-loop/**'
       - '.github/workflows/loop-skill-tests.yml'
 
@@ -29,5 +31,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
+          python -m unittest discover -s .agents/skills/loop-shared/scripts -p "test_*.py"
           python -m unittest discover -s .agents/skills/worker-loop/scripts -p "test_*.py"
+          python -m unittest discover -s .agents/skills/gatekeeper-loop/scripts -p "test_*.py"
           python -m unittest discover -s .agents/skills/producer-loop/scripts -p "test_*.py"
