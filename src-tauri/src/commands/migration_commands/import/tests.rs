@@ -130,6 +130,7 @@ mod mcp_import_guard_tests {
 // their plugin (install/update sync and uninstall).
 #[cfg(test)]
 mod assistant_import_guard_tests {
+    use super::entities::delete_non_plugin_assistants;
     use super::*;
     use crate::entity::assistant;
     use sea_orm::{ActiveModelTrait, EntityTrait, Set, TransactionTrait};

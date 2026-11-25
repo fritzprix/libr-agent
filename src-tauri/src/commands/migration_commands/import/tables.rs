@@ -88,11 +88,6 @@ pub(super) async fn import_settings_data(
     })
 }
 
-/// Delete every assistant row that is NOT plugin-owned (#2923 D2, gatekeeper
-/// G1.1). Used by the replace ("overwrite") import instead of a blanket
-/// `delete_many`, so a replace import can never wipe the rows a plugin owns;
-/// those are removed only by the plugin's uninstall flow.
-
 pub(super) async fn import_playbooks_data(
     txn: &sea_orm::DatabaseTransaction,
     records: Vec<PlaybookRecord>,

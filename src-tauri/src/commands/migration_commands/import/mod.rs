@@ -21,8 +21,7 @@ use super::models::{
     MigrationSectionReport, PlaybookRecord, ScheduledTaskRecord, SettingsRecord,
 };
 
-#[allow(unused_imports)]
-pub(crate) use entities::{delete_non_plugin_assistants, import_assistants_data, import_mcp_data};
+pub(crate) use entities::{import_assistants_data, import_mcp_data};
 
 fn read_and_decrypt_zip(file_path: &str, password: Option<&str>) -> Result<Vec<u8>, String> {
     let file_bytes = fs::read(file_path).map_err(|e| format!("파일을 읽을 수 없습니다: {}", e))?;
@@ -78,18 +77,25 @@ fn read_json_entry<T: serde::de::DeserializeOwned>(
     Ok(data)
 }
 
-fn record_section(
-    reports: &mut HashMap<String, MigrationSectionReport>,
-    total_imported: &mut usize,
-    total_skipped: &mut usize,
-    total_errors: &mut usize,
-    key: &str,
-    report: MigrationSectionReport,
-) {
-    *total_imported += report.success;
-    *total_skipped += report.skipped;
-    *total_errors += report.errors.len();
-    reports.insert(key.to_string(), report);
+#[derive(Default)]
+struct SectionTotals {
+    imported: usize,
+    skipped: usize,
+    errors: usize,
+}
+
+impl SectionTotals {
+    fn record(
+        &mut self,
+        reports: &mut HashMap<String, MigrationSectionReport>,
+        key: &str,
+        report: MigrationSectionReport,
+    ) {
+        self.imported += report.success;
+        self.skipped += report.skipped;
+        self.errors += report.errors.len();
+        reports.insert(key.to_string(), report);
+    }
 }
 
 #[command]
@@ -124,92 +130,50 @@ pub async fn import_migration(
     window.emit("migration:progress", 30).ok();
 
     let mut reports = HashMap::new();
-    let (mut total_imported, mut total_skipped, mut total_errors) = (0, 0, 0);
+    let mut totals = SectionTotals::default();
 
     let settings_data: Vec<SettingsRecord> = read_json_entry(&mut archive, "settings.json")?;
     let report = tables::import_settings_data(&txn, settings_data, &conflict_strategy).await?;
-    record_section(
-        &mut reports,
-        &mut total_imported,
-        &mut total_skipped,
-        &mut total_errors,
-        "settings",
-        report,
-    );
+    totals.record(&mut reports, "settings", report);
     window.emit("migration:progress", 45).ok();
 
     let mcp_data: Vec<McpServerRecord> = read_json_entry(&mut archive, "mcp_servers.json")?;
     let report = entities::import_mcp_data(&txn, mcp_data, &conflict_strategy).await?;
-    record_section(
-        &mut reports,
-        &mut total_imported,
-        &mut total_skipped,
-        &mut total_errors,
-        "mcp_servers",
-        report,
-    );
+    totals.record(&mut reports, "mcp_servers", report);
     window.emit("migration:progress", 60).ok();
 
     let assistants_data: Vec<AssistantRecord> = read_json_entry(&mut archive, "assistants.json")?;
     let report =
         entities::import_assistants_data(&txn, assistants_data, &conflict_strategy).await?;
-    record_section(
-        &mut reports,
-        &mut total_imported,
-        &mut total_skipped,
-        &mut total_errors,
-        "assistants",
-        report,
-    );
+    totals.record(&mut reports, "assistants", report);
     window.emit("migration:progress", 75).ok();
 
     let playbooks_data: Vec<PlaybookRecord> = read_json_entry(&mut archive, "playbooks.json")?;
     let report = tables::import_playbooks_data(&txn, playbooks_data, &conflict_strategy).await?;
-    record_section(
-        &mut reports,
-        &mut total_imported,
-        &mut total_skipped,
-        &mut total_errors,
-        "playbooks",
-        report,
-    );
+    totals.record(&mut reports, "playbooks", report);
     window.emit("migration:progress", 85).ok();
 
     let tasks_data: Vec<ScheduledTaskRecord> =
         read_json_entry(&mut archive, "scheduled_tasks.json")?;
     let report = tables::import_tasks_data(&txn, tasks_data, &conflict_strategy).await?;
-    record_section(
-        &mut reports,
-        &mut total_imported,
-        &mut total_skipped,
-        &mut total_errors,
-        "scheduled_tasks",
-        report,
-    );
+    totals.record(&mut reports, "scheduled_tasks", report);
     window.emit("migration:progress", 90).ok();
 
     let transaction_ok = db::validate_foreign_keys(&txn).await;
 
-    if transaction_ok && total_errors == 0 {
+    if transaction_ok && totals.errors == 0 {
         db::commit_and_restore_fk(db, txn).await?;
         let report_skills = skills::restore_user_skills(&window, &zip_bytes, &conflict_strategy)?;
-        record_section(
-            &mut reports,
-            &mut total_imported,
-            &mut total_skipped,
-            &mut total_errors,
-            "user_skills",
-            report_skills,
-        );
+        totals.record(&mut reports, "user_skills", report_skills);
         window.emit("migration:progress", 100).ok();
 
         Ok(MigrationImportResult {
             sections_imported: reports,
-            total_imported,
-            total_skipped,
-            total_errors,
+            total_imported: totals.imported,
+            total_skipped: totals.skipped,
+            total_errors: totals.errors,
         })
     } else {
-        db::rollback_and_restore_backup(db, txn, &backup_manager, &backup_file, total_errors).await
+        db::rollback_and_restore_backup(db, txn, &backup_manager, &backup_file, totals.errors).await
     }
 }

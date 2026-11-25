@@ -5,6 +5,10 @@ use crate::commands::migration_commands::models::{
 };
 use crate::entity::{assistant, mcp_server};
 
+/// Delete every assistant row that is NOT plugin-owned (#2923 D2, gatekeeper
+/// G1.1). Used by the replace ("overwrite") import instead of a blanket
+/// `delete_many`, so a replace import can never wipe the rows a plugin owns;
+/// those are removed only by the plugin's uninstall flow.
 pub(crate) async fn delete_non_plugin_assistants(
     txn: &sea_orm::DatabaseTransaction,
 ) -> Result<u64, sea_orm::DbErr> {
