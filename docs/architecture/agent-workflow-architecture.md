@@ -727,7 +727,7 @@ Before merging any Rust ↔ TypeScript integration changes:
 
 ### 11.1 Circuit Breaker for Tool Loops
 
-Agents occasionally repeat the same tool call (`toolName` + identical arguments) with identical outcomes. The circuit breaker in `agent/llm/response_circuit_breaker.rs` runs **before** tool dispatch and classifies each proposed call using message history in `circuit_breaker.rs`.
+Agents occasionally repeat the same tool call (`toolName` + identical arguments) with identical outcomes. The circuit breaker in `agent/llm/response_circuit_breaker/` runs **before** tool dispatch and classifies each proposed call using message history in `circuit_breaker.rs`.
 
 **Detection (`circuit_breaker.rs`):**
 
@@ -735,7 +735,7 @@ Agents occasionally repeat the same tool call (`toolName` + identical arguments)
 - Walks history backwards and counts consecutive identical outcomes (success or error) for the same signature
 - Configurable threshold: Advanced Settings → `loopPreventionThreshold` (default `3`, clamped `2..20`)
 
-**Three escalation paths (`response_circuit_breaker.rs` + `natural_recovery.rs`):**
+**Three escalation paths (`response_circuit_breaker/` + `natural_recovery.rs`):**
 
 | Stage            | Condition            | Behavior                                                                                                           |
 | ---------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------ |
