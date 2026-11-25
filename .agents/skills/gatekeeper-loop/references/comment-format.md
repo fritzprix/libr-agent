@@ -103,14 +103,14 @@ Total **<sum>/100** (≥86 required for a clean marker).
 - **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 ```
 
-Escalate (round limit or unresolved disagreement):
+Escalate (round limit of 5, or a product/security/data decision for the user):
 
 ```markdown
 <!-- gatekeeper-loop: round=5 verdict=escalate head=<sha> -->
 
 ## Gatekeeper · round 5 · Needs maintainer decision
 
-<the open disagreement, both positions, and the decision needed>
+<which of the two escalate cases applies, the evidence, and the decision needed>
 
 ### Code quality score (gate: ≥86 to approve)
 
@@ -147,7 +147,7 @@ Every `G` item must be answered as **fixed** or **declined**. Suggestions may be
 | ------------------------------ | ---------- | ---------------------------------------------------------------------------------------- |
 | `gatekeeper:changes-requested` | gatekeeper | Latest verdict requests changes                                                          |
 | `gatekeeper:approved`          | gatekeeper | Approved at the current head; ready for a human merge                                    |
-| `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision; repository owner removes this label on GitHub to resume for +2 rounds |
+| `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision; while it is on, the PR is not reviewed. The repository owner removes this label on GitHub to resume, which restarts the round count at 1 |
 | `gatekeeper:needs-human`       | gatekeeper | Security-sensitive or loop-skill PR; human must confirm before merge (removing it never resumes an escalation) |
 
 Unmarked comments from the repo owner (or `@me`) posted after the last gatekeeper marker are read as required items and trigger a review (worker response markers do not hide them).

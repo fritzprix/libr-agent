@@ -46,6 +46,6 @@ For each row, assign a partial score (0–max) and one bullet with a **single-li
 ## Re-review discipline
 
 - Round ≥ 2: review only (a) previous required findings and (b) the incremental diff `reviewedHead..headSha`. Do not raise new findings on unchanged code unless they are blockers, technical debt in code the PR touches, or needed to lift a score of 85 or lower over the gate.
-- A worker **decline** with a sound reason closes the finding. If you still disagree, restate once with evidence; a second disagreement on the same item → `escalate`.
+- A worker **decline** with a sound reason closes the finding. If you still disagree, restate once with evidence. The second disagreement on the same item is not an escalation: decide it in that verdict — uphold the finding as required, or withdraw it — citing the `file:line` evidence the decision rests on. The decision closes the finding.
 - Never request changes for something the rubric marks minor/nit (e.g. one missing i18n string on a non-critical path → suggestion only; **new logic without tests** → major → required `G` if still untested).
 - Before posting, re-check each planned `G` item against the severity table in this file ([pre-post-checklist.md](pre-post-checklist.md) § severity).

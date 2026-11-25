@@ -20,8 +20,6 @@ from review_queue import (
     classify,
     classify_sensitive_paths,
     determine_status,
-    escalation_resume_info,
-    fetch_timeline_events,
     is_dev_base,
     is_rebased,
     last_gatekeeper_marker_at,
@@ -30,6 +28,7 @@ from review_queue import (
     owner_comments_after,
     parse_markers,
     posting_checks,
+    rounds_since_restart,
     summarize,
     touches_human_only_paths,
 )
@@ -38,7 +37,7 @@ from review_queue import (
 def base_args(**over):
     args = dict(
         mergeable="MERGEABLE", head="head1", base="dev/0.9.x", last_verdict=None,
-        worker_response=None, total_verdicts=0, state_reviewed_head=None,
+        worker_response=None, rounds_used=0, state_reviewed_head=None,
         state_pending_ci=False, has_open_findings=False, pending_checks=[], failing_checks=[],
     )
     args.update(over)
@@ -53,7 +52,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head=None,
             state_pending_ci=False,
             has_open_findings=False,
@@ -69,7 +68,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict={"head": "head1", "verdict": "approve"},
             worker_response=None,
-            total_verdicts=1,
+            rounds_used=1,
             state_reviewed_head="head1",
             state_pending_ci=False,
             has_open_findings=False,
@@ -85,7 +84,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict={"head": "head1", "verdict": "changes-requested"},
             worker_response=None,
-            total_verdicts=1,
+            rounds_used=1,
             state_reviewed_head="head1",
             state_pending_ci=False,
             has_open_findings=True,
@@ -101,7 +100,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict={"head": "head1", "verdict": "changes-requested"},
             worker_response={"head": "head1"},
-            total_verdicts=1,
+            rounds_used=1,
             state_reviewed_head="head1",
             state_pending_ci=False,
             has_open_findings=True,
@@ -117,7 +116,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict={"head": "head1", "verdict": "changes-requested"},
             worker_response=None,
-            total_verdicts=1,
+            rounds_used=1,
             state_reviewed_head="head1",
             state_pending_ci=False,
             has_open_findings=True,
@@ -134,7 +133,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head=None,
             state_pending_ci=False,
             has_open_findings=False,
@@ -151,7 +150,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head="head1",
             state_pending_ci=True,
             has_open_findings=False,
@@ -168,7 +167,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head="head1",
             state_pending_ci=True,
             has_open_findings=False,
@@ -185,7 +184,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head="head1",
             state_pending_ci=True,
             has_open_findings=False,
@@ -202,7 +201,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head="head1",
             state_pending_ci=True,
             has_open_findings=False,
@@ -219,7 +218,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="fix/2242-docker-skill-roots",
             last_verdict=None,
             worker_response=None,
-            total_verdicts=0,
+            rounds_used=0,
             state_reviewed_head="head1",
             state_pending_ci=True,
             has_open_findings=False,
@@ -238,7 +237,7 @@ class DetermineStatusTests(unittest.TestCase):
             base="dev/0.9.x",
             last_verdict={"head": "head5", "verdict": "changes-requested"},
             worker_response=None,
-            total_verdicts=5,
+            rounds_used=5,
             state_reviewed_head="head5",
             state_pending_ci=False,
             has_open_findings=False,
@@ -260,24 +259,24 @@ class GapTests(unittest.TestCase):
 
     def test_approved_with_ci_failure_is_review(self) -> None:
         status, reason, _ = classify(**base_args(
-            last_verdict=self.approve, total_verdicts=1, failing_checks=["Test"]))
+            last_verdict=self.approve, rounds_used=1, failing_checks=["Test"]))
         self.assertEqual(status, "review")
         self.assertIn("CI failing", reason)
 
     def test_approved_stacked_without_ci_is_review(self) -> None:
         verdict = {**self.approve, "base": "feat/x"}
         status, reason, _ = classify(**base_args(
-            base="feat/x", last_verdict=verdict, total_verdicts=1, ci_ran=False))
+            base="feat/x", last_verdict=verdict, rounds_used=1, ci_ran=False))
         self.assertEqual(status, "review")
         self.assertIn("without green CI", reason)
 
     def test_approve_with_no_ci_run_is_review(self) -> None:
-        status = determine_status(**base_args(last_verdict=self.approve, total_verdicts=1, ci_ran=False))
+        status = determine_status(**base_args(last_verdict=self.approve, rounds_used=1, ci_ran=False))
         self.assertEqual(status, "review")
 
     def test_approve_with_pending_ci_is_review(self) -> None:
         status = determine_status(**base_args(
-            last_verdict=self.approve, total_verdicts=1, pending_checks=["Test"]))
+            last_verdict=self.approve, rounds_used=1, pending_checks=["Test"]))
         self.assertEqual(status, "review")
 
     def test_clean_with_no_ci_run_awaits_ci(self) -> None:
@@ -298,7 +297,7 @@ class GapTests(unittest.TestCase):
     def test_base_change_after_approve_is_review(self) -> None:
         verdict = {**self.approve, "base": "feat/x"}
         status, reason, _ = classify(**base_args(
-            base="dev/0.9.x", last_verdict=verdict, total_verdicts=1, reviewed_base="feat/x"))
+            base="dev/0.9.x", last_verdict=verdict, rounds_used=1, reviewed_base="feat/x"))
         self.assertEqual(status, "review")
         self.assertIn("base changed", reason)
 
@@ -320,52 +319,47 @@ class GapTests(unittest.TestCase):
 
     def test_clean_after_earlier_verdicts_awaits_pending_ci(self) -> None:
         status, reason, _ = classify(**base_args(
-            last_verdict=self.earlier, total_verdicts=4, clean_head="head1",
+            last_verdict=self.earlier, rounds_used=4, clean_head="head1",
             pending_checks=["Test"]))
         self.assertEqual(status, "await-ci")
         self.assertIn("waiting for pending CI", reason)
 
     def test_clean_after_earlier_verdicts_with_green_ci_asks_for_the_verdict(self) -> None:
         status, reason, priority = classify(**base_args(
-            last_verdict=self.earlier, total_verdicts=4, clean_head="head1"))
+            last_verdict=self.earlier, rounds_used=4, clean_head="head1"))
         self.assertEqual(status, "review")
         self.assertIn("issue the verdict", reason)
         self.assertEqual(priority, 1)
 
     def test_clean_after_earlier_verdicts_with_failing_ci_is_diagnosed(self) -> None:
         status, reason, _ = classify(**base_args(
-            last_verdict=self.earlier, total_verdicts=4, clean_head="head1",
+            last_verdict=self.earlier, rounds_used=4, clean_head="head1",
             failing_checks=["Test"]))
         self.assertEqual(status, "review")
         self.assertIn("CI failing, diagnose", reason)
 
     def test_clean_for_an_older_head_after_verdicts_is_a_new_head(self) -> None:
         status, reason, _ = classify(**base_args(
-            head="head2", last_verdict=self.earlier, total_verdicts=4, clean_head="head1",
+            head="head2", last_verdict=self.earlier, rounds_used=4, clean_head="head1",
             pending_checks=["Test"]))
         self.assertEqual(status, "review")
         self.assertIn("new head", reason)
 
     def test_clean_after_earlier_verdicts_still_hits_the_round_limit(self) -> None:
         status, _, _ = classify(**base_args(
-            last_verdict=self.earlier, total_verdicts=5, clean_head="head1",
+            last_verdict=self.earlier, rounds_used=5, clean_head="head1",
             pending_checks=["Test"]))
         self.assertEqual(status, "escalate")
 
     def test_approve_in_the_last_round_is_approved_not_escalated(self) -> None:
         status, _, _ = classify(**base_args(
-            last_verdict=self.approve, total_verdicts=5))
+            last_verdict=self.approve, rounds_used=5))
         self.assertEqual(status, "approved")
 
     def test_approve_in_the_last_round_still_escalates_after_a_push(self) -> None:
         status, _, _ = classify(**base_args(
-            head="head2", last_verdict=self.approve, total_verdicts=5))
+            head="head2", last_verdict=self.approve, rounds_used=5))
         self.assertEqual(status, "escalate")
-
-    def test_max_rounds_override_allows_another_round(self) -> None:
-        status, _, _ = classify(**base_args(
-            head="head2", last_verdict=self.approve, total_verdicts=5, max_rounds=6))
-        self.assertNotEqual(status, "escalate")
 
     # Changes requested at the current head, then a clean marker at the same head
     # (the worker fixed the PR body, so no new commit).
@@ -374,41 +368,41 @@ class GapTests(unittest.TestCase):
 
     def test_clean_after_changes_requested_at_the_same_head_awaits_pending_ci(self) -> None:
         status, reason, _ = classify(**base_args(
-            last_verdict=self.requested_here, total_verdicts=3, worker_response=self.answered,
+            last_verdict=self.requested_here, rounds_used=3, worker_response=self.answered,
             clean_head="head1", pending_checks=["Test"]))
         self.assertEqual(status, "await-ci")
         self.assertIn("waiting for pending CI", reason)
 
     def test_clean_after_changes_requested_at_the_same_head_with_green_ci_asks_for_the_verdict(self) -> None:
         status, reason, _ = classify(**base_args(
-            last_verdict=self.requested_here, total_verdicts=3, worker_response=self.answered,
+            last_verdict=self.requested_here, rounds_used=3, worker_response=self.answered,
             clean_head="head1"))
         self.assertEqual(status, "review")
         self.assertIn("issue the verdict", reason)
 
     def test_clean_at_the_same_head_without_a_response_awaits_ci(self) -> None:
         status, _, _ = classify(**base_args(
-            last_verdict=self.requested_here, total_verdicts=3, clean_head="head1",
+            last_verdict=self.requested_here, rounds_used=3, clean_head="head1",
             pending_checks=["Test"]))
         self.assertEqual(status, "await-ci")
 
     def test_worker_response_without_a_clean_marker_is_still_review(self) -> None:
         status, reason, _ = classify(**base_args(
-            last_verdict=self.requested_here, total_verdicts=3, worker_response=self.answered))
+            last_verdict=self.requested_here, rounds_used=3, worker_response=self.answered))
         self.assertEqual(status, "review")
         self.assertIn("worker responded", reason)
 
     def test_state_alone_does_not_override_changes_requested_at_the_head(self) -> None:
         # Only a clean marker on GitHub counts here; state.json can be stale.
         status, _, _ = classify(**base_args(
-            last_verdict=self.requested_here, total_verdicts=3,
+            last_verdict=self.requested_here, rounds_used=3,
             state_reviewed_head="head1", state_pending_ci=True, pending_checks=["Test"]))
         self.assertEqual(status, "wait-worker")
 
     def test_rebased_head_is_review(self) -> None:
         last = {"head": "old", "verdict": "changes-requested"}
         status, reason, _ = classify(**base_args(
-            last_verdict=last, total_verdicts=1, worker_response={"head": "head1"}, rebased=True))
+            last_verdict=last, rounds_used=1, worker_response={"head": "head1"}, rebased=True))
         self.assertEqual(status, "review")
         self.assertIn("rebased", reason)
 
@@ -421,13 +415,13 @@ class GapTests(unittest.TestCase):
     def test_owner_comment_after_verdict_is_review(self) -> None:
         last = {"head": "head1", "verdict": "changes-requested"}
         status, _, priority = classify(**base_args(
-            last_verdict=last, total_verdicts=1, owner_comment=True))
+            last_verdict=last, rounds_used=1, owner_comment=True))
         self.assertEqual(status, "review")
         self.assertEqual(priority, 0)
 
     def test_owner_comment_beats_approved(self) -> None:
         status = determine_status(**base_args(
-            last_verdict=self.approve, total_verdicts=1, owner_comment=True))
+            last_verdict=self.approve, rounds_used=1, owner_comment=True))
         self.assertEqual(status, "review")
 
     def test_owner_comments_after_filters(self) -> None:
@@ -524,7 +518,7 @@ Total **58/100**. Does not affect the verdict above.
         for kwargs in (
             base_args(mergeable="CONFLICTING"),
             base_args(),
-            base_args(total_verdicts=5, last_verdict={"head": "x", "verdict": "changes-requested"}),
+            base_args(rounds_used=5, last_verdict={"head": "x", "verdict": "changes-requested"}),
         ):
             self.assertTrue(classify(**kwargs)[1])
 
@@ -598,7 +592,7 @@ class LatestCleanMarkerTests(unittest.TestCase):
         self.assertEqual(latest_clean_marker([older, newer], None, None), newer)
 
 
-class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
+class EscalationAndOwnerVisibilityTests(unittest.TestCase):
     def _round5_verdicts(self) -> list[dict]:
         return [
             {"round": "1", "verdict": "changes-requested", "head": "h1", "createdAt": "2026-11-19T01:00:00Z"},
@@ -608,109 +602,65 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
             {"round": "5", "verdict": "escalate", "head": "h5", "createdAt": "2026-11-19T05:00:00Z"},
         ]
 
-    def test_owner_removes_escalated_label_resumes_and_raises_limit_to_7(self) -> None:
+    def test_rounds_are_counted_from_the_last_escalate_marker(self) -> None:
         verdicts = self._round5_verdicts()
-        timeline = [
-            {
-                "event": "unlabeled",
-                "created_at": "2026-11-19T06:00:00Z",
-                "actor": {"login": "fritzprix"},
-                "label": {"name": ESCALATED_LABEL},
-            }
-        ]
-        max_rounds, resumed = escalation_resume_info(
-            verdicts, timeline, owner_logins={"fritzprix"}
-        )
-        self.assertEqual(max_rounds, 7)
-        self.assertIsNotNone(resumed)
+        self.assertEqual(rounds_since_restart([]), 0)
+        self.assertEqual(rounds_since_restart(verdicts[:4]), 4)
+        self.assertEqual(rounds_since_restart(verdicts), 0)
 
-        status, reason, priority = classify(
-            **base_args(
-                head="h5",
-                last_verdict=verdicts[-1],
-                total_verdicts=len(verdicts),
-                max_rounds=max_rounds,
-                escalation_resumed=resumed is not None,
-            )
-        )
+    def test_escalate_verdict_with_the_label_waits_for_the_owner(self) -> None:
+        verdicts = self._round5_verdicts()
+        status, reason, _ = classify(**base_args(
+            head="h5", last_verdict=verdicts[-1], rounds_used=0))
+        self.assertEqual(status, "escalate")
+        self.assertIn("waiting for owner to remove", reason)
+
+    def test_owner_removal_restarts_the_round_count(self) -> None:
+        """The first verdict after an `escalate` marker is round 1, not round 6."""
+        verdicts = self._round5_verdicts()
+        status, reason, priority = classify(**base_args(
+            head="h5", last_verdict=verdicts[-1], rounds_used=0,
+            escalate_label_present=False))
         self.assertEqual(status, "review")
         self.assertEqual(priority, 0)
-        self.assertIn("7", reason)
+        self.assertIn("round count restarted at 0", reason)
 
-        # After 2 more verdicts (rounds 6 and 7), a new escalation requires another removal.
-        verdicts_after_7 = verdicts + [
-            {"round": "6", "verdict": "changes-requested", "head": "h6", "createdAt": "2026-11-19T07:00:00Z"},
-            {"round": "7", "verdict": "escalate", "head": "h7", "createdAt": "2026-11-19T08:00:00Z"},
+    def test_a_resumed_run_gets_the_round_limit_again_not_two_extra_rounds(self) -> None:
+        resumed = self._round5_verdicts() + [
+            {"round": str(n), "verdict": "changes-requested", "head": f"h{n}",
+             "createdAt": f"2026-11-19T{n:02d}:00:00Z"}
+            for n in range(6, 10)
         ]
-        max_rounds2, resumed2 = escalation_resume_info(
-            verdicts_after_7, timeline, owner_logins={"fritzprix"}
-        )
-        self.assertIsNone(resumed2)
-        status2, _, _ = classify(
-            **base_args(
-                head="h7",
-                last_verdict=verdicts_after_7[-1],
-                total_verdicts=len(verdicts_after_7),
-                max_rounds=max_rounds2,
-                escalation_resumed=False,
-            )
-        )
-        self.assertEqual(status2, "escalate")
+        self.assertEqual(rounds_since_restart(resumed), 4)
+        status, _, _ = classify(**base_args(
+            head="h9", last_verdict=resumed[-1], rounds_used=rounds_since_restart(resumed)))
+        self.assertNotEqual(status, "escalate")
 
-    def test_non_owner_removal_does_not_resume(self) -> None:
-        verdicts = self._round5_verdicts()
-        timeline = [
-            {
-                "event": "unlabeled",
-                "created_at": "2026-11-19T06:00:00Z",
-                "actor": {"login": "random-contributor"},
-                "actorAssociation": "CONTRIBUTOR",
-                "label": {"name": ESCALATED_LABEL},
-            }
+        one_more = resumed + [
+            {"round": "10", "verdict": "changes-requested", "head": "h10",
+             "createdAt": "2026-11-19T10:00:00Z"}
         ]
-        max_rounds, resumed = escalation_resume_info(
-            verdicts, timeline, owner_logins={"fritzprix"}
-        )
-        self.assertEqual(max_rounds, 5)
-        self.assertIsNone(resumed)
+        self.assertEqual(rounds_since_restart(one_more), 5)
+        status_limited, reason_limited, _ = classify(**base_args(
+            head="h11", last_verdict=one_more[-1],
+            rounds_used=rounds_since_restart(one_more)))
+        self.assertEqual(status_limited, "escalate")
+        self.assertIn("round limit (5) reached", reason_limited)
 
-        status = determine_status(
-            **base_args(
-                head="h5",
-                last_verdict=verdicts[-1],
-                total_verdicts=len(verdicts),
-                max_rounds=max_rounds,
-                escalation_resumed=False,
-            )
-        )
-        self.assertEqual(status, "escalate")
-
-    def test_removing_needs_human_label_does_not_resume(self) -> None:
-        verdicts = self._round5_verdicts()
-        timeline = [
-            {
-                "event": "unlabeled",
-                "created_at": "2026-11-19T06:00:00Z",
-                "actor": {"login": "fritzprix"},
-                "label": {"name": "gatekeeper:needs-human"},
-            }
+    def test_only_the_round_limit_and_the_label_wait_escalate(self) -> None:
+        """A dispute is decided by the gatekeeper, so nothing else may escalate a PR."""
+        changes = {"head": "head1", "verdict": "changes-requested", "base": "dev/0.9.x"}
+        response = {"round": "2", "createdAt": "2026-02-01T00:00:00Z"}
+        cases = [
+            base_args(head="head1", last_verdict=changes, rounds_used=2,
+                      worker_response=response),
+            base_args(head="head1", last_verdict=changes, rounds_used=4,
+                      worker_response=response),
+            base_args(head="head1", last_verdict=changes, rounds_used=2, owner_comment=True),
+            base_args(head="head1", last_verdict=changes, rounds_used=4, clean_head="head1"),
         ]
-        max_rounds, resumed = escalation_resume_info(
-            verdicts, timeline, owner_logins={"fritzprix"}
-        )
-        self.assertEqual(max_rounds, 5)
-        self.assertIsNone(resumed)
-
-        status = determine_status(
-            **base_args(
-                head="h5",
-                last_verdict=verdicts[-1],
-                total_verdicts=len(verdicts),
-                max_rounds=max_rounds,
-                escalation_resumed=False,
-            )
-        )
-        self.assertEqual(status, "escalate")
+        for kwargs in cases:
+            self.assertNotEqual(classify(**kwargs)[0], "escalate")
 
     def test_owner_comment_followed_by_worker_response_is_still_reported(self) -> None:
         comments = [
@@ -724,7 +674,7 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
                 "author": {"login": "fritzprix"},
                 "authorAssociation": "OWNER",
                 "createdAt": "2026-11-19T05:30:00Z",
-                "body": "Granting 2 extra rounds; please keep the narrow scope.",
+                "body": "Remove the label and keep the narrow scope; I want one more round.",
                 "url": "https://github.com/fritzprix/libr-agent/pull/2906#issuecomment-1",
             },
             {
@@ -741,7 +691,7 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
         since = last_gatekeeper_marker_at(markers)
         owner = owner_comments_after(comments, "fritzprix", since)
         self.assertEqual(len(owner), 1)
-        self.assertIn("Granting 2 extra rounds", owner[0]["body"])
+        self.assertIn("Remove the label", owner[0]["body"])
 
     def test_resumed_with_clean_marker_at_head_awaits_ci_then_approves(self) -> None:
         """G1.1: clean marker at current head must not re-trigger full review after resume."""
@@ -750,9 +700,8 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
             **base_args(
                 head="h5",
                 last_verdict=verdicts[-1],
-                total_verdicts=len(verdicts),
-                max_rounds=7,
-                escalation_resumed=True,
+                rounds_used=0,
+                escalate_label_present=False,
                 clean_head="h5",
                 pending_checks=["Test (ubuntu-latest)"],
             )
@@ -764,9 +713,8 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
             **base_args(
                 head="h5",
                 last_verdict=verdicts[-1],
-                total_verdicts=len(verdicts),
-                max_rounds=7,
-                escalation_resumed=True,
+                rounds_used=0,
+                escalate_label_present=False,
                 clean_head="h5",
                 pending_checks=[],
                 failing_checks=[],
@@ -776,83 +724,44 @@ class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
         self.assertEqual(priority_green, 1)
         self.assertIn("CI green at this head", reason_green)
 
-    def test_gatekeeper_label_swap_after_later_marker_does_not_grant_extra_rounds(self) -> None:
-        """G1.2: removal after a subsequent gatekeeper marker is the gatekeeper's own swap."""
-        markers = self._round5_verdicts() + [
-            {
-                "round": "6",
-                "verdict": "changes-requested",
-                "head": "h6",
-                "createdAt": "2026-11-19T06:00:00Z",
-            }
-        ]
-        # Gatekeeper swaps labels 5 seconds after posting round 6.
-        timeline = [
-            {
-                "event": "unlabeled",
-                "created_at": "2026-11-19T06:00:05Z",
-                "actor": {"login": "fritzprix"},
-                "label": {"name": ESCALATED_LABEL},
-            }
-        ]
-        max_rounds, resumed = escalation_resume_info(
-            markers, timeline, owner_logins={"fritzprix"}
-        )
-        self.assertEqual(max_rounds, 5)
-        self.assertIsNone(resumed)
-
-    def test_fetch_timeline_events_flattens_slurped_pages_and_summarize_uses_it(self) -> None:
-        """S1.3: multi-page --slurp timeline output is flattened and drives summarize()."""
-        page1 = [{"event": "labeled", "created_at": "2026-11-19T05:00:01Z"}]
-        page2 = [
-            {
-                "event": "unlabeled",
-                "created_at": "2026-11-19T06:00:00Z",
-                "actor": {"login": "fritzprix"},
-                "label": {"name": ESCALATED_LABEL},
-            }
-        ]
-
+    def test_summarize_counts_rounds_from_markers_without_a_timeline_call(self) -> None:
+        """Verdict markers decide the round number; no timeline fetch is made."""
         def fake_gh(*args):
-            if args[:3] == ("api", "--paginate", "--slurp"):
-                return json.dumps([page1, page2])
-            if args[:2] == ("pr", "view"):
-                comments = [
-                    {
-                        "author": {"login": "fritzprix"},
-                        "authorAssociation": "OWNER",
-                        "createdAt": f"2026-11-19T0{i}:00:00Z",
-                        "body": f"<!-- gatekeeper-loop: round={i} verdict={'escalate' if i == 5 else 'changes-requested'} head=h{i} base=dev/0.9.x -->",
-                    }
-                    for i in range(1, 6)
-                ]
-                return json.dumps({
-                    "number": 2906,
-                    "title": "Test PR",
-                    "url": "https://github.com/fritzprix/libr-agent/pull/2906",
-                    "headRefName": "feat/test",
-                    "headRefOid": "h5",
-                    "baseRefName": "dev/0.9.x",
-                    "isDraft": False,
-                    "mergeable": "MERGEABLE",
-                    "createdAt": "2026-11-19T00:00:00Z",
-                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
-                    "comments": comments,
-                    "labels": [],
-                    "files": [{"path": "src/app.ts"}],
-                })
-            raise AssertionError(f"unexpected gh call: {args}")
+            if args[0] != "pr":
+                raise AssertionError(f"unexpected gh call: {args}")
+            comments = [
+                {
+                    "author": {"login": "fritzprix"},
+                    "authorAssociation": "OWNER",
+                    "createdAt": f"2026-11-19T0{i}:00:00Z",
+                    "body": f"<!-- gatekeeper-loop: round={i} verdict={'escalate' if i == 5 else 'changes-requested'} head=h{i} base=dev/0.9.x -->",
+                }
+                for i in range(1, 6)
+            ]
+            return json.dumps({
+                "number": 2906,
+                "title": "Test PR",
+                "url": "https://github.com/fritzprix/libr-agent/pull/2906",
+                "headRefName": "feat/test",
+                "headRefOid": "h5",
+                "baseRefName": "dev/0.9.x",
+                "isDraft": False,
+                "mergeable": "MERGEABLE",
+                "createdAt": "2026-11-19T00:00:00Z",
+                "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                "comments": comments,
+                "labels": [],
+                "files": [{"path": "src/app.ts"}],
+            })
 
         with patch.object(review_queue, "gh", fake_gh):
-            events = fetch_timeline_events("fritzprix", "libr-agent", 2906)
-            self.assertEqual(len(events), 2)
-            self.assertEqual(events[1]["event"], "unlabeled")
-
             entry = summarize(2906, "fritzprix", state={"prs": {"2906": {"maxRounds": 99}}})
-            # S1.1: stale state.json maxRounds=99 is ignored; timeline sets 5 + 2 = 7.
-            self.assertEqual(entry["maxRounds"], 7)
-            self.assertEqual(entry["status"], "review")
-            self.assertIsNotNone(entry["escalationResumed"])
+
+        # The label is gone, so the owner removed it: the next round is 1, not 6 or 7.
+        self.assertEqual(entry["status"], "review")
+        self.assertEqual(entry["round"], 1)
+        self.assertNotIn("maxRounds", entry)
+        self.assertNotIn("escalationResumed", entry)
 
 
 if __name__ == "__main__":
