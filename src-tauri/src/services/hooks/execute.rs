@@ -8,7 +8,9 @@ use super::registry::{
     approval_hash_key, approval_hash_value, get_session_plugin_trust_dir,
     get_session_plugins_directory, get_user_plugins_directory, list_effective_approved_sources_in,
 };
-use super::schema::{HookDispatchMode, HookEvent, HookHandler, DEFAULT_HOOK_TIMEOUT_SECS};
+use super::schema::{
+    HookDispatchMode, HookEvent, HookHandler, HookHttpConfig, DEFAULT_HOOK_TIMEOUT_SECS,
+};
 use crate::session::{get_session_manager, resolve_session_workspace_dir};
 use regex::Regex;
 use std::path::{Path, PathBuf};
@@ -492,6 +494,10 @@ async fn run_hook_handler(
     };
     let deadline = Duration::from_secs(timeout_secs);
 
+    if let Some(http) = &handler.http {
+        return run_http_hook(event, http, deadline, envelope_json).await;
+    }
+
     let mut child = match build_hook_command(env, handler) {
         Ok(mut cmd) => match cmd
             .stdin(Stdio::piped())
@@ -603,6 +609,119 @@ impl HookEnv {
             }
         }
     }
+}
+
+/// Interpolate `$VAR` / `${VAR}` references in HTTP hook header values
+/// (#3009): names listed in `allowed_env_vars` resolve to their environment
+/// value, unlisted names resolve to an empty string, and with no allowlist
+/// nothing is interpolated at all.
+fn interpolate_http_header(value: &str, allowed: &[String]) -> String {
+    if allowed.is_empty() {
+        return value.to_string();
+    }
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '$' {
+            out.push(c);
+            continue;
+        }
+        let brace = chars.peek() == Some(&'{');
+        if brace {
+            chars.next();
+        }
+        let mut name = String::new();
+        while chars
+            .peek()
+            .is_some_and(|n| *n == '_' || n.is_ascii_alphanumeric())
+        {
+            name.push(chars.next().expect("peeked"));
+        }
+        let closed = !brace || chars.next() == Some('}');
+        if name.is_empty() || !closed {
+            out.push('$');
+            if brace {
+                out.push('{');
+            }
+            continue;
+        }
+        let resolved = if allowed.iter().any(|v| v == &name) {
+            std::env::var(&name).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        out.push_str(&resolved);
+    }
+    out
+}
+
+/// Run a `type: "http"` hook: POST the event envelope as JSON to `url` and
+/// apply the response body per the Hooks reference HTTP response handling
+/// (2xx + empty body = success with no output, 2xx + JSON object = the same
+/// JSON output schema as command hooks, anything else = non-blocking error)
+/// (#3009).
+async fn run_http_hook(
+    event: HookEvent,
+    http: &HookHttpConfig,
+    deadline: Duration,
+    envelope_json: &str,
+) -> HookRunOutcome {
+    use std::str::FromStr;
+
+    let client = reqwest::Client::new();
+    let mut request = client
+        .post(&http.url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json");
+    for (name, value) in &http.headers {
+        match reqwest::header::HeaderName::from_str(name.as_str()) {
+            Ok(header_name) => {
+                let resolved = interpolate_http_header(value, &http.allowed_env_vars);
+                let header_value = reqwest::header::HeaderValue::from_str(&resolved)
+                    .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static(""));
+                request = request.header(header_name, header_value);
+            }
+            Err(error) => {
+                log::warn!("http hook: invalid header name {name:?}: {error}");
+            }
+        }
+    }
+    let request = request.body(envelope_json.to_string());
+
+    let response = match timeout(deadline, request.send()).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => {
+            return HookRunOutcome::Skipped(format!("http hook request failed: {error}"));
+        }
+        Err(_) => {
+            return HookRunOutcome::Skipped(format!(
+                "http hook timed out after {}s",
+                deadline.as_secs()
+            ));
+        }
+    };
+    let status = response.status();
+    if !status.is_success() {
+        return HookRunOutcome::Skipped(format!("http hook status {}", status.as_u16()));
+    }
+    let body = match response.text().await {
+        Ok(body) => body,
+        Err(error) => {
+            return HookRunOutcome::Skipped(format!("http hook body read failed: {error}"));
+        }
+    };
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return HookRunOutcome::Applied(HookOutput::default());
+    }
+    // The body must be a JSON object using the command-hook output schema;
+    // any other body (e.g. plain text) is a non-blocking error.
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return HookRunOutcome::Skipped("http hook body is not JSON".to_string());
+    };
+    if !value.is_object() {
+        return HookRunOutcome::Skipped("http hook body is not a JSON object".to_string());
+    }
+    HookRunOutcome::Applied(normalize(trimmed, event))
 }
 
 fn build_hook_command(env: &HookEnv, handler: &HookHandler) -> Result<Command, String> {
@@ -1241,6 +1360,209 @@ mod tests {
         .await;
         assert_eq!(unmatched.decision, None);
         clear_hook_context(&sid);
+    }
+
+    /// Serves exactly one HTTP request, returning `response_body` after
+    /// checking the request line and headers contain `assertions` substrings.
+    /// Returns the accepted request body.
+    async fn serve_one_http_request(
+        listener: tokio::net::TcpListener,
+        response_body: &'static str,
+        assertions: Vec<&'static str>,
+    ) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (mut conn, _) = listener.accept().await.expect("accept");
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 4096];
+        let header_end;
+        loop {
+            let n = conn.read(&mut chunk).await.expect("read request");
+            if n == 0 {
+                panic!("request ended before headers were complete");
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                header_end = pos + 4;
+                break;
+            }
+        }
+        let headers = String::from_utf8_lossy(&buf[..header_end]).to_lowercase();
+        let content_length: usize = headers
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length:"))
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(0);
+        while buf.len() < header_end + content_length {
+            let n = conn.read(&mut chunk).await.expect("read body");
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+        }
+        let body = String::from_utf8_lossy(&buf[header_end..]).to_string();
+        let haystack = format!(
+            "{}\n{body}",
+            String::from_utf8_lossy(&buf[..header_end]).to_lowercase()
+        );
+        for needle in assertions {
+            assert!(
+                haystack.contains(needle),
+                "request should contain {needle:?}, got: {haystack}"
+            );
+        }
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
+            response_body.len()
+        );
+        conn.write_all(response.as_bytes())
+            .await
+            .expect("write response");
+        body
+    }
+
+    /// #3009: a `type: "http"` handler POSTs the event envelope and the
+    /// 2xx JSON body is applied with the same decision fields as command
+    /// hooks. Also checks header interpolation follows `allowedEnvVars`.
+    #[tokio::test]
+    async fn http_handler_posts_envelope_and_applies_json_decision() {
+        std::env::set_var("TEST_HOOK_TOKEN", "tok-42");
+        let json_out: &'static str = r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"http says no"}}"#;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let url = format!("http://{}/pre-tool-use", listener.local_addr().unwrap());
+        let server = tokio::spawn(serve_one_http_request(
+            listener,
+            json_out,
+            vec![
+                "content-type: application/json",
+                "authorization: bearer tok-42",
+                "x-unlisted: ",
+                "hook_event_name",
+            ],
+        ));
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{
+                        "type": "http",
+                        "url": url,
+                        "headers": {
+                            "Authorization": "Bearer $TEST_HOOK_TOKEN",
+                            "X-Unlisted": "[$NOT_LISTED]"
+                        },
+                        "allowedEnvVars": ["TEST_HOOK_TOKEN"]
+                    }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-{}", uuid::Uuid::new_v4());
+        let mut params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        params.tool_name = Some("workspace__runShell".to_string());
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(
+            outcome.decision,
+            Some(HookDecision::Block),
+            "http response decision fields must apply"
+        );
+        assert_eq!(outcome.reason.as_deref(), Some("http says no"));
+
+        let body = tokio::time::timeout(std::time::Duration::from_secs(5), server)
+            .await
+            .expect("server task")
+            .expect("server task join");
+        assert!(
+            body.contains("workspace__runShell"),
+            "POST body is the event envelope: {body}"
+        );
+        std::env::remove_var("TEST_HOOK_TOKEN");
+        clear_hook_context(&sid);
+    }
+
+    /// #3009: a non-2xx response is a non-blocking error; the action goes
+    /// ahead with no decision from the hook.
+    #[tokio::test]
+    async fn http_handler_non_2xx_is_non_blocking() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut conn, _) = listener.accept().await.expect("accept");
+            let mut buf = [0u8; 1024];
+            let _ = conn.read(&mut buf).await;
+            let response = "HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+            conn.write_all(response.as_bytes()).await.expect("write");
+        });
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "workspace__runShell",
+                    "hooks": [{ "type": "http", "url": format!("http://{addr}/fail") }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
+
+        let sid = format!("http-hook-500-{}", uuid::Uuid::new_v4());
+        let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+        let outcome = dispatch_hook_event_in(
+            temp.path(),
+            HookEvent::PreToolUse,
+            "workspace__runShell",
+            &params,
+            &sid,
+        )
+        .await;
+        assert_eq!(outcome.decision, None, "non-2xx must not block");
+
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), server).await;
+        clear_hook_context(&sid);
+    }
+
+    #[test]
+    fn http_header_interpolation_follows_allowlist() {
+        std::env::set_var("TEST_INTERP_A", "value-a");
+        let allowed: Vec<String> = vec![
+            "TEST_INTERP_A".to_string(),
+            "TEST_INTERP_MISSING".to_string(),
+        ];
+        assert_eq!(
+            interpolate_http_header("Bearer ${TEST_INTERP_A} and $TEST_INTERP_A", &allowed),
+            "Bearer value-a and value-a"
+        );
+        assert_eq!(
+            interpolate_http_header("[$TEST_INTERP_MISSING]", &allowed),
+            "[]",
+            "allowlisted but unset resolves to empty"
+        );
+        assert_eq!(
+            interpolate_http_header("[$NOT_ALLOWED]", &allowed),
+            "[]",
+            "unlisted references become empty"
+        );
+        assert_eq!(
+            interpolate_http_header("$TEST_INTERP_A", &[]),
+            "$TEST_INTERP_A",
+            "no allowlist means no interpolation"
+        );
+        std::env::remove_var("TEST_INTERP_A");
     }
 
     #[tokio::test]

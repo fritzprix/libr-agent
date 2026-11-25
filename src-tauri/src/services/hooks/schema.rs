@@ -70,6 +70,19 @@ pub struct HookHandler {
     pub timeout_secs: u64,
     pub r#async: bool,
     pub shell: Option<String>,
+    /// Set for `type: "http"` handlers, which POST the event envelope to
+    /// `url` instead of spawning a command (#3009).
+    pub http: Option<HookHttpConfig>,
+}
+
+/// HTTP hook handler fields from the Hooks reference: the POST target, extra
+/// headers whose `$VAR` values are interpolated only for names listed in
+/// `allowed_env_vars` (#3009).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HookHttpConfig {
+    pub url: String,
+    pub headers: BTreeMap<String, String>,
+    pub allowed_env_vars: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +105,11 @@ pub struct HooksConfig {
     pub version: Option<u32>,
     pub events: BTreeMap<HookEvent, Vec<HookMatcherGroup>>,
     pub unsupported_events: BTreeMap<String, Vec<UnsupportedHookEntry>>,
+    /// Handlers of not-yet-implemented types (`prompt`, `mcp_tool`, `agent`,
+    /// or unknown types) on supported events, keyed by event name. They
+    /// install without failing and are marked unsupported in the preview
+    /// (#3009).
+    pub unsupported_handlers: BTreeMap<String, Vec<UnsupportedHookEntry>>,
 }
 
 pub fn load_hooks_from_root(root: &Path) -> Result<HooksConfig, String> {
@@ -103,6 +121,7 @@ pub fn load_hooks_from_root(root: &Path) -> Result<HooksConfig, String> {
         version: None,
         events: BTreeMap::new(),
         unsupported_events: BTreeMap::new(),
+        unsupported_handlers: BTreeMap::new(),
     };
     let mut found_any = false;
 
@@ -139,6 +158,7 @@ pub fn load_hooks_from_config_files(files: &[PathBuf]) -> Result<HooksConfig, St
         version: None,
         events: BTreeMap::new(),
         unsupported_events: BTreeMap::new(),
+        unsupported_handlers: BTreeMap::new(),
     };
     for file in files {
         let piece = parse_hooks_file(file)?;
@@ -157,6 +177,12 @@ fn merge_hooks_config(dst: &mut HooksConfig, src: HooksConfig) -> Result<(), Str
     for (raw_event, entries) in src.unsupported_events {
         dst.unsupported_events
             .entry(raw_event)
+            .or_default()
+            .extend(entries);
+    }
+    for (event, entries) in src.unsupported_handlers {
+        dst.unsupported_handlers
+            .entry(event)
             .or_default()
             .extend(entries);
     }
@@ -191,12 +217,22 @@ fn parse_hooks_value(root: &Value, path: &Path) -> Result<HooksConfig, String> {
 
     let mut events = BTreeMap::new();
     let mut unsupported_events = BTreeMap::new();
+    let mut unsupported_handlers = BTreeMap::new();
 
     for (raw_key, groups_value) in hooks_obj {
         match normalize_event_key(raw_key) {
             Ok(event) => {
-                let groups = parse_matcher_groups(groups_value, event, path)?;
+                let (groups, unsupported) = parse_matcher_groups(groups_value, event, path)?;
                 events.insert(event, groups);
+                if !unsupported.is_empty() {
+                    log::info!(
+                        "{}: recording {} unsupported hook handler type(s) on {}",
+                        path.display(),
+                        unsupported.len(),
+                        event.as_str()
+                    );
+                    unsupported_handlers.insert(event.as_str().to_string(), unsupported);
+                }
             }
             Err(_) => {
                 let note = reserved_event_message(raw_key).unwrap_or("event not supported yet");
@@ -215,6 +251,7 @@ fn parse_hooks_value(root: &Value, path: &Path) -> Result<HooksConfig, String> {
         version,
         events,
         unsupported_events,
+        unsupported_handlers,
     })
 }
 
@@ -283,16 +320,23 @@ fn parse_matcher_groups(
     value: &Value,
     event: HookEvent,
     path: &Path,
-) -> Result<Vec<HookMatcherGroup>, String> {
+) -> Result<(Vec<HookMatcherGroup>, Vec<UnsupportedHookEntry>), String> {
     let arr = value
         .as_array()
         .ok_or_else(|| format!("{}: {} must be an array", path.display(), event.as_str()))?;
 
     let mut groups = Vec::with_capacity(arr.len());
+    let mut unsupported = Vec::new();
     for (idx, entry) in arr.iter().enumerate() {
-        groups.push(parse_matcher_group(entry, event, path, idx)?);
+        groups.push(parse_matcher_group(
+            entry,
+            event,
+            path,
+            idx,
+            &mut unsupported,
+        )?);
     }
-    Ok(groups)
+    Ok((groups, unsupported))
 }
 
 fn parse_matcher_group(
@@ -300,6 +344,7 @@ fn parse_matcher_group(
     event: HookEvent,
     path: &Path,
     idx: usize,
+    unsupported: &mut Vec<UnsupportedHookEntry>,
 ) -> Result<HookMatcherGroup, String> {
     let obj = value.as_object().ok_or_else(|| {
         format!(
@@ -315,7 +360,7 @@ fn parse_matcher_group(
         Some(v) => parse_optional_string(v, "matcher")?,
     };
 
-    let handlers = if let Some(nested) = obj.get("hooks") {
+    let mut handlers = if let Some(nested) = obj.get("hooks") {
         let arr = nested.as_array().ok_or_else(|| {
             format!(
                 "{}: {}[{}].hooks must be an array",
@@ -350,7 +395,23 @@ fn parse_matcher_group(
         ));
     };
 
-    Ok(HookMatcherGroup { matcher, handlers })
+    // Record handler types LibrAgent does not run yet (#3009); install must
+    // succeed with the handler marked in the preview instead of failing.
+    let mut supported = Vec::with_capacity(handlers.len());
+    for parsed in handlers.drain(..) {
+        match parsed {
+            ParsedHandler::Handler(handler) => supported.push(handler),
+            ParsedHandler::Unsupported { handler_type } => unsupported.push(UnsupportedHookEntry {
+                matcher: matcher.clone(),
+                command: format!("(handler type \"{handler_type}\" is not supported yet)"),
+            }),
+        }
+    }
+
+    Ok(HookMatcherGroup {
+        matcher,
+        handlers: supported,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -364,6 +425,14 @@ struct RawHandler {
     timeout_ms: Option<u64>,
     r#async: Option<bool>,
     shell: Option<String>,
+    url: Option<String>,
+    headers: Option<BTreeMap<String, String>>,
+    allowed_env_vars: Option<Vec<String>>,
+}
+
+enum ParsedHandler {
+    Handler(HookHandler),
+    Unsupported { handler_type: String },
 }
 
 fn parse_handler(
@@ -371,21 +440,42 @@ fn parse_handler(
     event: HookEvent,
     label: &str,
     path: &Path,
-) -> Result<HookHandler, String> {
+) -> Result<ParsedHandler, String> {
     let raw: RawHandler = serde_json::from_value(value.clone())
         .map_err(|e| format!("{}: invalid handler at {label}: {e}", path.display()))?;
 
     let handler_type = raw.handler_type.unwrap_or_else(|| "command".to_string());
-    if handler_type != "command" {
-        return Err(format!(
-            "{}: {label}: handler type must be \"command\", got \"{handler_type}\"",
-            path.display()
-        ));
+
+    // Deliberate decision per type (#3009): `prompt` and `agent` need a
+    // model turn per hook event and `mcp_tool` needs the session's MCP
+    // client context, none of which the hook dispatcher holds; they install
+    // as unsupported. `http` is implemented below.
+    if !matches!(handler_type.as_str(), "command" | "http") {
+        return Ok(ParsedHandler::Unsupported { handler_type });
     }
 
-    let command = raw
-        .command
-        .ok_or_else(|| format!("{}: {label}: \"command\" is required", path.display()))?;
+    let http = if handler_type == "http" {
+        let url = raw.url.ok_or_else(|| {
+            format!(
+                "{}: {label}: \"url\" is required for http handlers",
+                path.display()
+            )
+        })?;
+        Some(HookHttpConfig {
+            url,
+            headers: raw.headers.unwrap_or_default(),
+            allowed_env_vars: raw.allowed_env_vars.unwrap_or_default(),
+        })
+    } else {
+        None
+    };
+
+    let command = match &http {
+        Some(_) => String::new(),
+        None => raw
+            .command
+            .ok_or_else(|| format!("{}: {label}: \"command\" is required", path.display()))?,
+    };
 
     let timeout_secs = resolve_timeout(raw.timeout, raw.timeout_ms)
         .map_err(|e| format!("{}: {label}: {e}", path.display()))?;
@@ -398,13 +488,14 @@ fn parse_handler(
         ));
     }
 
-    Ok(HookHandler {
+    Ok(ParsedHandler::Handler(HookHandler {
         command,
         powershell: raw.powershell,
         timeout_secs,
         r#async: async_flag,
         shell: raw.shell,
-    })
+        http,
+    }))
 }
 
 fn resolve_timeout(timeout: Option<u64>, timeout_ms: Option<u64>) -> Result<u64, String> {
@@ -548,16 +639,70 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_command_type_and_zero_timeout() {
-        let bad_type =
-            r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"prompt","command":"x"}]}]}}"#;
-        assert!(parse_hooks_value(
-            &serde_json::from_str(bad_type).unwrap(),
-            Path::new("t.json")
-        )
-        .unwrap_err()
-        .contains("command"));
+    fn records_unsupported_handler_types_without_failing_install() {
+        // #3009: prompt/mcp_tool/agent and unknown types on supported events
+        // install and are recorded as unsupported instead of failing.
+        for handler_type in ["prompt", "mcp_tool", "agent", "bogus"] {
+            let json = format!(
+                r#"{{"hooks":{{"PreToolUse":[{{"matcher":"Bash","hooks":[{{"type":"{handler_type}"}}]}}],"SessionStart":[{{"hooks":[{{"type":"command","command":"echo start"}}]}}]}}}}"#
+            );
+            let cfg = parse_hooks_value(&serde_json::from_str(&json).unwrap(), Path::new("t.json"))
+                .expect("unsupported handler types must not fail install");
+            assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+            assert!(
+                cfg.events[&HookEvent::PreToolUse][0].handlers.is_empty(),
+                "{handler_type} must not produce a runnable handler"
+            );
+            let entries = &cfg.unsupported_handlers[HookEvent::PreToolUse.as_str()];
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].matcher.as_deref(), Some("Bash"));
+            assert!(entries[0].command.contains(handler_type));
+        }
+    }
 
+    #[test]
+    fn parses_http_handler_and_requires_url() {
+        let json = r#"{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:8080/hooks/pre-tool-use",
+            "timeout": 30,
+            "headers": { "Authorization": "Bearer $MY_TOKEN" },
+            "allowedEnvVars": ["MY_TOKEN"]
+          }
+        ]
+      }
+    ]
+  }
+}"#;
+        let cfg =
+            parse_hooks_value(&serde_json::from_str(json).unwrap(), Path::new("t.json")).unwrap();
+        let handler = &cfg.events[&HookEvent::PreToolUse][0].handlers[0];
+        let http = handler.http.as_ref().expect("http config must be parsed");
+        assert_eq!(http.url, "http://localhost:8080/hooks/pre-tool-use");
+        assert_eq!(
+            http.headers.get("Authorization").map(String::as_str),
+            Some("Bearer $MY_TOKEN")
+        );
+        assert_eq!(http.allowed_env_vars, vec!["MY_TOKEN"]);
+        assert_eq!(handler.timeout_secs, 30);
+        assert!(cfg.unsupported_handlers.is_empty());
+
+        let no_url = r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"http"}]}]}}"#;
+        assert!(
+            parse_hooks_value(&serde_json::from_str(no_url).unwrap(), Path::new("t.json"))
+                .unwrap_err()
+                .contains("url")
+        );
+    }
+
+    #[test]
+    fn rejects_zero_timeout() {
         let bad_timeout = r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"x","timeout":0}]}]}}"#;
         assert!(parse_hooks_value(
             &serde_json::from_str(bad_timeout).unwrap(),
