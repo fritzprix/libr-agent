@@ -100,6 +100,39 @@ class PrTurnTests(unittest.TestCase):
         )
         self.assertIn("remove stale label gatekeeper:approved", mismatches)
 
+    def test_escalate_without_the_label_is_the_gatekeeper_turn(self) -> None:
+        """G1.1: the owner removed the label, so no label fix may re-add it."""
+        turn = decide_pr_turn(
+            head_sha="sha2",
+            mergeable="MERGEABLE",
+            comments=[gk("escalate", "sha2")],
+            me="me",
+            labels=["gatekeeper:needs-human"],
+        )
+        self.assertEqual(turn.turn, "gatekeeper")
+        self.assertEqual(turn.labelMismatch, [])
+        self.assertIn("resumed", turn.reason)
+
+    def test_escalate_with_the_label_stays_with_the_human(self) -> None:
+        turn = decide_pr_turn(
+            head_sha="sha2",
+            mergeable="MERGEABLE",
+            comments=[gk("escalate", "sha2")],
+            me="me",
+            labels=["gatekeeper:escalated"],
+        )
+        self.assertEqual(turn.turn, "human")
+        self.assertEqual(turn.labelMismatch, [])
+
+    def test_escalate_with_unknown_labels_stays_with_the_human(self) -> None:
+        turn = decide_pr_turn(
+            head_sha="sha2",
+            mergeable="MERGEABLE",
+            comments=[gk("escalate", "sha2")],
+            me="me",
+        )
+        self.assertEqual(turn.turn, "human")
+
     def test_merge_conflict_is_worker(self) -> None:
         turn = decide_pr_turn(
             head_sha="sha1",

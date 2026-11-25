@@ -17,7 +17,8 @@ status values:
                conflicts. Worker's turn to fix.
   approved   - approve verdict exists for the current head, base unchanged, CI
                green at the head, no newer owner comment.
-  escalate   - round limit reached or unresolvable dispute; hand to the user.
+  escalate   - round limit (5) reached, or the answer is a product, security, or
+               data decision for the user.
 
 Each entry may include humanOnly: true when the diff touches loop-skill
 paths (add `gatekeeper:needs-human` when posting approve; never skip review).
@@ -44,7 +45,6 @@ from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
 
 MAX_ROUNDS = 5
 ESCALATED_LABEL = "gatekeeper:escalated"
-RESUME_EXTRA_ROUNDS = 2
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PROTECTED_SKILL_PREFIXES = (
@@ -119,90 +119,17 @@ def last_gatekeeper_marker_at(markers: list[dict]) -> str | None:
     return max((m["createdAt"] for m in markers), default=None)
 
 
-def is_owner_timeline_actor(event: dict, owner_logins: set[str]) -> bool:
-    """True when a timeline event was triggered by a repository owner login."""
-    actor = event.get("actor") or {}
-    login = actor.get("login") or ""
-    if not login or login.endswith("[bot]"):
-        return False
-    return login in owner_logins
+def rounds_since_restart(verdicts: list[dict]) -> int:
+    """Verdicts counted toward the round limit, reset by the last `escalate` verdict.
 
-
-def escalation_resume_info(
-    markers: list[dict],
-    timeline_events: list[dict],
-    *,
-    owner_logins: set[str],
-    base_max_rounds: int = MAX_ROUNDS,
-) -> tuple[int, dict | None]:
-    """Compute effective maxRounds from owner removals of `gatekeeper:escalated`.
-
-    Only an owner removal strictly after the latest `escalate` verdict and
-    before the next gatekeeper marker (verdict or clean) counts, so the
-    gatekeeper's own label swap after posting a later verdict cannot grant
-    extra rounds. Removing any other label (such as `gatekeeper:needs-human`)
-    has no effect. Returns `(effective_max_rounds, resume_event_or_None)`.
+    Verdict markers are the only input. A PR that carries `gatekeeper:escalated` is
+    not reviewed, so the first verdict after an `escalate` marker can only be posted
+    after the owner removed the label: that verdict is round 1.
     """
-    verdicts = [m for m in markers if m.get("verdict") != "clean"]
-    latest_escalate = next(
-        (v for v in reversed(verdicts) if v.get("verdict") == "escalate"),
-        None,
-    )
-    if latest_escalate is None:
-        return base_max_rounds, None
-
-    escalate_at = latest_escalate.get("createdAt") or ""
-    next_marker_at = min(
-        (m["createdAt"] for m in markers if (m.get("createdAt") or "") > escalate_at),
-        default=None,
-    )
-    matching = []
-    for ev in timeline_events:
-        if ev.get("event") != "unlabeled":
-            continue
-        label_name = (ev.get("label") or {}).get("name")
-        if label_name != ESCALATED_LABEL:
-            continue
-        if not is_owner_timeline_actor(ev, owner_logins):
-            continue
-        created_at = ev.get("created_at") or ev.get("createdAt") or ""
-        if created_at > escalate_at and (next_marker_at is None or created_at < next_marker_at):
-            matching.append((created_at, ev))
-
-    if not matching:
-        return base_max_rounds, None
-
-    removal_at, newest = max(matching, key=lambda item: item[0])
-    verdicts_at_removal = sum(
-        1 for v in verdicts if (v.get("createdAt") or "") <= removal_at
-    )
-    effective = max(base_max_rounds, verdicts_at_removal + RESUME_EXTRA_ROUNDS)
-    actor = (newest.get("actor") or {}).get("login") or ""
-    return effective, {"actor": actor, "createdAt": removal_at, "label": ESCALATED_LABEL}
-
-
-def parse_pr_repo(pr_url: str) -> tuple[str, str] | None:
-    """Extract `(owner, repo)` from a GitHub PR URL."""
-    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/\d+", pr_url or "")
-    return (m.group(1), m.group(2)) if m else None
-
-
-def fetch_timeline_events(owner: str, repo: str, number: int) -> list[dict]:
-    """Fetch PR timeline events via `gh api --paginate --slurp`."""
-    raw = gh("api", "--paginate", "--slurp", f"repos/{owner}/{repo}/issues/{number}/timeline")
-    pages = json.loads(raw or "[]")
-    events: list[dict] = []
-    for page in pages:
-        if isinstance(page, list):
-            events.extend(page)
-        elif isinstance(page, dict):
-            events.append(page)
-    return events
-
-
-def save_state(path: Path, state: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    for index in range(len(verdicts) - 1, -1, -1):
+        if verdicts[index].get("verdict") == "escalate":
+            return len(verdicts) - index - 1
+    return len(verdicts)
 
 
 def is_rebased(reviewed_head: str | None, head: str, is_ancestor) -> bool:
@@ -234,7 +161,7 @@ def classify(
     base: str,
     last_verdict: dict | None,
     worker_response: dict | None,
-    total_verdicts: int,
+    rounds_used: int,
     state_reviewed_head: str | None,
     state_pending_ci: bool,
     has_open_findings: bool,
@@ -245,11 +172,12 @@ def classify(
     rebased: bool = False,
     owner_comment: bool = False,
     ci_ran: bool = True,
-    max_rounds: int = MAX_ROUNDS,
-    escalation_resumed: bool = False,
+    escalate_label_present: bool = True,
 ) -> tuple[str, str, int]:
     """Return (status, one-line reason, priority). Lower priority number is handled first.
 
+    `rounds_used` counts verdicts since the last restart (see `rounds_since_restart`), so
+    the limit of `MAX_ROUNDS` applies per owner-resumed run, never to the PR's lifetime.
     An approve needs green CI at the head. Stacked PRs (non-dev base) never run CI, so they
     stay at `clean` until they are retargeted and CI passes.
     """
@@ -260,6 +188,12 @@ def classify(
     if mergeable == "CONFLICTING":
         return "wait-worker", "merge conflict; worker must rebase", 9
 
+    # An escalated PR is not reviewed until the owner removes the label. This is
+    # checked before the owner-comment shortcut, so a comment cannot reopen it
+    # (#2996 G1.3).
+    if last_verdict and last_verdict.get("verdict") == "escalate" and escalate_label_present:
+        return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
+
     if owner_comment:
         return "review", "owner comment after last verdict; treat as required items", 0
 
@@ -268,8 +202,8 @@ def classify(
 
     # An approve given in the last allowed round settles the PR; it is not an escalation.
     approved_at_head = at_head and last_verdict.get("verdict") == "approve"
-    if total_verdicts >= max_rounds and not approved_at_head:
-        return "escalate", f"round limit ({max_rounds}) reached", 9
+    if rounds_used >= MAX_ROUNDS and not approved_at_head:
+        return "escalate", f"round limit ({MAX_ROUNDS}) reached", 9
 
     # A clean marker for this head on GitHub means the code review of this head is
     # done, even after changes were requested at it (the worker answered without a
@@ -278,12 +212,10 @@ def classify(
     clean_at_head = clean_head == head
 
     if last_verdict and last_verdict.get("verdict") == "escalate":
-        if not escalation_resumed:
-            return "escalate", "escalated; waiting for owner to remove gatekeeper:escalated", 9
         if not clean_at_head:
             return (
                 "review",
-                f"escalation resumed by owner removing {ESCALATED_LABEL}; limit now {max_rounds} rounds",
+                f"{ESCALATED_LABEL} removed by the owner; round count restarted at 0, next round is 1",
                 0,
             )
 
@@ -436,22 +368,8 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     last_gk_at = last_gatekeeper_marker_at(markers)
     owner = owner_comments_after(comments, me, last_gk_at)
 
-    repo_info = parse_pr_repo(pr.get("url") or "")
-    has_escalate_verdict = any(v.get("verdict") == "escalate" for v in verdicts)
-    timeline_events = (
-        fetch_timeline_events(repo_info[0], repo_info[1], number)
-        if has_escalate_verdict and repo_info
-        else []
-    )
-    owner_logins = {me} | ({repo_info[0]} if repo_info else set())
-    effective_max_rounds, resume_event = escalation_resume_info(
-        markers,
-        timeline_events,
-        owner_logins=owner_logins,
-        base_max_rounds=MAX_ROUNDS,
-    )
-
     labels = sorted(label["name"] for label in pr.get("labels") or [])
+    rounds_used = rounds_since_restart(verdicts)
     paths = [f["path"] for f in pr.get("files") or []]
     human_only = touches_human_only_paths(paths)
     sensitive_info = classify_sensitive_paths(paths)
@@ -462,7 +380,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         base=base,
         last_verdict=last,
         worker_response=response,
-        total_verdicts=len(verdicts),
+        rounds_used=rounds_used,
         state_reviewed_head=state_reviewed_head,
         state_pending_ci=state_pending_ci,
         has_open_findings=has_open_findings,
@@ -473,8 +391,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         rebased=rebased,
         owner_comment=bool(owner),
         ci_ran=bool(checks),
-        max_rounds=effective_max_rounds,
-        escalation_resumed=resume_event is not None,
+        escalate_label_present=ESCALATED_LABEL in labels,
     )
 
     if status != "review" or not reviewed_head or reviewed_head == head:
@@ -504,9 +421,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "reason": reason,
         "priority": priority,
         "reviewMode": review_mode,
-        "round": len(verdicts) + (1 if status in ("review", "await-ci") else 0),
-        "maxRounds": effective_max_rounds,
-        "escalationResumed": resume_event,
+        "round": rounds_used + (1 if status in ("review", "await-ci") else 0),
         "title": pr["title"],
         "head": pr["headRefName"],
         "headSha": head,
@@ -547,15 +462,6 @@ def main() -> None:
         numbers = [p["number"] for p in listed if not p["isDraft"]]
 
     summaries = [summarize(n, me, state) for n in numbers]
-    state_dirty = False
-    for entry in summaries:
-        if entry.get("escalationResumed"):
-            pr_entry = state.setdefault("prs", {}).setdefault(str(entry["number"]), {})
-            if pr_entry.get("maxRounds") != entry["maxRounds"]:
-                pr_entry["maxRounds"] = entry["maxRounds"]
-                state_dirty = True
-    if state_dirty:
-        save_state(args.state_file or get_default_state_file(), state)
     summaries.sort(key=lambda x: (x["priority"], x["createdAt"]))
     print(json.dumps(summaries, ensure_ascii=False, indent=2))
 

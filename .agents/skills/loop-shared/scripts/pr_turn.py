@@ -95,14 +95,28 @@ def decide_pr_turn(
     mismatches = label_mismatches(labels, verdict=verdict, at_verdict_head=at_head)
 
     if verdict == "escalate" and at_head:
+        # The label is added before the `escalate` marker is posted, so a marker
+        # with no label on GitHub means the owner removed it and resumed the PR
+        # (#2996): the gatekeeper reviews again, from round 1, and must not
+        # re-add the label. Unknown labels stay conservative: hand to the human.
+        if labels is None or "gatekeeper:escalated" in labels:
+            return PrTurn(
+                turn="human",
+                currentVerdict=verdict,
+                verdictHead=verdict_head,
+                currentHead=head_sha,
+                atVerdictHead=True,
+                labelMismatch=mismatches,
+                reason="escalated; maintainer decision",
+            )
         return PrTurn(
-            turn="human",
+            turn="gatekeeper",
             currentVerdict=verdict,
             verdictHead=verdict_head,
             currentHead=head_sha,
             atVerdictHead=True,
-            labelMismatch=mismatches,
-            reason="escalated; maintainer decision",
+            labelMismatch=[m for m in mismatches if not m.startswith("add label")],
+            reason="owner resumed after gatekeeper:escalated; next round is 1",
         )
 
     if verdict == "approve" and at_head:
