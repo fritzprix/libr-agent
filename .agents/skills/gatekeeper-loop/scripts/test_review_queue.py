@@ -615,6 +615,14 @@ class EscalationAndOwnerVisibilityTests(unittest.TestCase):
         self.assertEqual(status, "escalate")
         self.assertIn("waiting for owner to remove", reason)
 
+    def test_an_owner_comment_does_not_reopen_an_escalated_pr(self) -> None:
+        """The label still waits on the owner, so a comment cannot restart it."""
+        verdicts = self._round5_verdicts()
+        status, reason, _ = classify(**base_args(
+            head="h5", last_verdict=verdicts[-1], rounds_used=0, owner_comment=True))
+        self.assertEqual(status, "escalate")
+        self.assertIn("waiting for owner to remove", reason)
+
     def test_owner_removal_restarts_the_round_count(self) -> None:
         """The first verdict after an `escalate` marker is round 1, not round 6."""
         verdicts = self._round5_verdicts()
@@ -755,13 +763,13 @@ class EscalationAndOwnerVisibilityTests(unittest.TestCase):
             })
 
         with patch.object(review_queue, "gh", fake_gh):
-            entry = summarize(2906, "fritzprix", state={"prs": {"2906": {"maxRounds": 99}}})
+            entry = summarize(2906, "fritzprix")
 
-        # The label is gone, so the owner removed it: the next round is 1, not 6 or 7.
+        # The label is gone, so the owner removed it: the next round is 1, not 6.
         self.assertEqual(entry["status"], "review")
         self.assertEqual(entry["round"], 1)
-        self.assertNotIn("maxRounds", entry)
-        self.assertNotIn("escalationResumed", entry)
+        self.assertEqual(entry["whoseTurn"], "gatekeeper")
+        self.assertEqual(entry["labelMismatch"], [], "the resume must not re-add the label")
 
 
 if __name__ == "__main__":

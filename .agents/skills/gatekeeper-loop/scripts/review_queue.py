@@ -188,6 +188,12 @@ def classify(
     if mergeable == "CONFLICTING":
         return "wait-worker", "merge conflict; worker must rebase", 9
 
+    # An escalated PR is not reviewed until the owner removes the label. This is
+    # checked before the owner-comment shortcut, so a comment cannot reopen it
+    # (#2996 G1.3).
+    if last_verdict and last_verdict.get("verdict") == "escalate" and escalate_label_present:
+        return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
+
     if owner_comment:
         return "review", "owner comment after last verdict; treat as required items", 0
 
@@ -206,8 +212,6 @@ def classify(
     clean_at_head = clean_head == head
 
     if last_verdict and last_verdict.get("verdict") == "escalate":
-        if escalate_label_present:
-            return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
         if not clean_at_head:
             return (
                 "review",

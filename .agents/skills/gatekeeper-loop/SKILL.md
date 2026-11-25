@@ -63,7 +63,7 @@ Other statuses:
 - `await-ci` — a `verdict=clean` marker exists for this head; CI is pending, has not run, or cannot run (stacked PR). Remove any stale `gatekeeper:changes-requested` label (`gh pr edit N --remove-label gatekeeper:changes-requested`). If CI turned green, post `approve` (`gatekeeper:approved`), adding `gatekeeper:needs-human` when `humanOnly` or security-sensitive; if failed, diagnose failure and post `changes-requested`.
 - `wait-worker` — worker's turn (changes requested at current head without response, or merge conflicts).
 - `approved` — nothing to do; make sure the label is `gatekeeper:approved`. For any PR with `staleApprovedLabel: true` (status no longer `approved`), swap the label right away (`gatekeeper:changes-requested` if CI is failing, otherwise remove `gatekeeper:approved`) before reviewing, so a stale approve is never visible. The script already turns an approve back into `review` when the head changed (a push after an approve **always requires re-review**), CI fails or is not green at the head, the base changed (e.g. stacked PR retargeted), or the owner commented. For "approve without green CI at this head", post a `verdict=clean` marker for the head and remove `gatekeeper:approved`; do not re-review the diff.
-- `escalate` — post an `escalate` verdict if none exists yet and swap the label to `gatekeeper:escalated`; use it only for the two cases listed under § Verdict `escalate`. While the label is on the PR it is not reviewed, so the queue keeps reporting `escalate`. When the repository owner removes the label on GitHub, the round count restarts at zero and the next verdict is round 1 (the queue reads that from the label and the verdict markers; no other input changes the count). Removing `gatekeeper:needs-human` never resumes anything. On `escalate` and on resume, read the full PR conversation (`gh pr view N --comments`) and treat owner comments as required items.
+- `escalate` — use it only for the two cases listed under § Verdict `escalate`. **Order matters: add the `gatekeeper:escalated` label first, and post the `escalate` marker only after that label write succeeded.** `review_queue.py` reads a marker without the label as "the owner removed the label and resumed", so the reverse order would let the next tick review a PR that is still waiting on the owner. Post the marker only if none exists yet. While the label is on the PR it is not reviewed, so the queue keeps reporting `escalate`. When the repository owner removes the label on GitHub, the round count restarts at zero and the next verdict is round 1 (the queue reads that from the label and the verdict markers; no other input changes the count). Removing `gatekeeper:needs-human` never resumes anything. On `escalate` and on resume, read the full PR conversation (`gh pr view N --comments`) and treat owner comments as required items.
 
 ### 2. Review (read-only)
 
@@ -97,7 +97,7 @@ Keep it between ticks so build caches stay warm; run `pnpm install --frozen-lock
 
 Queue output includes `securitySensitivePolicyPaths` (shell policy, tool approval, permissions, secrets, sandbox paths), `securitySensitiveBehaviorHints` (broader path hints such as API routes, executors, API-key modules), and the combined `securitySensitive` list. **Path hits are only a first pass.** Also read the diff for security-sensitive **behavior**: sending API keys or bearer tokens over HTTP, new auth or secret-prompt surfaces, credential storage, sandbox/approval policy changes — even when no path matched. For any policy hit, behavior hint, or behavior you classify as security-sensitive, add `gatekeeper:needs-human`, and an `approve` is only valid if `### Checked` lists the concrete bypass scenarios you tried (e.g. quoting, env, symlink, path traversal) and why each is blocked. Never auto-approve them silently.
 
-On round ≥ 2, read the worker response first and settle every previous `G` item: fixed (verify in the diff), decline accepted, or disputed. A dispute is yours to decide, not a reason to escalate: you may state your position once, but the second rebuttal of the same finding must end with a decision in the verdict — the finding is either upheld as required (with the fix still outstanding) or withdrawn — and that decision cites the `file:line` evidence it rests on. The decision closes the finding.
+On round ≥ 2, read the worker response first and settle every previous `G` item: fixed (verify in the diff), decline accepted, or disputed. A dispute is yours to decide, not a reason to escalate: you may state your position once, but the second rebuttal of the same finding must end with a decision in the verdict, citing the `file:line` evidence it rests on. The decision closes the **dispute**, not the finding: an upheld finding stays `open` as a required `G` item until the fix lands, and it cannot be disputed again; a withdrawn finding is closed as `declined-accepted`.
 
 ### 3. Verdict
 
@@ -142,9 +142,14 @@ Include the mandatory 100-point code-quality breakdown in every verdict comment 
 
 **Before posting**, complete [references/pre-post-checklist.md](references/pre-post-checklist.md): re-fetch `headRefOid` (abort if it moved), refuse duplicate `head`+`verdict` markers, run the severity table (major vs minor), file any §8 follow-up issues yourself and link them in the comment, and when upgrading `clean` → `approve` at the same head, align the approve body with the latest `clean` marker (especially `### Checked` and suggestions).
 
-Post the verdict with `gh pr comment N --body-file <tmp>` using the exact marker format (`head=` is the full `headSha` you reviewed, `base=` the PR's current base branch), then swap labels:
+Post the verdict with `gh pr comment N --body-file <tmp>` using the exact marker format (`head=` is the full `headSha` you reviewed, `base=` the PR's current base branch), then swap labels.
+
+**Exception — `escalate` swaps the label first.** For an `escalate` verdict, run `gh pr edit N --add-label gatekeeper:escalated` **before** posting the marker, and post the marker only if that succeeds. A marker whose label add failed would read as an owner resume on the next tick.
 
 ```bash
+# escalate (label first, then post the marker):
+gh pr edit N --add-label gatekeeper:escalated --remove-label gatekeeper:changes-requested,gatekeeper:approved
+
 # changes-requested:
 gh pr edit N --add-label gatekeeper:changes-requested --remove-label gatekeeper:approved,gatekeeper:escalated
 
