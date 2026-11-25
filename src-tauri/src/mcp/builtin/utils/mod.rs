@@ -17,6 +17,8 @@ pub use paths::{
     strip_windows_verbatim_prefix, workspace_paths_equivalent,
 };
 pub use resource_response::create_resource_response;
-pub use security::{SecurityError, SecurityValidator, OUTSIDE_WORKSPACE_ROOT_MARKER};
+pub use security::{
+    has_parent_traversal, SecurityError, SecurityValidator, OUTSIDE_WORKSPACE_ROOT_MARKER,
+};
 pub use sensitive_path_policy::{matches_app_database_path, matches_sensitive_path_policy};
 pub use session_access::{load_session_tool_access, SessionToolAccess};

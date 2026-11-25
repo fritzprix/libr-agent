@@ -32,7 +32,7 @@ LibrAgent löst diese Herausforderungen als **vollwertige, gebrauchsfertige Desk
 | Herkömmlicher Ansatz                               | Mit LibrAgent                                                                                                                                      |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Manuelle Pflege komplexer MCP-JSON-Konfigurationen | **Ein-Klick-Erweiterungen** — Vorgefertigte Presets (GitHub, Brave Search, Dateisystem) und nahtloser Import aus Cursor, VS Code und Claude Code   |
-| Aufwendiges Selbstprogrammieren von Multi-Agenten  | **Integrierte Koordinationsmuster** — Erprobte Standard-Skills wie `pipeline`, `hub-spoke`, `divide-conquer` und `consensus-delegation`            |
+| Aufwendiges Selbstprogrammieren von Multi-Agenten  | **Integrierte Koordinationsmuster** — Erprobte Standard-Skills wie `teamwork` (pipeline, hub-and-spoke), `divide-conquer` und `consensus-delegation`            |
 | Feste Bindung an proprietäre Modelle und Tools     | **Volle Technologiefreiheit** — Beliebige Cloud-APIs oder lokale Modelle ([Ollama](https://ollama.com)) unter einer quelloffenen MIT-Lizenz nutzen |
 
 [Neueste Version herunterladen](https://github.com/fritzprix/libr-agent/releases/latest) · [5-Minuten-Schnellstart](#5-minuten-schnellstart)
@@ -56,7 +56,7 @@ LibrAgent löst diese Herausforderungen als **vollwertige, gebrauchsfertige Desk
 ### 3. Koordinationsmuster ohne Programmierung auswählen
 
 - Definieren Sie das gewünschte Arbeitsmuster direkt im Prompt:
-  - _"@skill:pipeline — Recherche, Entwurf und Prüfung nacheinander ausführen; erstelle einen konsolidierten Abschlussbericht"_
+  - _"@skill:teamwork pipeline — Recherche, Entwurf und Prüfung nacheinander ausführen; erstelle einen konsolidierten Abschlussbericht"_
   - _"@skill:divide-conquer — Teile diese Aufgabe in unabhängige Teilaufgaben auf, führe sie parallel aus und führe die Ergebnisse zusammen"_
 - Bewährte Koordinationsmuster stehen direkt als fertige Skills bereit. Weitere Informationen finden Sie unter [Sub-Agenten und Orchestrierung](docs/user/guides/sub-agents.md).
 
@@ -73,11 +73,11 @@ Wählen Sie das passende Muster basierend auf Ihrer Aufgabenstellung direkt im C
 
 | Skill-Name                           | Koordinationsmuster       | Empfohlener Einsatzbereich                                                              |
 | ------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------- |
-| `pipeline`                           | Sequentielle Phasen       | Die Ausgabe einer Phase dient als Eingabe der nächsten (Recherche → Entwurf → Prüfung)  |
-| `hub-spoke`                          | Hub-and-Spoke             | Ein zentraler Koordinator steuert und integriert mehrere spezialisierte Agenten         |
+| `teamwork` (pipeline)                           | Sequentielle Phasen       | Die Ausgabe einer Phase dient als Eingabe der nächsten (Recherche → Entwurf → Prüfung)  |
+| `teamwork` (hub-and-spoke)                          | Hub-and-Spoke             | Ein zentraler Koordinator steuert und integriert mehrere spezialisierte Agenten         |
 | `divide-conquer`                     | Parallele Teilung         | Unabhängige Teilaufgaben parallel bearbeiten und anschließend zusammenführen            |
 | `consensus-delegation`               | Multiperspektivisch       | Dieselbe Fragestellung an mehrere Expertenagenten richten und abgleichen                |
-| `gatekeeper` / `pair-programming`    | Prüfschleifen             | Strikte Code-Reviews oder kollaboratives Programmieren zweier Agenten                   |
+| `delegation-eval-loop` (gatekeeper) / `teamwork` (pair programming)    | Prüfschleifen             | Strikte Code-Reviews oder kollaboratives Programmieren zweier Agenten                   |
 | `delegate`                           | Gezielte Delegation       | Aufgaben an eine dedizierte Untersitzung mit lückenloser Verlaufskontrolle delegieren   |
 | `teamwork` → `org`                   | Dauerhafte Teams          | Feste Multi-Agenten-Teams mit gemeinsamen Arbeitsrichtlinien und Organisationsübersicht |
 | `schedule` / `loop` / `call-me-back` | Zeit- & Ereignissteuerung | Cron-Zeitpläne, Verzögerungen in Sitzungen oder Wiederaufnahme bei Prozessereignissen   |
@@ -125,7 +125,7 @@ Automatische Kontextkomprimierung, Schleifenerkennung, Schutzschalter und Antwor
 
 ### Power-User — Aufgaben delegieren mit Standardvorlagen
 
-1. Geben Sie `@skill:pipeline` (oder `hub-spoke`, `divide-conquer`) im Chat ein.
+1. Geben Sie `@skill:teamwork pipeline` (oder `teamwork` (hub-and-spoke), `divide-conquer`) im Chat ein.
 2. Die Agenten koordinieren sich nach dem festgelegten Muster.
 3. Erhalten Sie ein konsolidiertes Gesamtergebnis im Workspace ohne Pflege externer Bibliotheken.
 
@@ -152,10 +152,10 @@ Laden Sie das neueste Installationsprogramm von der **[Releases-Seite](https://g
 
 <!-- RELEASE_DOWNLOADS_START -->
 
-- **Windows:** [`LibrAgent_0.9.31_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64-setup.exe) · [`LibrAgent_0.9.31_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.31_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.31_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.AppImage) · [`LibrAgent_0.9.31_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.deb) · [`LibrAgent-0.9.31-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent-0.9.31-1.x86_64.rpm)
-- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.31)
+- **Windows:** [`LibrAgent_0.9.32_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64-setup.exe) · [`LibrAgent_0.9.32_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.32_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.32_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.AppImage) · [`LibrAgent_0.9.32_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.deb) · [`LibrAgent-0.9.32-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent-0.9.32-1.x86_64.rpm)
+- **Alle Release-Artefakte:** [Releases-Seite](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.32)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5-Minuten-Schnellstart
@@ -177,7 +177,7 @@ Laden Sie das neueste Installationsprogramm von der **[Releases-Seite](https://g
 
 **Nächste Schritte — Erweiterte Koordination und Automatisierung**
 
-- _"@skill:pipeline — Recherchiere dieses Thema, erstelle einen Entwurf, prüfe ihn und speichere den finalen Bericht"_
+- _"@skill:teamwork pipeline — Recherchiere dieses Thema, erstelle einen Entwurf, prüfe ihn und speichere den finalen Bericht"_
 - _"Richte einen Teamwork-Arbeitsbereich für dieses Repository ein"_
 - _"Erstelle einen täglichen Zeitplan für einen Marktbericht um 07:00 Uhr"_ (oder nutzen Sie das Morning-Briefing-Rezept)
 
@@ -186,7 +186,7 @@ Laden Sie das neueste Installationsprogramm von der **[Releases-Seite](https://g
 - _"Importiere meine MCP-Server-Konfiguration aus Cursor und zeige mir, welche Tools hinzugefügt wurden."_
 - _"Installiere das GitHub-MCP-Preset und verknüpfe es mit dem Coding-Agenten."_
 - _"Prüfe diesen Workspace und schreibe konkrete Verbesserungsvorschläge in `DELIVERABLE.md`."_
-- _"@skill:pipeline — Analysiere dieses Fachthema vertieft, erstelle eine strukturierte Zusammenfassung und speichere den Abschlussbericht."_
+- _"@skill:teamwork pipeline — Analysiere dieses Fachthema vertieft, erstelle eine strukturierte Zusammenfassung und speichere den Abschlussbericht."_
 - _"Richte einen täglichen Zeitplan ein, der jeden Morgen um 07:00 Uhr eine Marktübersicht generiert."_
 
 ### Entwickler-Setup

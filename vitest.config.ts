@@ -20,6 +20,7 @@ export default mergeConfig(
         '.worktrees/**',
         'jobs/**',
         '.libragent/**',
+        '.agents/**',
       ],
       fileParallelism: !lowMemoryValidate,
       maxWorkers: lowMemoryValidate ? 1 : undefined,

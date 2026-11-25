@@ -17,6 +17,7 @@ import type {
   SessionGoneReason,
 } from './types';
 import { buildMessageError, syncSessionMetadataFromBackend } from './utils';
+import { buildFallbackNoticeMessage } from './fallback-notice';
 import type { useAgentSessionState } from './useAgentSessionState';
 import type {
   AgentOpenSessionResponse,
@@ -373,6 +374,19 @@ export function useAgentSessionEvents(
                   toolName: payload.toolName,
                   count: payload.count,
                   action: payload.action,
+                });
+                break;
+              }
+
+              case 'llmFallbackNotice': {
+                // The primary model failed; show why and which model answers now (#2961).
+                liveMutationEpoch += 1;
+                const notice = buildFallbackNoticeMessage(payload);
+                setters.setMessages((prev) => [...prev, notice]);
+                logger.warn('Completion fell back to the fallback model', {
+                  statusCode: payload.statusCode,
+                  fallbackProvider: payload.fallbackProvider,
+                  fallbackModel: payload.fallbackModel,
                 });
                 break;
               }

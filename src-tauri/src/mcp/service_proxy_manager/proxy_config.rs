@@ -3,10 +3,13 @@ use crate::agent::runtime_state::{
     SessionRuntimeServerState, SessionRuntimeServerStatus, SessionRuntimeTransport,
 };
 use crate::mcp::secret_templates::{fill_secrets, mask_values, secret_store, FilledConfig};
+use crate::mcp::types::{plugin_source_of, PLUGIN_SOURCE_PREFIX};
 use crate::mcp::utils::unique_session_server_name;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::services::skill_service::SessionPluginServerConfig;
 use crate::state::get_mcp_server_repository;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExistingProxyDisposition {
@@ -69,10 +72,63 @@ impl LoadedServerConfigs {
     }
 }
 
+/// Source ids present in one session plugin store (dir discovery). A
+/// session install with the same source id shadows the global plugin's
+/// MCP servers for that session (#2924). A missing/unreadable store simply
+/// shadows nothing.
+pub(super) fn session_store_source_ids(session_store: &Path) -> HashSet<String> {
+    crate::services::hooks::registry::list_sources_in(session_store)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|record| record.manifest.source_id)
+        .collect()
+}
+
+/// Whether a plugin-owned global MCP server must be skipped for this
+/// session (#2924): a session-scoped install of the same plugin source
+/// shadows it, so the plugin's servers load once — from the session store.
+pub(super) fn skip_shadowed_plugin_server(
+    owner_source: &str,
+    shadowed_source_ids: &HashSet<String>,
+) -> bool {
+    shadowed_source_ids.contains(owner_source)
+}
+
+/// Whether a global plugin's MCP servers must not load for this session
+/// (#2927): the plugin is installed but disabled, so its servers stay out of
+/// every session until it is enabled again.
+pub(super) fn skip_disabled_plugin_server(
+    owner_source: &str,
+    disabled_source_ids: &HashSet<String>,
+) -> bool {
+    disabled_source_ids.contains(owner_source)
+}
+
 pub(super) async fn load_requested_server_configs(
     mcp_server_ids: &[String],
     tool_ids: &[String],
     session_id: &str,
+) -> LoadedServerConfigs {
+    // #2927: global plugins the user disabled contribute no MCP servers.
+    let disabled_source_ids = crate::services::skill_service::disabled_global_plugin_source_ids();
+    load_requested_server_configs_excluding_disabled(
+        mcp_server_ids,
+        tool_ids,
+        session_id,
+        &disabled_source_ids,
+    )
+    .await
+}
+
+/// [`load_requested_server_configs`] with the disabled-plugin set supplied by
+/// the caller: the whole loader runs, only this one input is injected, so a
+/// test can drive it against a temporary plugin store instead of the real app
+/// data directory (gatekeeper G1.2).
+pub(super) async fn load_requested_server_configs_excluding_disabled(
+    mcp_server_ids: &[String],
+    tool_ids: &[String],
+    session_id: &str,
+    disabled_source_ids: &HashSet<String>,
 ) -> LoadedServerConfigs {
     let mut stdio_configs = HashMap::new();
     let mut http_configs = HashMap::new();
@@ -97,10 +153,45 @@ pub(super) async fn load_requested_server_configs(
                     "Session {} has no external MCP servers configured (mcp_server_ids is empty)",
                     session_id
                 );
-            } else {
-                let mut taken_session_names = HashSet::new();
-                for model in models {
-                    if !mcp_server_ids.contains(&model.id) {
+            }
+
+            // #2924: session-scoped plugin servers shadow global sources of
+            // the same source_id, so a session never runs a global plugin's
+            // servers twice.
+            let session_store =
+                crate::services::hooks::registry::get_session_plugins_directory(session_id).ok();
+            // #2942 S3.2: the store lives in the agent-writable workspace,
+            // so MCP-server approval is read only from the out-of-workspace
+            // trust records below.
+            let session_trust =
+                crate::services::hooks::registry::get_session_plugin_trust_dir(session_id).ok();
+            let shadowed_source_ids: HashSet<String> = session_store
+                .as_ref()
+                .map(|dir| session_store_source_ids(dir.as_path()))
+                .unwrap_or_default();
+
+            let mut taken_session_names = HashSet::new();
+            for model in models {
+                // Assistant-bound servers load by ID (SSOT). Plugin-owned
+                // servers (#2924) are active for every session that has not
+                // shadowed their plugin, regardless of assistant binding.
+                let owner = plugin_source_of(&model.config);
+                let plugin_owned = owner.is_some();
+                let owner_source = owner
+                    .as_deref()
+                    .and_then(|o| o.strip_prefix(PLUGIN_SOURCE_PREFIX))
+                    .unwrap_or_default();
+                if plugin_owned && skip_disabled_plugin_server(owner_source, disabled_source_ids) {
+                    log::debug!(
+                        "Skipping plugin MCP server '{}' (ID: {}) - plugin {} is disabled",
+                        model.name,
+                        model.id,
+                        owner_source
+                    );
+                    continue;
+                }
+                if !mcp_server_ids.contains(&model.id) {
+                    if !plugin_owned {
                         log::debug!(
                             "Skipping MCP server '{}' (ID: {}) - not in session assistant mcp_server_ids (SSOT)",
                             model.name,
@@ -108,64 +199,104 @@ pub(super) async fn load_requested_server_configs(
                         );
                         continue;
                     }
+                    if skip_shadowed_plugin_server(owner_source, &shadowed_source_ids) {
+                        log::debug!(
+                            "Skipping plugin MCP server '{}' (ID: {}) - session installs plugin {}",
+                            model.name,
+                            model.id,
+                            owner_source
+                        );
+                        continue;
+                    }
+                }
 
-                    let parsed = match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(
-                        &model.config,
-                    ) {
+                let parsed =
+                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
+                    {
                         Ok(config) => fill_secrets(secret_store(), &model.id, &config)
                             .await
                             .map(FilledConfig::into_parts),
                         Err(error) => Err(error.to_string()),
                     };
-                    match parsed {
-                        Ok((mut config, values)) => {
-                            let raw_name = config.name.unwrap_or_else(|| model.name.clone());
-                            let server_name = unique_session_server_name(
-                                &raw_name,
-                                &model.id,
-                                &mut taken_session_names,
-                            );
-                            if server_name != raw_name {
-                                log::info!(
-                                    "Sanitized MCP server name '{}' → '{}' for session {} (ID: {})",
-                                    raw_name,
-                                    server_name,
-                                    session_id,
-                                    model.id
-                                );
-                            }
-                            // Session runtime / tool prefix key only — DB row name is left unchanged
-                            // so legacy display names with spaces remain intact.
-                            config.name = Some(server_name.clone());
-                            server_name_to_id.insert(server_name.clone(), model.id.clone());
-                            if !values.is_empty() {
-                                secret_values.insert(server_name.clone(), values);
-                            }
-
-                            log::debug!(
-                                "Loading MCP server '{}' (raw: '{}', ID: {}) into session {}",
-                                server_name,
+                match parsed {
+                    Ok((mut config, values)) => {
+                        let raw_name = config.name.unwrap_or_else(|| model.name.clone());
+                        let server_name = unique_session_server_name(
+                            &raw_name,
+                            &model.id,
+                            &mut taken_session_names,
+                        );
+                        if server_name != raw_name {
+                            log::info!(
+                                "Sanitized MCP server name '{}' → '{}' for session {} (ID: {})",
                                 raw_name,
-                                model.id,
-                                session_id
+                                server_name,
+                                session_id,
+                                model.id
                             );
+                        }
+                        // Session runtime / tool prefix key only — DB row name is left unchanged
+                        // so legacy display names with spaces remain intact.
+                        config.name = Some(server_name.clone());
+                        server_name_to_id.insert(server_name.clone(), model.id.clone());
+                        if !values.is_empty() {
+                            secret_values.insert(server_name.clone(), values);
+                        }
 
-                            match config.transport {
-                                crate::mcp::types::TransportConfig::Stdio { .. } => {
-                                    stdio_configs.insert(server_name, config);
-                                }
-                                crate::mcp::types::TransportConfig::Http { .. } => {
-                                    http_configs.insert(server_name, config);
-                                }
+                        log::debug!(
+                            "Loading MCP server '{}' (raw: '{}', ID: {}) into session {}",
+                            server_name,
+                            raw_name,
+                            model.id,
+                            session_id
+                        );
+
+                        match config.transport {
+                            crate::mcp::types::TransportConfig::Stdio { .. } => {
+                                stdio_configs.insert(server_name, config);
+                            }
+                            crate::mcp::types::TransportConfig::Http { .. } => {
+                                http_configs.insert(server_name, config);
                             }
                         }
-                        Err(error) => {
-                            log::warn!(
-                                "Failed to load config for MCP server '{}' (ID: {}): {}",
-                                model.name,
-                                model.id,
-                                error
-                            );
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Failed to load config for MCP server '{}' (ID: {}): {}",
+                            model.name,
+                            model.id,
+                            error
+                        );
+                    }
+                }
+            }
+
+            // #2924 (D1): session-scoped plugin servers never enter the global
+            // store; load them straight from this session's plugin store with
+            // `${CLAUDE_PLUGIN_ROOT}` resolved against each installed root.
+            if let Some(store) = session_store.as_ref() {
+                for server in crate::services::skill_service::build_session_plugin_server_configs(
+                    store,
+                    session_id,
+                    session_trust.as_deref(),
+                    &mut taken_session_names,
+                )
+                .await
+                {
+                    let SessionPluginServerConfig {
+                        server_name,
+                        pseudo_id,
+                        config,
+                    } = server;
+                    // Session plugin entries declare plain env values, not
+                    // `{{secret:NAME}}` templates, so no secret fill applies.
+                    server_name_to_id.insert(server_name.clone(), pseudo_id);
+                    match config.transport {
+                        crate::mcp::types::TransportConfig::Stdio { .. } => {
+                            stdio_configs.insert(server_name, config);
+                        }
+                        crate::mcp::types::TransportConfig::Http { .. } => {
+                            http_configs.insert(server_name, config);
                         }
                     }
                 }
@@ -221,6 +352,11 @@ pub(super) async fn load_requested_server_configs(
             }),
     );
 
+    // #2969: the rmcp transport worker logs the full URL of a failed HTTP
+    // connection, which carries the filled secret values. Put them in the
+    // global log mask until this session's proxy is destroyed.
+    register_session_mcp_log_masks(session_id, &secret_values);
+
     LoadedServerConfigs {
         stdio_configs,
         http_configs,
@@ -244,6 +380,27 @@ pub(super) fn mask_server_secrets(
         Some(values) => mask_values(text, values.iter().map(String::as_str)),
         None => text.to_string(),
     }
+}
+
+/// #2969: Registers every filled secret value of the session's MCP servers with the
+/// logger's global mask, so lines written by code outside LibrAgent (the rmcp
+/// transport worker logs the full URL of a failed HTTP connection) cannot leak them.
+/// The values hold every form they can take in a URL (raw and percent-encoded), as
+/// returned by [`FilledConfig::into_parts`]. Forgotten when the session's proxy is
+/// destroyed, and kept apart from the session's shell secrets by the source key.
+/// This replaces the session's whole `{session}#mcp` entry, which is correct only
+/// because the caller passes the complete set of the session's servers every time:
+/// a future partial load must recompute the full set instead of registering a subset.
+pub(crate) fn register_session_mcp_log_masks(
+    session_id: &str,
+    secret_values: &HashMap<String, Vec<String>>,
+) {
+    let values: Vec<String> = secret_values.values().flatten().cloned().collect();
+    crate::mcp::builtin::workspace::persistent_shell::secrets::register_log_secret_values(
+        session_id,
+        crate::mcp::builtin::workspace::persistent_shell::secrets::MCP_SECRET_MASK_SOURCE,
+        &values,
+    );
 }
 
 pub(super) async fn apply_startup_timeout_settings(
@@ -281,5 +438,183 @@ mod tests {
             mask_server_secrets(&secret_values, "other", failure),
             failure
         );
+    }
+
+    // #2969: a secret filled into a server URL must never reach the app log.
+    // The rmcp transport worker logs the full URL of a failed HTTP connection,
+    // so the filled values (raw and percent-encoded) go into the global log
+    // mask when the session's server configs are loaded.
+    #[tokio::test]
+    async fn session_mcp_log_masks_register_both_url_forms_of_a_filled_secret() {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            forget_log_secret_values, mask_log_line, MCP_SECRET_MASK_SOURCE,
+        };
+        use crate::mcp::secret_templates::{fill_secrets, secret_store};
+        use crate::mcp::types::{MCPServerConfig, TransportConfig};
+
+        let server_id = "log-mask-2969-server";
+        secret_store()
+            .set(server_id, "DEMO_TOKEN", "p@ss word&42")
+            .await
+            .expect("store secret");
+        let config = MCPServerConfig {
+            name: Some("demo".to_string()),
+            transport: TransportConfig::Http {
+                url: "https://api.example.test/mcp?key={{secret:DEMO_TOKEN}}".to_string(),
+                protocol_version: "2025-06-18".to_string(),
+                session_id: None,
+                headers: None,
+                enable_sse: None,
+                security: None,
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        };
+        let (filled, values) = fill_secrets(secret_store(), server_id, &config)
+            .await
+            .expect("fill secret")
+            .into_parts();
+        let TransportConfig::Http { url, .. } = &filled.transport else {
+            panic!("http transport expected");
+        };
+        assert!(url.contains("p%40ss%20word%2642"), "{url}");
+
+        let session_id = "log-mask-2969-session";
+        register_session_mcp_log_masks(session_id, &HashMap::from([("demo".to_string(), values)]));
+        let worker_line = format!(
+            "Transport channel failed: HTTP request failed with status 404 Not Found for url {url}"
+        );
+        let masked = mask_log_line(&worker_line);
+        assert!(!masked.contains("p@ss"), "{masked}");
+        assert!(!masked.contains("p%40ss"), "{masked}");
+        assert!(
+            masked.contains("404 Not Found"),
+            "the failure itself must stay visible: {masked}"
+        );
+
+        forget_log_secret_values(session_id, MCP_SECRET_MASK_SOURCE);
+        assert_eq!(mask_log_line(&worker_line), worker_line);
+    }
+
+    // #2924 (gatekeeper G1.4): a session-scoped install of the same plugin
+    // source shadows the global plugin's MCP servers for that session only.
+    #[test]
+    fn session_store_source_ids_and_shadow_gate() {
+        let store = tempfile::tempdir().unwrap();
+        let source_id = "plugin-dd00000000000001";
+        let root = store.path().join(source_id);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("manifest.json"),
+            format!(
+                r#"{{"source_url":"u","source_id":"{source_id}","skill_names":[],
+                    "hooks":null,"hooks_approved":false,"approval_hashes":{{}},
+                    "created_at":0,"mcp_servers":[],"mcp_approved":false}}"#
+            ),
+        )
+        .unwrap();
+
+        let ids = session_store_source_ids(store.path());
+        assert_eq!(ids.len(), 1);
+        assert!(ids.contains(source_id));
+
+        assert!(skip_shadowed_plugin_server(source_id, &ids));
+        assert!(!skip_shadowed_plugin_server("plugin-other", &ids));
+
+        // A missing store shadows nothing.
+        let empty = session_store_source_ids(&store.path().join("nope"));
+        assert!(empty.is_empty());
+        assert!(!skip_shadowed_plugin_server(source_id, &empty));
+    }
+
+    // #2927 gatekeeper G1.2: drive the real loader — DB rows, the plugin
+    // store scan and the skip decision — and prove a disabled global
+    // plugin's MCP server is not loaded while an enabled neighbour still is.
+    #[tokio::test]
+    async fn disabled_global_plugin_servers_are_not_loaded() {
+        use crate::services::hooks::registry::{save_source_in, PluginSourceManifest};
+        use sea_orm_migration::MigratorTrait;
+
+        let _guard = crate::state::lock_test_global_state().await;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_mcp_server_repository(
+            crate::repositories::mcp_server_repository::SqliteMCPServerRepository::new(db.clone()),
+        );
+
+        let store = tempfile::tempdir().unwrap();
+        let kept_id = "plugin-aa00000000000001";
+        let dropped_id = "plugin-bb00000000000002";
+        for (source_id, enabled) in [(kept_id, true), (dropped_id, false)] {
+            save_source_in(
+                store.path(),
+                PluginSourceManifest {
+                    source_url: format!("https://example.com/{source_id}"),
+                    source_id: source_id.to_string(),
+                    skill_names: vec![],
+                    hooks: None,
+                    hooks_approved: false,
+                    approval_hashes: Default::default(),
+                    created_at: 0,
+                    hook_files: vec![],
+                    plugin: None,
+                    mcp_servers: vec![],
+                    mcp_approved: true,
+                    enabled,
+                    installed_commit: None,
+                },
+            )
+            .unwrap();
+        }
+
+        let repo = crate::state::get_mcp_server_repository();
+        for (source_id, name) in [(kept_id, "kept"), (dropped_id, "dropped")] {
+            let config = crate::services::skill_service::entry_to_mcp_config_json(
+                name,
+                &serde_json::json!({ "command": "true" }),
+                source_id,
+            )
+            .unwrap();
+            repo.create(name, config).await.unwrap();
+        }
+
+        let disabled = crate::services::skill_service::disabled_source_ids_in(store.path());
+        assert_eq!(disabled.len(), 1);
+        assert!(disabled.contains(dropped_id));
+
+        let loaded = load_requested_server_configs_excluding_disabled(
+            &[],
+            &[],
+            "sess-proxy-test",
+            &disabled,
+        )
+        .await;
+        assert!(
+            loaded.stdio_configs.contains_key("kept"),
+            "an enabled plugin's server still loads: {:?}",
+            loaded.stdio_configs.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !loaded.stdio_configs.contains_key("dropped"),
+            "a disabled plugin's server must not load: {:?}",
+            loaded.stdio_configs.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(loaded.stdio_configs.len(), 1);
+
+        // The skip is what removes it: with nothing disabled, both load.
+        let loaded = load_requested_server_configs_excluding_disabled(
+            &[],
+            &[],
+            "sess-proxy-test",
+            &HashSet::new(),
+        )
+        .await;
+        assert_eq!(loaded.stdio_configs.len(), 2);
     }
 }

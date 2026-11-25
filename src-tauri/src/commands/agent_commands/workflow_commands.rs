@@ -17,6 +17,9 @@ pub async fn agent_send_message(
     manager: State<'_, AgentSessionManager>,
     request: SendUserMessageRequest,
 ) -> Result<AgentResponse, String> {
+    // Host path: sending to a session is opening it — refused while another
+    // live process owns it; otherwise this process takes ownership (#2856).
+    crate::server::session_ownership::claim(&request.session_id).await?;
     // Explicit user message: a previous force-stop fence ends here (issue #2633).
     manager
         .allow_explicit_message_after_terminate(&request.session_id)
@@ -342,6 +345,29 @@ pub async fn agent_respond_tool_approval(
         success: true,
         message: format!("Tool approval responded for {}: {}", tool_call_id, approved),
         data: None,
+    })
+}
+
+/// Get pending tool-approval counts per active session (notification bell, #2971).
+///
+/// Returns a map of `session_id -> pending_approval_count`. Sessions absent from
+/// the map have no pending approvals: inactive sessions cannot hold them.
+#[command]
+pub async fn agent_get_pending_approval_counts(
+    manager: State<'_, AgentSessionManager>,
+) -> Result<AgentResponse, String> {
+    let counts = manager.pending_approval_counts().await;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!(
+            "Pending approval counts collected for {} sessions",
+            counts.len()
+        ),
+        data: Some(
+            serde_json::to_value(counts)
+                .map_err(|error| format!("Failed to serialize pending approval counts: {error}"))?,
+        ),
     })
 }
 

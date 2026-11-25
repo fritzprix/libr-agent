@@ -2,24 +2,36 @@
 """Tests for gatekeeper-loop review_queue status determination."""
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+import review_queue
 from review_queue import (
+    ESCALATED_LABEL,
     PROTECTED_SKILL_PREFIXES,
     START_MARKER,
     classify,
+    classify_sensitive_paths,
     determine_status,
+    escalation_resume_info,
+    fetch_timeline_events,
     is_dev_base,
     is_rebased,
+    last_gatekeeper_marker_at,
     latest_clean_marker,
+    markers_at_head,
     owner_comments_after,
     parse_markers,
+    posting_checks,
+    summarize,
+    touches_human_only_paths,
 )
 
 
@@ -350,6 +362,11 @@ class GapTests(unittest.TestCase):
             head="head2", last_verdict=self.approve, total_verdicts=5))
         self.assertEqual(status, "escalate")
 
+    def test_max_rounds_override_allows_another_round(self) -> None:
+        status, _, _ = classify(**base_args(
+            head="head2", last_verdict=self.approve, total_verdicts=5, max_rounds=6))
+        self.assertNotEqual(status, "escalate")
+
     # Changes requested at the current head, then a clean marker at the same head
     # (the worker fixed the PR body, so no new commit).
     requested_here = {"head": "head1", "verdict": "changes-requested", "base": "dev/0.9.x"}
@@ -459,6 +476,22 @@ Total **58/100**. Does not affect the verdict above.
         self.assertIn(".agents/skills/gatekeeper-loop/", PROTECTED_SKILL_PREFIXES)
         self.assertIn(".agents/skills/worker-loop/", PROTECTED_SKILL_PREFIXES)
 
+    def test_touches_human_only_paths(self) -> None:
+        self.assertTrue(
+            touches_human_only_paths([".agents/skills/worker-loop/docs/foo.md"])
+        )
+        self.assertTrue(
+            touches_human_only_paths([".agents/skills/gatekeeper-loop/scripts/review_queue.py"])
+        )
+        self.assertFalse(touches_human_only_paths(["src/lib.rs", "README.md"]))
+
+    def test_human_only_paths_use_normal_review_status(self) -> None:
+        """Loop-skill PRs stay in review like any other unreviewed PR."""
+        status, reason, priority = classify(**base_args())
+        self.assertEqual(status, "review")
+        self.assertIn("not reviewed", reason)
+        self.assertEqual(priority, 1)
+
     def test_quoted_markers_ignored(self) -> None:
         comments = [
             {"author": {"login": "me"}, "createdAt": "t",
@@ -496,6 +529,53 @@ Total **58/100**. Does not affect the verdict above.
             self.assertTrue(classify(**kwargs)[1])
 
 
+class SecuritySensitiveTests(unittest.TestCase):
+    def test_policy_paths_only(self) -> None:
+        paths = ["src-tauri/src/secret_fallback.rs", "src/foo.rs"]
+        info = classify_sensitive_paths(paths)
+        self.assertEqual(info["securitySensitivePolicyPaths"], ["src-tauri/src/secret_fallback.rs"])
+        self.assertEqual(info["securitySensitiveBehaviorHints"], [])
+        self.assertEqual(info["securitySensitive"], ["src-tauri/src/secret_fallback.rs"])
+
+    def test_behavior_hint_without_policy_match(self) -> None:
+        paths = ["src-tauri/src/rust_executor/client.rs", "docs/readme.md"]
+        info = classify_sensitive_paths(paths)
+        self.assertEqual(info["securitySensitivePolicyPaths"], [])
+        self.assertIn("src-tauri/src/rust_executor/client.rs", info["securitySensitiveBehaviorHints"])
+        self.assertIn("src-tauri/src/rust_executor/client.rs", info["securitySensitive"])
+
+    def test_combined_dedupes(self) -> None:
+        paths = ["src/secret_store.rs", "src/session_api/routes.rs"]
+        info = classify_sensitive_paths(paths)
+        self.assertEqual(len(info["securitySensitive"]), 2)
+        self.assertIn("src/secret_store.rs", info["securitySensitivePolicyPaths"])
+        self.assertIn("src/session_api/routes.rs", info["securitySensitiveBehaviorHints"])
+
+
+class PostingChecksTests(unittest.TestCase):
+    def test_markers_at_head_filters(self) -> None:
+        markers = [
+            {"verdict": "clean", "head": "aaa", "round": None},
+            {"verdict": "changes-requested", "head": "bbb", "round": "1"},
+            {"verdict": "clean", "head": "bbb", "round": None},
+        ]
+        at_b = markers_at_head(markers, "bbb")
+        self.assertEqual(len(at_b), 2)
+        self.assertEqual({m["verdict"] for m in at_b}, {"changes-requested", "clean"})
+
+    def test_posting_checks_exposes_head_markers(self) -> None:
+        head = "deadbeef"
+        markers = [
+            {"verdict": "clean", "head": head, "round": None, "createdAt": "t1"},
+            {"verdict": "changes-requested", "head": "other", "round": "1", "createdAt": "t0"},
+        ]
+        last = {"verdict": "changes-requested", "head": "other", "round": "1"}
+        checks = posting_checks(head=head, markers=markers, last_verdict=last)
+        self.assertEqual(checks["headSha"], head)
+        self.assertEqual(len(checks["markersAtHead"]), 1)
+        self.assertIsNone(checks["lastVerdictAtHead"])
+
+
 class LatestCleanMarkerTests(unittest.TestCase):
     verdict = {"createdAt": "2026-01-01T10:00:00Z"}
     response = {"createdAt": "2026-01-01T11:00:00Z"}
@@ -516,6 +596,263 @@ class LatestCleanMarkerTests(unittest.TestCase):
         older = {"createdAt": "2026-01-01T09:00:00Z", "head": "a"}
         newer = {"createdAt": "2026-01-01T12:00:00Z", "head": "b"}
         self.assertEqual(latest_clean_marker([older, newer], None, None), newer)
+
+
+class EscalationResumeAndOwnerVisibilityTests(unittest.TestCase):
+    def _round5_verdicts(self) -> list[dict]:
+        return [
+            {"round": "1", "verdict": "changes-requested", "head": "h1", "createdAt": "2026-11-19T01:00:00Z"},
+            {"round": "2", "verdict": "changes-requested", "head": "h2", "createdAt": "2026-11-19T02:00:00Z"},
+            {"round": "3", "verdict": "changes-requested", "head": "h3", "createdAt": "2026-11-19T03:00:00Z"},
+            {"round": "4", "verdict": "changes-requested", "head": "h4", "createdAt": "2026-11-19T04:00:00Z"},
+            {"round": "5", "verdict": "escalate", "head": "h5", "createdAt": "2026-11-19T05:00:00Z"},
+        ]
+
+    def test_owner_removes_escalated_label_resumes_and_raises_limit_to_7(self) -> None:
+        verdicts = self._round5_verdicts()
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            verdicts, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 7)
+        self.assertIsNotNone(resumed)
+
+        status, reason, priority = classify(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=max_rounds,
+                escalation_resumed=resumed is not None,
+            )
+        )
+        self.assertEqual(status, "review")
+        self.assertEqual(priority, 0)
+        self.assertIn("7", reason)
+
+        # After 2 more verdicts (rounds 6 and 7), a new escalation requires another removal.
+        verdicts_after_7 = verdicts + [
+            {"round": "6", "verdict": "changes-requested", "head": "h6", "createdAt": "2026-11-19T07:00:00Z"},
+            {"round": "7", "verdict": "escalate", "head": "h7", "createdAt": "2026-11-19T08:00:00Z"},
+        ]
+        max_rounds2, resumed2 = escalation_resume_info(
+            verdicts_after_7, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertIsNone(resumed2)
+        status2, _, _ = classify(
+            **base_args(
+                head="h7",
+                last_verdict=verdicts_after_7[-1],
+                total_verdicts=len(verdicts_after_7),
+                max_rounds=max_rounds2,
+                escalation_resumed=False,
+            )
+        )
+        self.assertEqual(status2, "escalate")
+
+    def test_non_owner_removal_does_not_resume(self) -> None:
+        verdicts = self._round5_verdicts()
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "random-contributor"},
+                "actorAssociation": "CONTRIBUTOR",
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            verdicts, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 5)
+        self.assertIsNone(resumed)
+
+        status = determine_status(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=max_rounds,
+                escalation_resumed=False,
+            )
+        )
+        self.assertEqual(status, "escalate")
+
+    def test_removing_needs_human_label_does_not_resume(self) -> None:
+        verdicts = self._round5_verdicts()
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": "gatekeeper:needs-human"},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            verdicts, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 5)
+        self.assertIsNone(resumed)
+
+        status = determine_status(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=max_rounds,
+                escalation_resumed=False,
+            )
+        )
+        self.assertEqual(status, "escalate")
+
+    def test_owner_comment_followed_by_worker_response_is_still_reported(self) -> None:
+        comments = [
+            {
+                "author": {"login": "fritzprix"},
+                "authorAssociation": "OWNER",
+                "createdAt": "2026-11-19T05:00:00Z",
+                "body": "<!-- gatekeeper-loop: round=5 verdict=escalate head=h5 -->\nEscalated.",
+            },
+            {
+                "author": {"login": "fritzprix"},
+                "authorAssociation": "OWNER",
+                "createdAt": "2026-11-19T05:30:00Z",
+                "body": "Granting 2 extra rounds; please keep the narrow scope.",
+                "url": "https://github.com/fritzprix/libr-agent/pull/2906#issuecomment-1",
+            },
+            {
+                "author": {"login": "fritzprix"},
+                "authorAssociation": "OWNER",
+                "createdAt": "2026-11-19T06:00:00Z",
+                "body": "<!-- worker-loop: response round=5 head=h6 -->\nFixed per owner note.",
+            },
+        ]
+        markers, responses = parse_markers(comments, "fritzprix")
+        self.assertEqual(len(markers), 1)
+        self.assertEqual(len(responses), 1)
+
+        since = last_gatekeeper_marker_at(markers)
+        owner = owner_comments_after(comments, "fritzprix", since)
+        self.assertEqual(len(owner), 1)
+        self.assertIn("Granting 2 extra rounds", owner[0]["body"])
+
+    def test_resumed_with_clean_marker_at_head_awaits_ci_then_approves(self) -> None:
+        """G1.1: clean marker at current head must not re-trigger full review after resume."""
+        verdicts = self._round5_verdicts()
+        status_pending, reason_pending, _ = classify(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=7,
+                escalation_resumed=True,
+                clean_head="h5",
+                pending_checks=["Test (ubuntu-latest)"],
+            )
+        )
+        self.assertEqual(status_pending, "await-ci")
+        self.assertIn("waiting for pending CI", reason_pending)
+
+        status_green, reason_green, priority_green = classify(
+            **base_args(
+                head="h5",
+                last_verdict=verdicts[-1],
+                total_verdicts=len(verdicts),
+                max_rounds=7,
+                escalation_resumed=True,
+                clean_head="h5",
+                pending_checks=[],
+                failing_checks=[],
+            )
+        )
+        self.assertEqual(status_green, "review")
+        self.assertEqual(priority_green, 1)
+        self.assertIn("CI green at this head", reason_green)
+
+    def test_gatekeeper_label_swap_after_later_marker_does_not_grant_extra_rounds(self) -> None:
+        """G1.2: removal after a subsequent gatekeeper marker is the gatekeeper's own swap."""
+        markers = self._round5_verdicts() + [
+            {
+                "round": "6",
+                "verdict": "changes-requested",
+                "head": "h6",
+                "createdAt": "2026-11-19T06:00:00Z",
+            }
+        ]
+        # Gatekeeper swaps labels 5 seconds after posting round 6.
+        timeline = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:05Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+        max_rounds, resumed = escalation_resume_info(
+            markers, timeline, owner_logins={"fritzprix"}
+        )
+        self.assertEqual(max_rounds, 5)
+        self.assertIsNone(resumed)
+
+    def test_fetch_timeline_events_flattens_slurped_pages_and_summarize_uses_it(self) -> None:
+        """S1.3: multi-page --slurp timeline output is flattened and drives summarize()."""
+        page1 = [{"event": "labeled", "created_at": "2026-11-19T05:00:01Z"}]
+        page2 = [
+            {
+                "event": "unlabeled",
+                "created_at": "2026-11-19T06:00:00Z",
+                "actor": {"login": "fritzprix"},
+                "label": {"name": ESCALATED_LABEL},
+            }
+        ]
+
+        def fake_gh(*args):
+            if args[:3] == ("api", "--paginate", "--slurp"):
+                return json.dumps([page1, page2])
+            if args[:2] == ("pr", "view"):
+                comments = [
+                    {
+                        "author": {"login": "fritzprix"},
+                        "authorAssociation": "OWNER",
+                        "createdAt": f"2026-11-19T0{i}:00:00Z",
+                        "body": f"<!-- gatekeeper-loop: round={i} verdict={'escalate' if i == 5 else 'changes-requested'} head=h{i} base=dev/0.9.x -->",
+                    }
+                    for i in range(1, 6)
+                ]
+                return json.dumps({
+                    "number": 2906,
+                    "title": "Test PR",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/2906",
+                    "headRefName": "feat/test",
+                    "headRefOid": "h5",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "comments": comments,
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                })
+            raise AssertionError(f"unexpected gh call: {args}")
+
+        with patch.object(review_queue, "gh", fake_gh):
+            events = fetch_timeline_events("fritzprix", "libr-agent", 2906)
+            self.assertEqual(len(events), 2)
+            self.assertEqual(events[1]["event"], "unlabeled")
+
+            entry = summarize(2906, "fritzprix", state={"prs": {"2906": {"maxRounds": 99}}})
+            # S1.1: stale state.json maxRounds=99 is ignored; timeline sets 5 + 2 = 7.
+            self.assertEqual(entry["maxRounds"], 7)
+            self.assertEqual(entry["status"], "review")
+            self.assertIsNotNone(entry["escalationResumed"])
 
 
 if __name__ == "__main__":

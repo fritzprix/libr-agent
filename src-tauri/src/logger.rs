@@ -58,10 +58,69 @@ pub fn resolve_launch_log_level_name() -> &'static str {
     }
 }
 
-const ACTIVE_LOG_FILE_NAME: &str = "libragent.log";
+/// Legacy single-process active log name (pre-#2858). Still treated as an
+/// active file so prune never deletes another process's open log.
+const LEGACY_ACTIVE_LOG_FILE_NAME: &str = "libragent.log";
 const MAX_ARCHIVED_LOG_FILES: usize = 50;
 const MAX_ARCHIVED_LOG_BYTES: u64 = 1024 * 1024 * 1024;
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
+
+/// Per-process active log file (`libragent.<pid>.log`) so multiple backends
+/// on one profile never share or truncate each other's file (#2858).
+pub fn active_log_file_name() -> String {
+    format!("libragent.{}.log", std::process::id())
+}
+
+fn is_active_log_file_name(name: &str) -> bool {
+    name == LEGACY_ACTIVE_LOG_FILE_NAME || active_log_pid(name).is_some()
+}
+
+/// The pid in a per-process active log name (`libragent.<pid>.log`). `None` for
+/// the legacy single-process name and for anything else.
+fn active_log_pid(name: &str) -> Option<u32> {
+    name.strip_prefix("libragent.")
+        .and_then(|rest| rest.strip_suffix(".log"))
+        .and_then(|pid| pid.parse::<u32>().ok())
+}
+
+/// Rename per-process logs left behind by dead processes to the archived form,
+/// so the existing retention policy covers them (#2858 G1.3).
+///
+/// Rotation only renames *this* process's `libragent.<pid>.log`, which never
+/// exists at startup because the pid is new. Without this sweep every earlier
+/// run's `libragent.<oldpid>.log` keeps matching [`is_active_log_file_name`],
+/// is never archived and never pruned, so `log_retention_days`,
+/// `MAX_ARCHIVED_LOG_FILES` and `MAX_ARCHIVED_LOG_BYTES` silently stop applying.
+///
+/// The pid stays in the archived name so two dead logs archived within the same
+/// second cannot collide.
+fn archive_dead_process_logs_with(
+    log_dir: &Path,
+    own_pid: u32,
+    pid_proven_dead: impl Fn(u32) -> bool,
+) -> usize {
+    let Ok(entries) = fs::read_dir(log_dir) else {
+        return 0;
+    };
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let mut archived = 0;
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(pid) = active_log_pid(&name) else {
+            continue;
+        };
+        if pid == own_pid || !pid_proven_dead(pid) {
+            continue;
+        }
+        let target = log_dir.join(format!("libragent_{timestamp}_{pid}.log"));
+        if fs::rename(entry.path(), &target).is_ok() {
+            archived += 1;
+        }
+    }
+    archived
+}
 
 /// Mirrors `SystemSettings::log_retention_days`; `0` means no age limit.
 static LOG_RETENTION_DAYS: AtomicU64 = AtomicU64::new(0);
@@ -90,7 +149,7 @@ pub fn set_log_retention_days(days: u64) {
 }
 
 fn is_archived_log_file_name(name: &str) -> bool {
-    name != ACTIVE_LOG_FILE_NAME
+    !is_active_log_file_name(name)
         && name.starts_with("libragent_")
         && (name.ends_with(".log") || name.ends_with(".log.bak"))
 }
@@ -109,9 +168,9 @@ pub fn prune_archived_logs_now() -> (usize, u64) {
 }
 
 /// Deletes archived logs older than the age limit, then the oldest ones until
-/// the file-count and total-size limits hold. The active `libragent.log` is
-/// never deleted, nor is the newest archive (the previous run) unless it is
-/// past the age limit.
+/// the file-count and total-size limits hold. Active per-pid (and legacy)
+/// `libragent*.log` files are never deleted, nor is the newest archive (the
+/// previous run) unless it is past the age limit.
 fn prune_archived_logs(log_dir: &Path, policy: ArchivePolicy, now: SystemTime) -> (usize, u64) {
     let Ok(entries) = fs::read_dir(log_dir) else {
         return (0, 0);
@@ -174,6 +233,35 @@ fn formatted_dispatch() -> fern::Dispatch {
 }
 
 pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
+    setup_logger_with_console(log_dir, log_retention_days, true, ConsoleTarget::Stdout)
+}
+
+/// Headless CLI logger (#2885): logs go to **stderr** and the log file,
+/// never stdout. In headless mode stdout carries only the selected
+/// `--output-format` document, so `libragent --headless --output-format
+/// json` output stays parseable as a single JSON value.
+pub fn setup_headless_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<(), String> {
+    setup_logger_with_console(log_dir, log_retention_days, true, ConsoleTarget::Stderr)
+}
+
+/// Console stream the logger mirrors to, chosen by the entry point.
+enum ConsoleTarget {
+    /// GUI backend: terminal-launched users see logs on stdout alongside
+    /// the window (existing behavior).
+    Stdout,
+    /// Headless CLI: stdout is reserved for formatter output (#2885).
+    Stderr,
+}
+
+/// `rotate_existing` renames this process's `libragent.<pid>.log` aside before
+/// opening a new file. Pass `false` only in tests that need append mode; each
+/// backend owns its own file so rotation never touches another process (#2858).
+fn setup_logger_with_console(
+    log_dir: PathBuf,
+    log_retention_days: u64,
+    rotate_existing: bool,
+    console: ConsoleTarget,
+) -> Result<(), String> {
     set_log_retention_days(log_retention_days);
 
     // Ensure log directory exists
@@ -183,38 +271,24 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
     }
 
     let _ = LOG_DIR.set(log_dir.clone());
-    let log_file = log_dir.join(ACTIVE_LOG_FILE_NAME);
 
-    // Backup existing log file with datetime suffix
-    if log_file.exists() {
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let backup_file = log_dir.join(format!("libragent_{}.log", timestamp));
-        fs::rename(&log_file, &backup_file)
-            .map_err(|e| format!("Failed to backup log file: {}", e))?;
-    }
-
-    let (pruned_files, pruned_bytes) = prune_archived_logs_in(&log_dir);
-
-    // Create new log file (truncate mode for fresh start)
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&log_file)
-        .map_err(|e| format!("Failed to open log file: {}", e))?;
+    let (file, pruned_files, pruned_bytes) = prepare_log_file(&log_dir, rotate_existing)?;
 
     let log_level = resolve_launch_log_level();
 
-    formatted_dispatch()
-        .level(log_level)
-        .chain(std::io::stdout()) // Keep stdout
-        .chain(file) // Add file output
+    let dispatch = formatted_dispatch().level(log_level).chain(file); // Add file output
+    let dispatch = match console {
+        ConsoleTarget::Stdout => dispatch.chain(std::io::stdout()), // Keep stdout
+        // #2885: headless stdout is only the formatter output.
+        ConsoleTarget::Stderr => dispatch.chain(std::io::stderr()),
+    };
+    dispatch
         .apply()
         .map_err(|e| format!("Failed to set logger: {}", e))?;
 
     log::info!(
         "🔥 File logger initialized at: {} (level: {})",
-        log_file.display(),
+        log_dir.join(active_log_file_name()).display(),
         resolve_launch_log_level_name()
     );
     if pruned_files > 0 {
@@ -225,6 +299,51 @@ pub fn setup_file_logger(log_dir: PathBuf, log_retention_days: u64) -> Result<()
         );
     }
     Ok(())
+}
+
+/// Prepare this process's active log file: rotate `libragent.<pid>.log` aside
+/// when `rotate_existing`, prune archives, then open the file — truncated for
+/// a fresh start when rotating, appended when not. Split out from
+/// [`setup_logger_with_console`] so the rotation behavior is testable
+/// without installing the global logger.
+/// Returns `(file, pruned_files, pruned_bytes)`.
+fn prepare_log_file(
+    log_dir: &Path,
+    rotate_existing: bool,
+) -> Result<(fs::File, usize, u64), String> {
+    let log_file = log_dir.join(active_log_file_name());
+
+    // Backup this process's existing log with a datetime suffix. Other
+    // backends write `libragent.<other-pid>.log`, so this never renames
+    // another process's open file (#2858).
+    if rotate_existing && log_file.exists() {
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let backup_file = log_dir.join(format!("libragent_{}.log", timestamp));
+        fs::rename(&log_file, &backup_file)
+            .map_err(|e| format!("Failed to backup log file: {}", e))?;
+    }
+
+    // Archive logs of processes that are gone before pruning, so retention
+    // applies to them (#2858 G1.3).
+    archive_dead_process_logs_with(log_dir, std::process::id(), |pid| {
+        crate::utils::process::pid_is_proven_dead(pid)
+    });
+
+    let (pruned_files, pruned_bytes) = prune_archived_logs_in(log_dir);
+
+    // Create new log file (truncate mode for fresh start)
+    let mut file_options = OpenOptions::new();
+    file_options.create(true).write(true);
+    if rotate_existing {
+        file_options.truncate(true);
+    } else {
+        file_options.append(true);
+    }
+    let file = file_options
+        .open(&log_file)
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+
+    Ok((file, pruned_files, pruned_bytes))
 }
 
 #[cfg(test)]
@@ -337,6 +456,125 @@ mod tests {
         }
     }
 
+    // #2969: the rmcp transport worker (a crate outside LibrAgent) logs the full
+    // URL of a failed HTTP connection, which carries the secret values filled
+    // from `{{secret:NAME}}` templates. Drive the real connect path of
+    // `verify_config_at` against a real loopback server that answers 404 — the
+    // repro of the issue — and capture the lines through the production
+    // `formatted_dispatch` chain: the probe must keep the filled values in the
+    // log mask while it connects, and forget them afterwards.
+    #[tokio::test]
+    async fn probe_connect_to_a_404_server_never_logs_the_filled_secret() {
+        use crate::mcp::secret_templates::secret_store;
+        use crate::mcp::session_isolation::exec_target::StdioExecTarget;
+        use crate::mcp::types::{MCPServerConfig, TransportConfig};
+        use crate::services::McpServerService;
+
+        // A loopback server that answers every request with 404.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind a loopback port");
+        let addr = listener.local_addr().expect("read the loopback port");
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request).await;
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                    )
+                    .await;
+            }
+        });
+
+        let raw = "logger-real-secret 42";
+        let encoded = "logger-real-secret%2042";
+        let server_id = "logger-real-probe-server";
+        secret_store()
+            .set(server_id, "DEMO_TOKEN", raw)
+            .await
+            .expect("store secret");
+        let config = MCPServerConfig {
+            name: Some("demo".to_string()),
+            transport: TransportConfig::Http {
+                // {{...}} needs quadrupled braces inside format! to stay a template.
+                url: format!("http://{addr}/mcp?key={{{{secret:DEMO_TOKEN}}}}"),
+                protocol_version: "2025-06-18".to_string(),
+                session_id: None,
+                headers: None,
+                enable_sse: None,
+                security: None,
+            },
+            authentication: None,
+            metadata: None,
+            provenance: None,
+        };
+
+        // Install the production format chain as this process's logger, so every
+        // facade line — LibrAgent's own and rmcp's tracing events bridged to log —
+        // passes through mask_log_line. No other test in this binary installs a
+        // global logger; concurrent lines of other tests are filtered by target.
+        let previous_level = log::max_level();
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        formatted_dispatch()
+            .chain(sender)
+            .apply()
+            .expect("install the capture logger");
+        log::set_max_level(log::LevelFilter::Trace);
+
+        let error = McpServerService::verify_config_at(config, &StdioExecTarget::Host, server_id)
+            .await
+            .expect_err("connecting to a 404 server must fail");
+        server.abort();
+
+        let lines: Vec<String> = receiver
+            .try_iter()
+            .filter(|line| {
+                line.contains("rmcp::transport::worker") || line.contains("mcp::server::lifecycle")
+            })
+            .collect();
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("rmcp::transport::worker")),
+            "the real rmcp transport worker line must reach the app log: {lines:?}"
+        );
+        for line in &lines {
+            assert!(!line.contains(raw), "{line}");
+            assert!(!line.contains(encoded), "{line}");
+        }
+        assert!(
+            lines.iter().any(|line| line.contains("404")),
+            "the failure itself must stay visible: {lines:?}"
+        );
+
+        // The returned error is masked too, and the probe's guard must have
+        // forgotten the values: a later line carrying the same value passes
+        // through untouched.
+        assert!(!error.contains(raw), "{error}");
+        assert!(!error.contains(encoded), "{error}");
+        log::error!(target: "after-probe", "forgotten {encoded}");
+        let after: Vec<String> = receiver
+            .try_iter()
+            .filter(|line| line.contains("after-probe"))
+            .collect();
+        assert!(
+            after.iter().any(|line| line.contains(encoded)),
+            "a forgotten value is no longer known: {after:?}"
+        );
+
+        // The log crate cannot uninstall a logger, so leave the installed one
+        // inert for the rest of the test binary: restore the previous level so
+        // no further record is dispatched, and keep the channel receiver alive
+        // (the sender lives in the logger) so a stray record can never fail the
+        // sink — a failed fern sink dumps every record to stderr through
+        // backup_logging, which floods the CI log and overflows the sequential
+        // test runner's spawnSync buffer (ENOBUFS).
+        log::set_max_level(previous_level);
+        Box::leak(Box::new(receiver));
+    }
+
     fn write_archive(dir: &Path, name: &str, bytes: usize, age_secs: u64) {
         let path = dir.join(name);
         fs::write(&path, vec![b'x'; bytes]).unwrap();
@@ -355,7 +593,7 @@ mod tests {
         write_archive(dir.path(), "libragent_1.log", 10, 300);
         write_archive(dir.path(), "libragent_2.log.bak", 10, 200);
         write_archive(dir.path(), "libragent_3.log", 10, 100);
-        write_archive(dir.path(), ACTIVE_LOG_FILE_NAME, 10, 400);
+        write_archive(dir.path(), &active_log_file_name(), 10, 400);
         write_archive(dir.path(), "other.log", 10, 500);
 
         let (removed, _) = prune(dir.path(), policy(2, u64::MAX, None));
@@ -364,7 +602,7 @@ mod tests {
         assert!(!dir.path().join("libragent_1.log").exists());
         assert!(dir.path().join("libragent_2.log.bak").exists());
         assert!(dir.path().join("libragent_3.log").exists());
-        assert!(dir.path().join(ACTIVE_LOG_FILE_NAME).exists());
+        assert!(dir.path().join(active_log_file_name()).exists());
         assert!(dir.path().join("other.log").exists());
     }
 
@@ -399,13 +637,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_archive(dir.path(), "libragent_recent.log", 10, 100);
         write_archive(dir.path(), "libragent_expired.log", 10, 1_000);
-        write_archive(dir.path(), ACTIVE_LOG_FILE_NAME, 10, 1_000);
+        write_archive(dir.path(), &active_log_file_name(), 10, 1_000);
 
         let (removed, _) = prune(dir.path(), policy(10, u64::MAX, Some(500)));
         assert_eq!(removed, 1);
         assert!(dir.path().join("libragent_recent.log").exists());
         assert!(!dir.path().join("libragent_expired.log").exists());
-        assert!(dir.path().join(ACTIVE_LOG_FILE_NAME).exists());
+        assert!(dir.path().join(active_log_file_name()).exists());
 
         let (removed, _) = prune(dir.path(), policy(10, u64::MAX, Some(50)));
         assert_eq!(removed, 1);
@@ -422,5 +660,134 @@ mod tests {
             Some(Duration::from_secs(7 * SECONDS_PER_DAY))
         );
         set_log_retention_days(0);
+    }
+
+    fn archived_logs(dir: &Path) -> Vec<PathBuf> {
+        fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                name.starts_with("libragent_") && name.ends_with(".log")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn append_setup_keeps_this_process_log_without_rotating() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(active_log_file_name());
+        fs::write(&log, "host line\n").unwrap();
+
+        let (mut file, _, _) = prepare_log_file(dir.path(), false).unwrap();
+        file.write_all(b"attached line\n").unwrap();
+        drop(file);
+
+        assert_eq!(
+            fs::read_to_string(&log).unwrap(),
+            "host line\nattached line\n"
+        );
+        assert!(archived_logs(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn rotate_setup_archives_this_process_log_only() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(active_log_file_name());
+        // A log left by a process that is gone is archived rather than kept as
+        // an active file (#2858 G1.3). A live process's log is never renamed;
+        // that case is asserted in
+        // `dead_process_logs_are_archived_and_live_ones_are_kept`.
+        let stale_other_log = dir.path().join("libragent.999999.log");
+        fs::write(&log, "host line\n").unwrap();
+        fs::write(&stale_other_log, "other process\n").unwrap();
+
+        let (mut file, _, _) = prepare_log_file(dir.path(), true).unwrap();
+        file.write_all(b"new line\n").unwrap();
+        drop(file);
+
+        assert_eq!(fs::read_to_string(&log).unwrap(), "new line\n");
+        assert!(
+            !stale_other_log.exists(),
+            "a dead process's log must be archived, not left as an active file"
+        );
+        let backups = archived_logs(dir.path());
+        assert_eq!(backups.len(), 2, "{backups:?}");
+        assert!(backups
+            .iter()
+            .any(|path| fs::read_to_string(path).unwrap() == "host line\n"));
+        assert!(backups
+            .iter()
+            .any(|path| fs::read_to_string(path).unwrap() == "other process\n"));
+    }
+
+    #[test]
+    fn active_log_file_name_is_per_process() {
+        let name = active_log_file_name();
+        assert!(name.starts_with("libragent."));
+        assert!(name.ends_with(".log"));
+        assert!(is_active_log_file_name(&name));
+        assert!(is_active_log_file_name(LEGACY_ACTIVE_LOG_FILE_NAME));
+        assert!(!is_active_log_file_name("libragent_20240101_000000.log"));
+    }
+
+    /// #2858 G1.3: a dead process's `libragent.<pid>.log` must stop counting as
+    /// an active file, or one file per launch survives every retention rule.
+    #[test]
+    fn dead_process_logs_are_archived_and_live_ones_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let dead_pid = 4_242u32;
+        let live_pid = 4_243u32;
+        let own_pid = std::process::id();
+        write_archive(dir.path(), &format!("libragent.{dead_pid}.log"), 10, 400);
+        write_archive(dir.path(), &format!("libragent.{live_pid}.log"), 10, 400);
+        write_archive(dir.path(), &active_log_file_name(), 10, 400);
+
+        // Proof-of-death predicate: only the dead pid is proven gone; the
+        // live pid is unproven here, exactly like a failed probe, and must
+        // be kept.
+        let archived = archive_dead_process_logs_with(dir.path(), own_pid, |pid| pid == dead_pid);
+
+        assert_eq!(archived, 1);
+        assert!(
+            !dir.path()
+                .join(format!("libragent.{dead_pid}.log"))
+                .exists(),
+            "a dead process's log must stop being an active file"
+        );
+        assert!(
+            dir.path()
+                .join(format!("libragent.{live_pid}.log"))
+                .exists(),
+            "a live process's log must never be renamed"
+        );
+        assert!(
+            dir.path().join(active_log_file_name()).exists(),
+            "this process's own log must never be renamed"
+        );
+
+        let names: Vec<String> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+            .collect();
+        assert!(
+            names.iter().any(|name| name.starts_with("libragent_")
+                && name.ends_with(&format!("_{dead_pid}.log"))),
+            "the dead log must be renamed with its pid: {names:?}"
+        );
+        assert!(
+            names.iter().all(|name| !is_active_log_file_name(name)
+                || active_log_pid(name) == Some(own_pid)
+                || active_log_pid(name) == Some(live_pid)),
+            "no dead log may keep an active name: {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| is_archived_log_file_name(name)),
+            "the archived name must now be visible to the retention policy: {names:?}"
+        );
     }
 }

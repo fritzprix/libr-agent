@@ -15,27 +15,5 @@ export function mergeDisplayTokenUsage(
   lastMetrics: TokenUsage | null,
   metrics: TokenUsage | null,
 ): TokenUsage | null {
-  if (!metrics) {
-    return lastMetrics;
-  }
-
-  if (!lastMetrics) {
-    return metrics;
-  }
-
-  const previousDetails = lastMetrics.details ?? {};
-  const currentDetails = metrics.details ?? {};
-
-  return {
-    ...metrics,
-    details: {
-      ...currentDetails,
-      evalDuration: currentDetails.evalDuration ?? previousDetails.evalDuration,
-      timeToFirstToken:
-        currentDetails.timeToFirstToken ?? previousDetails.timeToFirstToken,
-      promptEvalDuration:
-        currentDetails.promptEvalDuration ?? previousDetails.promptEvalDuration,
-      loadDuration: currentDetails.loadDuration ?? previousDetails.loadDuration,
-    },
-  };
+  return metrics ?? lastMetrics;
 }

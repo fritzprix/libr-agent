@@ -21,12 +21,34 @@ pub(crate) fn describe_join_error(error: tokio::task::JoinError) -> String {
     format!("blocking process task failed: {error}")
 }
 
+/// Liveness via `kill(2)` with signal 0 — an existence check that delivers
+/// no signal.
+///
+/// The syscall replaces spawning `/usr/bin/kill -0`, whose child inherited
+/// our stderr: every probe of a dead pid leaked
+/// `kill: (<pid>): No such process` onto the terminal at startup (#2882).
+///
+/// Matches the Windows probe's #2823 contract: `EPERM` means the pid exists
+/// but we may not signal it (alive), `ESRCH` is positive proof of death, and
+/// any other errno is `Err` — which `probe_proves_dead` never counts as dead.
 #[cfg(unix)]
 pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
-    Ok(Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .status()?
-        .success())
+    // `pid_t` is `c_int`; a pid above it cannot exist on this platform, so
+    // it is positively gone. (Without this guard a huge `u32` pid wraps to a
+    // negative `pid_t` and `kill(2)` would address a process *group*.)
+    let Ok(pid_t) = i32::try_from(pid) else {
+        return Ok(false);
+    };
+    // Safety: kill(2) with signal 0 only checks existence and permission.
+    if unsafe { libc::kill(pid_t, 0) } == 0 {
+        return Ok(true);
+    }
+    let err = io::Error::last_os_error();
+    match err.raw_os_error() {
+        Some(libc::ESRCH) => Ok(false),
+        Some(libc::EPERM) => Ok(true),
+        _ => Err(err),
+    }
 }
 
 #[cfg(windows)]
@@ -38,7 +60,16 @@ pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
 
     let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if handle.is_null() {
-        return Ok(false);
+        // A failed open is not proof the pid is dead. Treating it as dead makes
+        // the next frontend delete a live backend's record and start a second
+        // server (#2823). 87 = no such process. 5 = it exists, but this process
+        // may not query it.
+        let err = io::Error::last_os_error();
+        return match err.raw_os_error() {
+            Some(87) => Ok(false),
+            Some(5) => Ok(true),
+            _ => Err(err),
+        };
     }
 
     let mut exit_code = 0;
@@ -47,6 +78,72 @@ pub(crate) fn process_is_alive(pid: u32) -> io::Result<bool> {
         CloseHandle(handle);
     }
     Ok(is_alive)
+}
+
+/// The OS start marker of `pid` in a platform's own unit — Linux clock
+/// ticks since boot, Windows 100-ns FILETIME intervals — or `None` when
+/// it cannot be read. The units are **not** milliseconds; only equality
+/// between two readings of the same pid is meaningful: equal readings
+/// identify the same process lifetime, different ones mean pid reuse.
+///
+/// Session ownership (#2856) uses this to drop an ownership row whose pid
+/// the OS has already handed to a new process, without waiting for the
+/// owner's heartbeat to lapse.
+#[cfg(target_os = "linux")]
+pub(crate) fn process_start_marker(pid: u32) -> Option<i64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // Field 2 (comm) may contain spaces and parentheses, so parse only
+    // after the last ')'. Field 22 (starttime) is then the 20th token.
+    let after_comm = stat.rfind(')').map(|idx| &stat[idx + 1..])?;
+    let starttime_ticks: i64 = after_comm.split_whitespace().nth(19)?.parse().ok()?;
+    // Clock ticks since boot: comparable between processes of one boot,
+    // which is exactly the pid-reuse window this guards.
+    Some(starttime_ticks)
+}
+
+/// See the [`process_start_marker`] contract above.
+#[cfg(windows)]
+pub(crate) fn process_start_marker(pid: u32) -> Option<i64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut creation = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut exit_time = creation;
+    let mut kernel_time = creation;
+    let mut user_time = creation;
+    let ok = unsafe {
+        GetProcessTimes(
+            handle,
+            &mut creation,
+            &mut exit_time,
+            &mut kernel_time,
+            &mut user_time,
+        )
+    };
+    unsafe {
+        CloseHandle(handle);
+    }
+    if ok == 0 {
+        return None;
+    }
+    Some(((creation.dwHighDateTime as i64) << 32) | (creation.dwLowDateTime as i64))
+}
+
+/// See the [`process_start_marker`] contract above: no probe available.
+#[cfg(not(any(target_os = "linux", windows)))]
+pub(crate) fn process_start_marker(_pid: u32) -> Option<i64> {
+    // No dependency-free probe exists here (e.g. macOS). Ownership then
+    // relies on the heartbeat timeout instead, which is the universal path.
+    None
 }
 
 #[cfg(unix)]
@@ -324,15 +421,18 @@ pub(crate) fn force_kill_process(pid: u32) -> io::Result<()> {
 
     #[cfg(unix)]
     {
-        let status = Command::new("kill")
-            .args(["-KILL", &pid.to_string()])
-            .status()?;
-        if status.success() || !process_is_alive(pid)? {
-            return Ok(());
+        // `kill(2)` instead of spawning `/usr/bin/kill -KILL`: the child
+        // inherited our stderr and leaked shell errors for pids that died
+        // concurrently (#2882). `signal_kill` already uses the syscall.
+        if let Err(err) = signal_kill(pid as i32) {
+            // ESRCH: the target exited concurrently with us — already gone.
+            if err.raw_os_error() != Some(libc::ESRCH) && process_is_alive(pid)? {
+                return Err(io::Error::other(format!(
+                    "failed to kill process {pid}: {err}"
+                )));
+            }
         }
-        Err(io::Error::other(format!(
-            "failed to kill process {pid}: {status}"
-        )))
+        Ok(())
     }
 
     #[cfg(windows)]
@@ -351,6 +451,46 @@ pub(crate) fn force_kill_process(pid: u32) -> io::Result<()> {
             "failed to kill process {pid}: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         )))
+    }
+}
+
+/// True only when a liveness probe positively proves the process gone.
+///
+/// `Ok(true)` (alive) and `Err` (the probe itself failed, or the pid cannot
+/// be proven either way) both keep the entry: a destructive sweep must
+/// require *proof* of death, never infer it from a broken probe (#2823
+/// contract, #2858 G2.2).
+pub(crate) fn probe_proves_dead(probe: io::Result<bool>) -> bool {
+    matches!(probe, Ok(false))
+}
+
+/// True when `pid` is proven dead by the platform probe. An unprovable pid
+/// is not dead: sweeps that delete per-process state must use this, not
+/// `process_is_alive(..).ok() == Some(true)` (#2858 G2.2).
+pub(crate) fn pid_is_proven_dead(pid: u32) -> bool {
+    probe_proves_dead(process_is_alive(pid))
+}
+
+#[cfg(test)]
+mod proven_dead_tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn alive_and_unprovable_pids_are_not_dead() {
+        assert!(
+            !probe_proves_dead(Ok(true)),
+            "a live process must never count as dead"
+        );
+        assert!(
+            !probe_proves_dead(Err(io::Error::other("probe broken"))),
+            "an unprovable pid must never count as dead"
+        );
+    }
+
+    #[test]
+    fn only_a_positive_death_proof_counts_as_dead() {
+        assert!(probe_proves_dead(Ok(false)));
     }
 }
 
@@ -505,5 +645,57 @@ mod tests {
         assert_eq!(map.get(&100), Some(&vec![200, 201]));
         // Invalid lines ignored
         assert_eq!(map.get(&999), None);
+    }
+
+    /// Issue #2882: the Unix liveness probe must write nothing to our
+    /// stderr. The old implementation spawned `/usr/bin/kill -0 <dead pid>`,
+    /// whose child inherited our stderr and printed
+    /// `kill: (<pid>): No such process` on every startup.
+    ///
+    /// The probe's own stderr can only be observed from outside, so this
+    /// test re-executes the test binary once in "helper" mode (probe a pid
+    /// the OS has already reaped, then exit) and asserts the helper child's
+    /// captured stderr is empty.
+    #[test]
+    fn probe_of_dead_pid_writes_nothing_to_stderr() {
+        const HELPER_ENV: &str = "LIBRAGENT_PROBE_STDERR_HELPER";
+        if std::env::var_os(HELPER_ENV).is_some() {
+            // Helper mode: probe a pid the OS has reaped, then report
+            // success. The parent asserts on our captured stderr.
+            let mut child = Command::new("sleep")
+                .arg("0")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn sleep");
+            let dead_pid = child.id();
+            child.wait().expect("reap sleep");
+            let dead = process_is_alive(dead_pid).expect("probe a reaped pid");
+            assert!(!dead, "reaped pid {dead_pid} must be proven dead");
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("test binary path");
+        let output = Command::new(exe)
+            .args([
+                "--exact",
+                "utils::process::tests::probe_of_dead_pid_writes_nothing_to_stderr",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(HELPER_ENV, "1")
+            .output()
+            .expect("re-execute test binary as probe helper");
+        assert!(
+            output.status.success(),
+            "helper probe run failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr).trim(),
+            "",
+            "probing a dead pid must write nothing to stderr (#2882)"
+        );
     }
 }

@@ -137,3 +137,64 @@ def test_path_preset_auto_excludes_windows_only_tasks() -> None:
     combined = result.stdout + result.stderr
     assert "requires_host_os=windows" in combined
     assert "-x e2e-b11-no-runshell" in combined
+
+
+MANAGED_ONLY_TASKS = (
+    "e2e-asroot-daemon-o3",
+    "e2e-sudo-askpass-flow",
+    "e2e-sudo-cancel-x1",
+    "e2e-sudo-setup-wizard-k2",
+    "e2e-sudo-wrong-password",
+)
+
+
+def _run_path_preset_dry_run(env_extra: dict[str, str]) -> str:
+    server = HTTPServer(("127.0.0.1", 0), _RecordingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        result = subprocess.run(
+            [
+                "bash",
+                str(SCRIPT),
+                "--dry-run",
+                "--skip-health-check",
+                "--preset",
+                "path",
+                "--path",
+                str(MATRIX_DIR),
+                "--api-url",
+                f"http://127.0.0.1:{server.server_port}/api",
+            ],
+            env={**os.environ, "SESSION_API_KEY": "k-secret", **env_extra},
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        )
+    finally:
+        server.shutdown()
+    return result.stdout + result.stderr
+
+
+_SKIP_BASH = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+_SKIP_WIN = pytest.mark.skipif(sys.platform == "win32", reason="bash script")
+
+
+@_SKIP_BASH
+@_SKIP_WIN
+def test_path_preset_host_mode_auto_excludes_managed_only_tasks() -> None:
+    """PR #2917 G2.1: the Harbor adapter raises in setup() when a task's
+    requires_workspace_mode mismatches the selected mode, so a host-mode run
+    must -x the managed-only privileged tasks instead of failing each trial."""
+    combined = _run_path_preset_dry_run({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "host"})
+    assert "requires_workspace_mode=managed" in combined
+    for task in MANAGED_ONLY_TASKS:
+        assert f"-x {task}" in combined, task
+
+
+@_SKIP_BASH
+@_SKIP_WIN
+def test_path_preset_managed_mode_keeps_managed_only_tasks() -> None:
+    combined = _run_path_preset_dry_run({"LIBRAGENT_HARBOR_WORKSPACE_MODE": "managed"})
+    for task in MANAGED_ONLY_TASKS:
+        assert f"-x {task}" not in combined, task

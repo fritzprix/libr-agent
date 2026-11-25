@@ -32,7 +32,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 | 기존 방식                               | LibrAgent 방식                                                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 수동으로 복잡한 MCP JSON 설정 작성      | **원클릭 확장 도구** — GitHub, Brave Search, 파일시스템 등의 프리셋 지원 및 Cursor / VS Code / Claude Code 설정 자동 가져오기 |
-| 코드로 직접 구현해야 하는 멀티 에이전트 | **검증된 협업 패턴 내장** — `pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation` 등 기본 제공 스킬               |
+| 코드로 직접 구현해야 하는 멀티 에이전트 | **검증된 협업 패턴 내장** — `teamwork` (pipeline, hub-and-spoke), `divide-conquer`, `consensus-delegation` 등 기본 제공 스킬               |
 | 특정 업체의 모델 및 도구에 종속         | **자유로운 스택 선택** — 상용 LLM API부터 로컬 [Ollama](https://ollama.com)까지 자유롭게 연동하는 MIT 라이선스 로컬 우선 앱   |
 
 [최신 릴리스 다운로드](https://github.com/fritzprix/libr-agent/releases/latest) · [5분 온보딩 가이드](#5분-온보딩-경로)
@@ -56,7 +56,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 ### 3. 코드 없이 선택하는 에이전트 협업 패턴
 
 - 복잡한 프레임워크 코드를 작성할 필요 없이, 원하는 협업 방식을 대화로 지정합니다:
-  - _"@skill:pipeline — 먼저 자료를 조사하고, 초안을 작성한 뒤 검토해서 최종 보고서 한 편으로 정리해줘"_
+  - _"@skill:teamwork pipeline — 먼저 자료를 조사하고, 초안을 작성한 뒤 검토해서 최종 보고서 한 편으로 정리해줘"_
   - _"@skill:divide-conquer — 이 작업을 독립된 하위 작업으로 나누어 병렬로 진행하고 결과를 종합해줘"_
 - 검증된 협업 패턴이 스킬 형태로 내장되어 있습니다. 자세한 내용은 [서브에이전트 및 오케스트레이션 가이드](docs/user/guides/sub-agents.md)를 참고하십시오.
 
@@ -73,11 +73,11 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 | 스킬명                               | 협업 패턴           | 권장 작업 유형                                                       |
 | ------------------------------------ | ------------------- | -------------------------------------------------------------------- |
-| `pipeline`                           | 순차 단계별 처리    | 이전 단계의 결과물을 다음 단계로 전달 (조사 → 초안 작성 → 최종 검토) |
-| `hub-spoke`                          | 허브 앤 스포크      | 하나의 조율자 에이전트가 여러 전문 작업 에이전트를 총괄 관리         |
+| `teamwork` (pipeline)                           | 순차 단계별 처리    | 이전 단계의 결과물을 다음 단계로 전달 (조사 → 초안 작성 → 최종 검토) |
+| `teamwork` (hub-and-spoke)                          | 허브 앤 스포크      | 하나의 조율자 에이전트가 여러 전문 작업 에이전트를 총괄 관리         |
 | `divide-conquer`                     | 병렬 분할 처리      | 독립적인 하위 작업들로 쪼개어 병렬 수행 후 결과 종합                 |
 | `consensus-delegation`               | 다관점 비교 분석    | 동일한 질문을 여러 전문 에이전트에 질의한 뒤 의견 수렴 및 조율       |
-| `gatekeeper` / `pair-programming`    | 코드 검토 루프      | 엄격한 품질 검토 또는 두 에이전트 간의 페어 프로그래밍               |
+| `delegation-eval-loop` (gatekeeper) / `teamwork` (pair programming)    | 코드 검토 루프      | 엄격한 품질 검토 또는 두 에이전트 간의 페어 프로그래밍               |
 | `delegate`                           | 단순 작업 위임      | 독립된 하위 세션에 특정 작업을 위임하고 진행 상태 추적               |
 | `teamwork` → `org`                   | 영구 프로젝트 팀    | 공유 헌장과 조직도(Org UI)를 기반으로 협력하는 팀 구성               |
 | `schedule` / `loop` / `call-me-back` | 시간 및 이벤트 기반 | 정기 크론(Cron) 예약, 세션 내 지연 실행, 외부 이벤트 기반 재개       |
@@ -125,7 +125,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 ### 비개발자 파워유저 — 협업 템플릿 기반 작업 위임
 
-1. 대화창에 `@skill:pipeline` (또는 `hub-spoke`, `divide-conquer`)을 입력하여 작업 구조를 지정합니다.
+1. 대화창에 `@skill:teamwork pipeline` (또는 `teamwork` (hub-and-spoke), `divide-conquer`)을 입력하여 작업 구조를 지정합니다.
 2. 에이전트들이 해당 패턴에 맞춰 협력하여 작업을 수행합니다.
 3. 외부 라이브러리 유지보수 없이 하나의 통합된 최종 결과물을 워크스페이스에 생성합니다.
 
@@ -152,10 +152,10 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 <!-- RELEASE_DOWNLOADS_START -->
 
-- **Windows:** [`LibrAgent_0.9.31_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64-setup.exe) · [`LibrAgent_0.9.31_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64_en-US.msi)
-- **macOS (Apple Silicon):** [`LibrAgent_0.9.31_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_aarch64.dmg)
-- **Linux:** [`LibrAgent_0.9.31_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.AppImage) · [`LibrAgent_0.9.31_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.deb) · [`LibrAgent-0.9.31-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent-0.9.31-1.x86_64.rpm)
-- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.31)
+- **Windows:** [`LibrAgent_0.9.32_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64-setup.exe) · [`LibrAgent_0.9.32_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64_en-US.msi)
+- **macOS (Apple Silicon):** [`LibrAgent_0.9.32_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_aarch64.dmg)
+- **Linux:** [`LibrAgent_0.9.32_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.AppImage) · [`LibrAgent_0.9.32_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.deb) · [`LibrAgent-0.9.32-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent-0.9.32-1.x86_64.rpm)
+- **전체 릴리스 자산:** [릴리스 페이지](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.32)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5분 온보딩 경로
@@ -177,7 +177,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 
 **다음 단계 — 협업 패턴 및 자동화 확장**
 
-- _"@skill:pipeline — 자료 조사, 초안 작성, 검토 순으로 진행하여 최종 보고서 1편으로 저장해줘"_
+- _"@skill:teamwork pipeline — 자료 조사, 초안 작성, 검토 순으로 진행하여 최종 보고서 1편으로 저장해줘"_
 - _"이 저장소를 분석하기 위한 teamwork 워크스페이스를 구성해줘"_
 - _"매일 오전 7시에 경쟁사 동향을 요약하는 스케줄 작업을 만들어줘"_ (또는 Morning Briefing 레시피 실행)
 
@@ -186,7 +186,7 @@ LibrAgent는 이러한 작업을 간소화한 **완성형 데스크톱 제품**�
 - _"Cursor에서 사용하는 내 MCP 서버 설정을 가져와서 어떤 도구가 추가되었는지 보여줘."_
 - _"GitHub MCP 프리셋을 설치하고 코딩 에이전트에 연결해줘."_
 - _"이 워크스페이스를 검토하고 발견된 개선점을 `DELIVERABLE.md`에 작성해줘."_
-- _"@skill:pipeline — 이 주제를 심층 조사하고, 요약 초안을 작성한 뒤 검토해서 최종 보고서로 저장해줘."_
+- _"@skill:teamwork pipeline — 이 주제를 심층 조사하고, 요약 초안을 작성한 뒤 검토해서 최종 보고서로 저장해줘."_
 - _"매일 오전 7시에 시장 동향 브리핑을 실행하도록 예약해줘."_
 
 ### 개발자 실행 환경 구성

@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::workflow::cancel::{
     should_consume_cancel_at_message_boundary, should_discard_workflow_before_continuation,
 };
@@ -143,7 +145,7 @@ pub async fn continue_workflow_after_tool(
                     session_id: session_id.clone(),
                     reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
+                let _ = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event);
                 return Ok(());
             }
 

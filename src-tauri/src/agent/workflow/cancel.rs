@@ -193,6 +193,7 @@ async fn cancel_frontend_completion_if_pending(
         session_id: session_id.to_string(),
         response_message_id,
         reason: reason.to_string(),
+        will_retry: false,
     }) {
         log::warn!(
             "Failed to emit llm:completion-cancel for session {}: {}",
@@ -210,7 +211,7 @@ pub async fn terminate_session(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     terminate_session_with_dispatcher(
         session_repo,
         active_sessions,
@@ -376,7 +377,7 @@ pub async fn cancel_workflow(
     if is_inactive_cancel_noop(&current_status) {
         cancel_frontend_completion_if_pending(
             active_sessions,
-            &TauriEventDispatcher::new(app_handle.clone()),
+            &TauriEventDispatcher::new(app_handle),
             &session_id,
             "workflow-cancel-noop-inactive",
         )
@@ -431,7 +432,7 @@ pub async fn cancel_workflow(
 
     cancel_frontend_completion_if_pending(
         active_sessions,
-        &TauriEventDispatcher::new(app_handle.clone()),
+        &TauriEventDispatcher::new(app_handle),
         &session_id,
         "workflow-cancelled",
     )
@@ -477,7 +478,8 @@ pub async fn cancel_workflow(
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    TauriEventDispatcher::from_handle(app_handle)
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Cancelled workflow for session: {}", session_id);

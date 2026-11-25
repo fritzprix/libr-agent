@@ -7,9 +7,10 @@ use super::types::{
     NonProductiveCompletionAction, NonProductiveCompletionReason, RecoveryContext,
     StreamingIssueAction, StreamingIssueOutcome,
 };
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{CompletionCancelRequest, StreamingIssueKind, StreamingIssueReport};
 use crate::agent::state::AgentSession;
-use crate::agent::tauri_events::emit_completion_cancel;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use std::collections::HashMap;
@@ -44,6 +45,8 @@ fn repeated_loop_reason_from_report(
                 observed_tail_chars: report.observed_tail_chars,
                 reasoning_budget_tokens: report.pattern_length,
                 estimated_thinking_tokens: report.repetition_count,
+                max_output_tokens: report.max_output_tokens,
+                max_output_tokens_source: report.max_output_tokens_source.clone(),
             })
         }
     }
@@ -135,12 +138,12 @@ pub async fn handle_streaming_issue(
     // completion. Otherwise the frontend stream may still be active and we would
     // risk dual completions or counting a retry that never stopped the loop.
     // See docs/architecture/text-loop-recovery.md (Recovery chain guarantees).
-    if let Err(error) = emit_completion_cancel(
-        app_handle,
+    if let Err(error) = TauriEventDispatcher::from_handle(app_handle).emit_completion_cancel(
         CompletionCancelRequest {
             session_id: report.session_id.clone(),
             response_message_id: report.response_message_id.clone(),
             reason: cancel_reason_for_issue(issue_kind).to_string(),
+            will_retry: matches!(action, StreamingIssueAction::CancelAndRetry { .. }),
         },
     ) {
         let active = active_sessions.read().await;

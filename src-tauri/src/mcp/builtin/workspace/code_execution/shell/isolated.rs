@@ -14,7 +14,7 @@ use super::super::super::{terminal_manager, utils, workspace_server, WorkspaceSe
 use super::super::interactive::interactive_shell::env_var_ref;
 use super::super::{process, validation};
 use super::input::ShellInput;
-use super::{format_command_io_message, format_duration_ms, truncate_sync_shell_stream};
+use super::{format_command_io_message, format_duration_ms};
 
 impl WorkspaceServer {
     /// Execute shell commands with isolation
@@ -49,6 +49,7 @@ impl WorkspaceServer {
             return Ok(result);
         }
         utils::add_wake_url_env(&session_id, &mut env_vars).await;
+        utils::add_session_temp_env(&session_id, is_docker, &mut env_vars);
         let secrets = self.shell_manager.session_secrets(&session_id).await;
         let logged_command = mask_secrets(command, &secrets);
 
@@ -410,8 +411,9 @@ impl WorkspaceServer {
                 let actual_exit_code = entry.exit_code.unwrap_or(-1);
                 let success = entry.status == terminal_manager::ProcessStatus::Finished
                     && actual_exit_code == 0;
-                let interrupted = entry.status == terminal_manager::ProcessStatus::Finished
-                    && validation::is_signal_interrupt_exit(actual_exit_code);
+                // Signal exits are never `Finished` (that status is exit 0 only),
+                // so do not require Finished here — same meaning as persistent (#2805).
+                let interrupted = validation::is_signal_interrupt_exit(actual_exit_code);
                 let retain_killed_process = entry.status == terminal_manager::ProcessStatus::Killed;
 
                 if !retain_killed_process {
@@ -502,14 +504,6 @@ impl WorkspaceServer {
                 }
 
                 if !success {
-                    let error_output = if !stderr.is_empty() {
-                        format!("Error output:\n{}", truncate_sync_shell_stream(&stderr))
-                    } else if !stdout.is_empty() {
-                        format!("Command output:\n{}", truncate_sync_shell_stream(&stdout))
-                    } else {
-                        "No error output captured".to_string()
-                    };
-
                     let guidance = validation::shell_command_failure_guidance(
                         Some(actual_exit_code),
                         &stdout,
@@ -520,9 +514,14 @@ impl WorkspaceServer {
 
                     return Ok(guided_error(
                         ErrorCategory::OperationFailed,
-                        format!(
-                            "Command failed with exit code: {}\n\n{}",
-                            actual_exit_code, error_output
+                        // Both streams: stdout often carries the program's own
+                        // report even when stderr is non-empty (#2706).
+                        format_command_io_message(
+                            &format!("Command failed with exit code: {actual_exit_code}"),
+                            "Command output",
+                            &stdout,
+                            "Error output",
+                            &stderr,
                         ),
                         ToolGroup::Workspace,
                     )

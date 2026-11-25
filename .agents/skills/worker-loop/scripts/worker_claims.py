@@ -42,6 +42,23 @@ def claim(worker: str, ref: str, path: Path | None = None) -> str | None:
     return None
 
 
+def transfer(ref: str, from_worker: str, to_worker: str, path: Path | None = None) -> str | None:
+    """Move `ref` from an orphaned worker to `to_worker`.
+
+    Returns None on success, else the third worker holding it. An unclaimed ref
+    is claimed for `to_worker`.
+    """
+    path = path or claims_path()
+    with exclusive(path.with_name(path.name + ".lock")):
+        claims = read_json(path)
+        holder = (claims.get(ref) or {}).get("worker")
+        if holder and holder not in (from_worker, to_worker):
+            return holder
+        claims[ref] = {"worker": to_worker, "at": int(time.time())}
+        worker_state.atomic_write_json(path, claims)
+    return None
+
+
 def release(worker: str, ref: str, path: Path | None = None) -> bool:
     """Release `ref` if `worker` holds it. Returns True when a claim was removed."""
     path = path or claims_path()

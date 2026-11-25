@@ -6,8 +6,11 @@
 //! explicit `LIBRAGENT_DATA_DIR`, and every request must carry the per-process
 //! capability token in the `X-LibrAgent-E2E-Control` header.
 
+mod circuit_break;
 mod handlers;
 mod token;
+pub mod ui;
+pub mod ui_plan;
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -16,14 +19,22 @@ use warp::{Filter, Rejection, Reply};
 
 use crate::agent::AgentSessionManager;
 
+pub use circuit_break::{pending_circuit_break, resume_circuit_break_message, PendingCircuitBreak};
 pub use handlers::{
     capability_guard, e2e_control_routes, e2e_control_routes_with_capability,
-    plan_user_prompt_action, tool_approval_error_status, E2eControlStatus, PlannedPromptAction,
-    UserPromptBody,
+    plan_circuit_break_resume, plan_picker_override, plan_user_prompt_action, plan_window,
+    tool_approval_error_status, window_state_reply, E2eControlStatus, PickerBody,
+    PlannedPromptAction, SessionInteractionsSnapshot, UserPromptBody, WindowBody, WindowPlan,
 };
 pub use token::{
-    capability_token, constant_time_eq, e2e_control_enabled, header_matches, init_capability_token,
-    E2E_CONTROL_CAPABILITY_FILE, E2E_CONTROL_HEADER,
+    capability_token, constant_time_eq, e2e_control_enabled, explicit_data_dir, header_matches,
+    init_capability_token, E2E_CONTROL_CAPABILITY_FILE, E2E_CONTROL_HEADER,
+};
+pub use ui::{
+    clamp_to_viewport, desktop_args, element_center, parse_wait_condition, pick_own_window,
+    plan_input, plan_navigate, plan_navigate_path, plan_panel_name, verify_window_input_safety,
+    window_viewport_geometry, ElementsBody, InputBody, InputPlan, InputTarget, NavigateBody,
+    NavigatePlan, ViewportGeometry, ViewportRect, WaitBody, WaitCondition, ZOrderedWindowFact,
 };
 
 /// The production guard chain for the E2E control plane: loopback Host/Origin

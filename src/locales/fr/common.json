@@ -86,7 +86,9 @@
       "description": "Description",
       "fullConfiguration": "Configuration complète",
       "expand": "Développer la configuration",
-      "collapse": "Réduire la configuration"
+      "collapse": "Réduire la configuration",
+      "pluginOwned": "Plugin : {{name}}",
+      "pluginOwnedHint": "Installé par un plugin. La modification est désactivée ; désinstallez le plugin pour le supprimer."
     }
   },
   "status": {
@@ -274,7 +276,10 @@
       "subagentsCount_one": "+{{count}} sous-agent",
       "subagentsCount_other": "+{{count}} sous-agents",
       "subagentsKept": "Sous-agents conservés",
-      "bookmarkedBadge": "Favorie"
+      "bookmarkedBadge": "Favorie",
+      "openElsewhere": "Ouverte ailleurs",
+      "forked": "Dupliquée",
+      "forkedFrom": "Dupliquée depuis la session {{id}}"
     },
     "actions": {
       "view": "Voir",
@@ -302,7 +307,8 @@
       "confirmDelete": "Confirmer la suppression",
       "confirmDeleteAria": "Confirmer la suppression",
       "cancel": "Annuler",
-      "cancelDeletionAria": "Annuler la suppression"
+      "cancelDeletionAria": "Annuler la suppression",
+      "openElsewhereAria": "La session {{name}} est ouverte dans un autre processus"
     },
     "emptyState": {
       "title": "Aucune session pour le moment",
@@ -532,7 +538,7 @@
       "circuitBreaker": "Limite de boucle d'outils",
       "circuitBreakerDescription": "Nombre d'erreurs répétées autorisées avant l'arrêt de la tâche.",
       "maxOutputTokens": "Tokens de sortie max (Défaut)",
-      "maxOutputTokensDescription": "Nombre maximum de tokens de sortie par défaut pour les nouvelles sessions si non spécifié par l'assistant.",
+      "maxOutputTokensDescription": "Nombre maximal de tokens de sortie par défaut lorsque l'assistant ne définit pas le sien. Relu à chaque requête.",
       "defaultSessionMaxDepth": "Limite de ramification de session (Avancé)",
       "defaultSessionMaxDepthDescription": "Contrôle combien de niveaux de sessions enfants sont autorisés par défaut. Réglez sur 0 pour illimité. La plupart des utilisateurs peuvent laisser tel quel.",
       "defaultSessionMaxDepthPlaceholder": "ex. 3",
@@ -894,7 +900,31 @@
       "importSuccessWithOverwriteAndSkipped_one": "{{count}} compétence importée ({{overwrittenCount}} écrasée, {{skippedCount}} ignorée)",
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} compétences importées ({{overwrittenCount}} écrasées, {{skippedCount}} ignorées)",
       "importSkippedOnly_one": "{{count}} compétence en conflit ignorée",
-      "importSkippedOnly_other": "{{count}} compétences en conflit ignorées"
+      "importSkippedOnly_other": "{{count}} compétences en conflit ignorées",
+      "commandsToInstall": "Commandes obliques à installer",
+      "agentsToInstall": "Sous-agents à installer",
+      "agentUnmappedTools": "Les outils sans correspondance ne sont pas accordés (les entrées restreintes comme Bash(git:*) comptent comme non mappées) : {{tools}}",
+      "agentGrantedServices": "Services accordés : {{services}}",
+      "agentGrantsAllServices": "Aucune ligne tools : tous les services LibrAgent seront accordés.",
+      "agentGrantsNoServices": "Aucun service accordé (aucun outil mappé).",
+      "agentWorkspaceGrantNote": "Le service workspace inclut l’écriture de fichiers et l’exécution de commandes shell.",
+      "userConfigTitle": "Configuration demandée par ce plugin",
+      "userConfigHint": "Ces valeurs sont transmises au plugin lors de son exécution. Une valeur sensible est conservée dans le stockage sécurisé de cet ordinateur et n'est plus jamais affichée.",
+      "userConfigMissing": "Obligatoire : {{names}}",
+      "pluginDisabledBadge": "désactivé",
+      "pluginUpdateAria": "Mettre à jour le plugin",
+      "pluginOwnedBadge": "plugin",
+      "pluginOwnedTooltip": "Installé par un plugin. Supprimez le plugin pour l'effacer.",
+      "disablePlugin": "Désactiver le plugin",
+      "enablePlugin": "Activer le plugin",
+      "pluginDetails": "Détails",
+      "pluginSourceEnabled": "Plugin activé.",
+      "pluginSourceDisabled": "Plugin désactivé. Il reste installé ; redémarre une session ou tape /reload pour l'appliquer.",
+      "pluginUpdateNoticeTitle": "Mettre à jour ce plugin ?",
+      "pluginUpdateNoticeBody": "Une mise à jour retélécharge le plugin. Elle peut modifier les serveurs MCP et les hooks du plugin, et ceux-ci peuvent exécuter du code sur votre machine. Accepter approuve toute la mise à jour, y compris les serveurs MCP et hooks modifiés.",
+      "pluginUpdateAgree": "Accepter et mettre à jour",
+      "pluginUpdateAvailable": "mise à jour disponible",
+      "pluginUpdatedReload": "Plugin mis à jour. Il s'applique à la réouverture d'une session ; tapez /reload pour l'appliquer maintenant."
     },
     "dev": {
       "devOnly": "DEV UNIQUEMENT",
@@ -1550,7 +1580,22 @@
       "badgeBuiltin": "intégré",
       "badgeMcp": "mcp",
       "viewDescription": "Voir la description",
-      "viewSchema": "Voir le schéma d'entrée"
+      "viewSchema": "Voir le schéma d'entrée",
+      "plugins": {
+        "title": "Plugins",
+        "empty": "Aucun plugin actif dans cette session. Utilisez /plugin install <git-url> pour en ajouter un.",
+        "scopeGlobal": "global",
+        "scopeSession": "session",
+        "installedAt": "Installé le {{time}}",
+        "skills": "Skills",
+        "hooks": "Hooks",
+        "hooksNotApproved": "non approuvés",
+        "history": "Historique d'installation",
+        "actionInstall": "Installé",
+        "actionUninstall": "Désinstallé",
+        "disabled": "désactivé",
+        "version": "Version"
+      }
     },
     "panels": {
       "shellTitle": "Panneaux de l'agent",
@@ -1636,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "Erreur d'exécution de l'outil",
+      "fallbackNoticeLabel": "Repli de modèle",
+      "fallbackNotice": "Le serveur a rejeté la requête (HTTP {{status}}). Nouvelle tentative avec le modèle de repli {{model}}.",
+      "fallbackNoticeNoStatus": "Le modèle principal a échoué. Nouvelle tentative avec le modèle de repli {{model}}.",
+      "fallbackNoticeDetails": "Afficher l'erreur du serveur",
       "notification": "Notification",
       "channel": "CANAL",
       "assistant": "ASSISTANT",
@@ -1886,7 +1935,26 @@
     "tryAgain": "Réessayer",
     "goToSettings": "Configurer la clé API dans les Paramètres",
     "invalidContextState": "Cette session nécessite une limite de contexte plus élevée. Augmentez le contexte d’entrée max dans les paramètres, puis réessayez.",
-    "openContextSettings": "Ouvrir les paramètres de contexte"
+    "openContextSettings": "Ouvrir les paramètres de contexte",
+    "reasoningStop": {
+      "budgetReason": "Le modèle a dépensé son budget de sortie en raisonnement sans donner de réponse ni appeler d'outil. Le tour a donc été arrêté.",
+      "budgetNumbers": "Environ {{used}} tokens utilisés. Le seuil est de {{budget}} tokens, soit 90 % des tokens de sortie max.",
+      "sourceAssistant": "Les tokens de sortie max sont de {{max}}, définis sur cet assistant. Modifier la valeur par défaut dans les Paramètres ne change rien pour cette session.",
+      "sourceSettings": "Les tokens de sortie max sont de {{max}}, d'après Paramètres → Interface de chat → Tokens de sortie max (Défaut).",
+      "sourceFallback": "Les tokens de sortie max sont de {{max}}, la valeur intégrée, car aucune valeur n'est définie dans les Paramètres.",
+      "budgetNextSteps": "Étape suivante : augmentez Tokens de sortie max (Défaut) dans les Paramètres, puis réessayez. La nouvelle valeur s'applique à la requête suivante. Réessayer sans rien changer s'arrête souvent de la même façon.",
+      "budgetNextStepsAssistant": "Étape suivante : réessayez, ou réduisez la demande pour qu'elle exige moins de raisonnement. Réessayer sans rien changer s'arrête souvent de la même façon.",
+      "thinkingOnlyReason": "Le modèle a terminé avec seulement un raisonnement interne : ni réponse ni appel d'outil.",
+      "thinkingOnlyNextSteps": "Étape suivante : réessayez, ou demandez une réponse directe. Si le modèle a pu atteindre sa limite de sortie, augmentez d'abord Tokens de sortie max (Défaut) dans les Paramètres.",
+      "thinkingLoopReason": "Le modèle répétait sans cesse le même raisonnement. Le tour a donc été arrêté.",
+      "textLoopReason": "Le modèle répétait sans cesse le même texte. Le tour a donc été arrêté.",
+      "loopNumbers": "Motif de {{patternLength}} caractères détecté, répété {{repetitionCount}} fois.",
+      "thinkingLoopNextSteps": "Étape suivante : réessayez, ou reformulez ou réduisez la demande. S'il s'agit d'une fausse alerte, augmentez Longueur minimale du motif de boucle de pensée ou Répétitions minimales de boucle de pensée dans Paramètres → Avancé.",
+      "textLoopNextSteps": "Étape suivante : réessayez, ou reformulez ou réduisez la demande.",
+      "autoRetries": "Nouvelles tentatives automatiques déjà utilisées : {{retries}}.",
+      "openOutputTokenSettings": "Ouvrir les paramètres des tokens de sortie max",
+      "openLoopSettings": "Ouvrir les paramètres avancés"
+    }
   },
   "knowledge": {
     "untitledEntry": "Entrée de connaissance sans titre",
@@ -2068,6 +2136,11 @@
       "docsExport": {
         "title": "Recevez vos réponses en PDF, Word ou PowerPoint",
         "body": "Tapez @skill:docs et demandez un rapport, une proposition ou un compte rendu : l'agent enregistre un fichier PDF, DOCX ou PPTX prêt à partager.",
+        "cta": "Essayer dans le chat"
+      },
+      "plugins": {
+        "title": "Installez des plugins avec /plugin install",
+        "body": "Ajoutez des plugins Claude Code dans le chat ou depuis Skills pour activer de nouvelles commandes slash, des sous-agents, des hooks et des outils MCP.",
         "cta": "Essayer dans le chat"
       }
     }

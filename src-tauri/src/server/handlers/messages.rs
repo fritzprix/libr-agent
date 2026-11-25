@@ -3,7 +3,9 @@ use crate::models::chat::MessageSource;
 use std::sync::Arc;
 use warp::{http::StatusCode, Rejection, Reply};
 
-use super::helpers::{map_message_for_http, resolve_error_reply, resolve_http_session_ref};
+use super::helpers::{
+    map_message_for_http, open_gate, resolve_error_reply, resolve_http_session_ref,
+};
 use super::types::{ErrorResponse, GetMessagesQuery, SendMessageRequest, SendMessageResponse};
 
 const DEFAULT_MESSAGES_LIMIT: u64 = 50;
@@ -86,10 +88,19 @@ pub async fn send_message(
     id: String,
     manager: Arc<AgentSessionManager>,
     body: SendMessageRequest,
+    attachment: Option<String>,
 ) -> Result<impl Reply, Rejection> {
-    let id = match resolve_http_session_ref(&id).await {
+    // Sending to a session is opening it: refused while another live process
+    // owns it; otherwise this frontend takes ownership (#2759).
+    let id = match open_gate(
+        &id,
+        attachment.as_deref(),
+        manager.repositories().session.as_ref(),
+    )
+    .await
+    {
         Ok(id) => id,
-        Err((status, error)) => return Ok(resolve_error_reply(status, error)),
+        Err(refusal) => return Ok(refusal),
     };
 
     match crate::services::AgentService::send_message_to_session(

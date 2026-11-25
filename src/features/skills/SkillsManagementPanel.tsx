@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SkillsListModal } from '@/features/settings/components/SkillsListModal';
 import { cn } from '@/lib/utils';
+import { PluginUpdateNoticeDialog } from './components/PluginUpdateNoticeDialog';
 import { SkillsConflictDialog } from './components/SkillsConflictDialog';
 import { SkillsManagementPanelContent } from './components/SkillsManagementPanelContent';
 import { SkillsResetDialog } from './components/SkillsResetDialog';
@@ -22,6 +23,7 @@ function SkillsManagementPanelComponent({
     userSkills,
     systemDirectory,
     userDirectory,
+    pluginSources,
     isDragging,
     pendingInstall,
     pendingInstallSystemConflicts,
@@ -40,9 +42,19 @@ function SkillsManagementPanelComponent({
     handleOpenDirectory,
     handleGitHubInstall,
     confirmPendingInstall,
+    confirmPendingInstallWithoutHooks,
     togglePendingOverwrite,
+    setPendingApproveHooks,
+    setPendingPluginOption,
+    handleReinstallPluginSource,
+    confirmPluginUpdate,
+    handleTogglePluginSourceEnabled,
+    handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,
+    pendingUpdateUrl,
+    setPendingUpdateUrl,
+    updatesAvailable,
   } = useSkillsManagementPanel();
 
   return (
@@ -61,6 +73,14 @@ function SkillsManagementPanelComponent({
         isInstallingGithub={isInstallingGithub}
         isInstallingLocal={isInstallingLocal}
         isResettingUserSkills={isResettingUserSkills}
+        pluginSources={pluginSources}
+        updatesAvailable={updatesAvailable}
+        removingPluginSourceId={isDeletingSkill}
+        onUpdatePluginSource={(url) => void handleReinstallPluginSource(url)}
+        onTogglePluginSourceEnabled={(id, enabled) =>
+          void handleTogglePluginSourceEnabled(id, enabled)
+        }
+        onRemovePluginSource={(id) => void handleDeletePluginSource(id)}
         onRepoUrlChange={setRepoUrl}
         onRefresh={() => void refresh()}
         onViewInstalled={() => setIsModalOpen(true)}
@@ -90,7 +110,21 @@ function SkillsManagementPanelComponent({
           }
         }}
         onToggleOverwrite={togglePendingOverwrite}
+        onApproveHooksChange={setPendingApproveHooks}
+        onUserConfigChange={setPendingPluginOption}
         onConfirm={confirmPendingInstall}
+        onConfirmWithoutHooks={confirmPendingInstallWithoutHooks}
+      />
+
+      <PluginUpdateNoticeDialog
+        pendingUpdateUrl={pendingUpdateUrl}
+        isBusy={isInstallingGithub || isInstallingLocal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingUpdateUrl(null);
+          }
+        }}
+        onAgree={confirmPluginUpdate}
       />
 
       <SkillsResetDialog

@@ -1,5 +1,4 @@
 use super::super::tools::file_tools::EDIT_FILE_MAX_EDITS;
-use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::utils::annotate_warnings;
@@ -65,13 +64,20 @@ async fn validate_edit_target_path(
                 format!("Path validation failed for '{}': {}", path_str, error),
                 ToolGroup::Workspace,
             )
-            .guidance(path_validation_failure_guidance(
-                &error,
-                vec![
-                    "Use workspace-relative paths only".to_string(),
-                    "Use workspace__listDirectory('.') to inspect valid target paths".to_string(),
-                ],
-            ))
+            .guidance(
+                server
+                    .path_failure_guidance(
+                        &error,
+                        path_str,
+                        session_id.as_deref().unwrap_or(&server.session_id),
+                        vec![
+                            "Use workspace-relative paths only".to_string(),
+                            "Use workspace__listDirectory('.') to inspect valid target paths"
+                                .to_string(),
+                        ],
+                    )
+                    .await,
+            )
             .to_mcp_result());
         }
     };

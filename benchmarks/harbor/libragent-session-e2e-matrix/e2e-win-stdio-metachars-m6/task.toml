@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-win-stdio-metachars-m6"
+description = "2672 M-6 (Windows): stdio MCP server arg containing &, |, ^, <, > passes through verbatim without cmd.exe shell splitting"
+keywords = ["libragent", "session-e2e", "windows", "mcp", "stdio"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "2672-M-6", "platform-windows", "mcp", "stdio"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "2672-M-6"
+requires_host_os = "windows"
+auto_answer_interactive = true
+approve_standard_tools = true
+reject_hard_approvals = false
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

@@ -8,7 +8,10 @@ Computes a fingerprint from a single GraphQL request covering:
 
 With no 'current' work and an unchanged fingerprint, it still returns RUN when an
 open `approved` issue is free to take and no open PR closes it, so an approved
-issue is never ignored just because the tracked state did not move.
+issue is never ignored just because the tracked state did not move. It also
+returns RUN when another slot's run died with `current` work (see
+worker_slots.orphaned_slots) and prints one `ORPHANED <slot> <ref> ...` line per
+such slot; `worker_worktree.py takeover` resumes that work.
 
 If state.json has no 'current' and nothing is pending and the fingerprint matches
 'lastFingerprint', outputs 'NOOP' and exits with code 1 so external schedulers
@@ -21,6 +24,7 @@ Exit codes:
       `slot-held` or `no-free-slot` means other workers exist)
   3 - ERROR (authentication, network, or GraphQL failure; not NOOP)
   4 - LEASE LOST (this tick no longer owns its slot: stop working, touch nothing)
+  5 - SKILLS STALE (.agents/skills differs from origin/<base>; stop the tick)
 
 --lock prints `WORKER <name>` and `TOKEN <token>`. Pass both to every later
 command of the tick. --renew extends the lease and is the ownership check before
@@ -43,6 +47,12 @@ import tick_lock
 import worker_claims
 import worker_slots
 import worker_state
+
+_LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
+if str(_LOOP_SHARED) not in sys.path:
+    sys.path.insert(0, str(_LOOP_SHARED))
+
+import skills_freshness  # noqa: E402
 
 EXIT_RUN = 0
 EXIT_NOOP = 1
@@ -97,8 +107,8 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
 """
 
 
-class GhError(RuntimeError):
-    """Raised when GitHub CLI execution fails."""
+# One class, so issue_candidates can tell an optional lookup failed through our gh.
+GhError = issue_candidates.GhError
 
 
 def default_state_path(worker: str) -> Path:
@@ -144,14 +154,14 @@ def release_lock(lock_file: Path) -> None:
 def pending_approved_issue(worker: str) -> int | None:
     """First open `approved` issue this worker can take, or None.
 
-    Uses `issue_candidates.exclusion_reason` so "no open PR closes it" means the
-    same thing here as in candidate selection.
+    Uses the same checks as `issue_candidates`, so an issue waiting on the owner
+    or on an open dependency does not keep every tick running.
     """
     claims = worker_claims.load_claims()
     me = gh("api", "user", "--jq", ".login").strip()
     issues = json.loads(
-        gh("issue", "list", "--state", "open", "--limit", str(ISSUE_LIMIT), "--json",
-           "number,labels,assignees")
+        gh("issue", "list", "--state", "open", "--label", issue_candidates.APPROVED_LABEL,
+           "--limit", str(ISSUE_LIMIT), "--json", "number,body,labels,assignees")
     )
     closing_pr = issue_candidates.closing_pr_map(issue_candidates.list_open_prs())
 
@@ -163,7 +173,7 @@ def pending_approved_issue(worker: str) -> int | None:
             number, labels, assignees, me, closing_pr,
             claimed_by=worker_claims.claimed_by_other(claims, f"issue:{number}", worker),
         )
-        if free is None:
+        if free is None and issue_candidates.waiting_reason(issue, labels, me, gh)[0] is None:
             return number
     return None
 
@@ -268,23 +278,36 @@ def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[in
 
     fp = compute_fingerprint()
     last_fp = state.get("lastFingerprint")
+    orphans = [o for o in worker_slots.orphaned_slots() if o["worker"] != worker]
     message = f"RUN (changes detected: {fp[:12]})"
     if last_fp and last_fp == fp:
-        # Nothing tracked moved, but an approved issue may still be waiting.
+        # Nothing tracked moved, but an approved issue or orphaned work may still be waiting.
         pending = pending_approved_issue(worker)
-        if pending is None:
+        if pending is not None:
+            message = f"RUN (approved issue pending: #{pending})"
+        elif orphans:
+            message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+        else:
             return EXIT_NOOP, "NOOP (no changes)"
-        message = f"RUN (approved issue pending: #{pending})"
 
     # Keep the start-of-tick fingerprint; lastFingerprint is saved only by a
     # successful idle tick (--update).
     if locking:
         state["tickStartFingerprint"] = fp
         save_state(state_path, state)
-    return EXIT_RUN, message
+    return EXIT_RUN, "\n".join([message, *(_orphan_line(o) for o in orphans)])
+
+
+def _orphan_line(orphan: dict) -> str:
+    renewed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(orphan["lastRenewedAt"]))
+    return f"ORPHANED {orphan['worker']} {orphan['ref']} branch={orphan.get('branch') or '-'} lastRenewed={renewed}"
 
 
 def _lock_and_gate(args: argparse.Namespace) -> int:
+    stale = skills_freshness.gate_skills_freshness()
+    if stale is not None:
+        return stale
+
     requested = args.worker or os.environ.get("WORKER_ID")
     held = lease.inherited_lease(requested, args.state_file)
     if held is None:

@@ -9,6 +9,7 @@ pub mod request_layout;
 pub mod response;
 pub(crate) mod response_admission;
 pub(crate) mod response_circuit_breaker;
+pub mod rust_executor;
 pub mod stream_recovery;
 pub mod token_utils;
 pub mod tool_args_validation;
@@ -23,7 +24,8 @@ pub use request_layout::*;
 pub use response::initialize_pending_execution_for_testing;
 pub use response::*;
 pub use response_circuit_breaker::{
-    preprocess_assistant_tool_calls_for_testing, CircuitBreakerPreprocessResult,
+    apply_invalid_tool_args_policy_for_testing, preprocess_assistant_tool_calls_for_testing,
+    CircuitBreakerPreprocessResult, InvalidToolArgsOutcome, INVALID_TOOL_ARGS_MAX_RESAMPLES,
 };
 pub use stream_recovery::*;
 pub use token_utils::*;

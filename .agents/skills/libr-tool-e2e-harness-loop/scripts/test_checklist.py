@@ -94,6 +94,11 @@ class ChecklistTest(unittest.TestCase):
             code = checklist.main(list(argv))
         return code, out.getvalue()
 
+    def test_build_sha_line_in_comment(self):
+        rows = [{"id": "E-1", "verdict": "pass", "session": "s1", "excerpt": "", "artifact": "", "time": "2026-11-04T09:00Z"}]
+        comment = checklist.render_comment(1, checklist.parse_items(TAGGED), rows, build_sha="abc123", build_dirty=False)
+        self.assertIn("Build: `abc123` (dirty: no)", comment)
+
     def test_comment_defaults_to_dry_run(self):
         fake = FakeGh(UNTAGGED_2565)
         code, out = self.run_main(fake, "comment", "--issue", "2565")

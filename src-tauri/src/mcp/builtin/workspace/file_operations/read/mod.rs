@@ -1,9 +1,7 @@
 //! workspace__readFile handler and helpers.
 
 use super::super::edit_mode::{read_file_anchor_output_suffix, read_file_anchor_prefix_note};
-use super::super::workspace_server::{
-    looks_like_confused_harness_path, path_operation_failure_guidance, with_harness_alias_hint,
-};
+use super::super::workspace_server::{looks_like_confused_harness_path, with_harness_alias_hint};
 use super::super::WorkspaceServer;
 use super::utils::{detect_language, format_file_size};
 #[cfg(test)]
@@ -78,7 +76,7 @@ impl WorkspaceServer {
         };
 
         // 2. Path pattern validation (reject dangerous patterns)
-        if path_str.contains("..") {
+        if crate::mcp::builtin::utils::has_parent_traversal(path_str) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Path traversal patterns (..) are not allowed",
@@ -131,15 +129,19 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(path_operation_failure_guidance(
-                    &e,
-                    path_str,
-                    vec![
-                        "Verify the file path is correct".to_string(),
-                        "Use workspace__listDirectory to see available files".to_string(),
-                        "Ensure you have read permissions for the file".to_string(),
-                    ],
-                ))
+                .guidance(
+                    self.path_failure_guidance(
+                        &e,
+                        path_str,
+                        session_id.as_deref().unwrap_or(&self.session_id),
+                        vec![
+                            "Verify the file path is correct".to_string(),
+                            "Use workspace__listDirectory to see available files".to_string(),
+                            "Ensure you have read permissions for the file".to_string(),
+                        ],
+                    )
+                    .await,
+                )
                 .to_mcp_result());
             }
         };

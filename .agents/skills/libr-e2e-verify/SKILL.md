@@ -1,0 +1,155 @@
+---
+name: libr-e2e-verify
+description: >
+  End-to-end verification of a running LibrAgent from an external agent (Claude Code,
+  Cursor, or a LibrAgent session) over the HTTP Session API and the debug E2E control
+  plane. Use when asked to "E2E 검증", "verify this build E2E", "run the smoke matrix",
+  "smoke test LibrAgent", or when executing the `[auto]` items of an `auto:e2e` ticket
+  checklist with per-item pass/fail evidence. One invocation runs
+  health → create session → control-plane probe → message → poll (driving pending
+  approvals/prompts) → transcript check → cleanup
+  and prints a pass/fail table. No new server code; the skill never starts or stops
+  LibrAgent. Not for spawning a session alone (libr-delegate), builtin-tool improvement
+  loops (libr-tool-e2e-harness-loop), Harbor benchmarks (bench), or diff-driven
+  release-to-HEAD campaigns (release-head-self-e2e).
+---
+
+# Libr E2E Verify
+
+Verify a running LibrAgent end to end over HTTP only. The interfaces already exist;
+this skill is the knowledge and the pass/fail discipline:
+
+**preconditions → session lifecycle → blocking interactions → evidence → classification → cleanup**
+
+## When to use
+
+- Verify a built/installed app after a release or a merge batch (smoke matrix).
+- Execute `[auto]` items of open `auto:e2e` issue checklists with one evidence pointer per item.
+- Any assertion an external harness can make over HTTP without touching the app UI.
+
+## Preconditions
+
+Follow [references/e2e-build-precondition.md](references/e2e-build-precondition.md) before any HTTP checks. The operator or external harness owns building and starting the app; this skill never builds or starts LibrAgent. If the running build is missing a required commit, report the verdict (`NOOP` / `blocked: not in build`) and stop.
+
+| Check            | How                                                                                                                                                      | Meaning                                                                                                                                                                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build provenance | `buildSha` / `buildDirty` on `GET /api/health` or `GET /api/e2e-control/status`                                                                          | Record `buildSha` in results. PRs not in the build are `blocked: not in build`.                                                                                                                                                                                                          |
+| Health gate      | `GET /api/health` → `status: ok`                                                                                                                         | Proceed. If unreachable, abort.                                                                                                                                                                                                                                                          |
+| Control plane    | `GET /api/e2e-control/status` with header `X-LibrAgent-E2E-Control: <cap>`, where `<cap>` is the content of `e2e_control.cap` under `LIBRAGENT_DATA_DIR` | `200` = debug build with `LIBRAGENT_E2E_CONTROL=1` and an explicit `LIBRAGENT_DATA_DIR`. `403` = plane enabled but the header is missing/wrong — re-read `e2e_control.cap` and check the data dir you are reading it from. `404`/`405` = absent (release build or debug without opt-in). |
+| Fallback         | Control plane absent → run with `executionMode: yolo` (default; standard tools) or `unsafe` (also hard-approval tools; scratch workspace only)           | Report `control plane absent — yolo/unsafe fallback`, do not fail the run.                                                                                                                                                                                                               |
+
+- The control plane is debug-only and loopback-only. Never expect it on a release build.
+- `Authorization: Bearer <key>` on the Session API is configuration-dependent; send it only when the user provides an API key.
+
+## Session lifecycle
+
+```
+POST /api/sessions            {assistantId, executionMode, workspacePath, request?}   # omit request → idle session
+POST /api/sessions/:id/messages  {content, source}                                    # busy → queued
+GET  /api/sessions/:id                                                             # poll status: idle | busy | paused | error
+GET  /api/sessions/:id/children                                                    # only when delegation is expected
+POST /api/sessions/:id/resume                                                      # reload paused/crashed in place (also the "session reload" path for process-retention checks)
+POST /api/sessions/:id/terminate
+DELETE /api/sessions/:id
+```
+
+- Always pass an absolute `workspacePath`; use `unsafe` only in a scratch directory, never the repo or the user workspace.
+- `assistantId` is required; prefer the Master Mind assistant for unattended runs.
+
+## Blocking interactions over HTTP (debug control plane)
+
+| Need                                              | Call                                                                                                                                               |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| See what blocks a session                         | `GET /api/e2e-control/sessions/:ref/interactions` → pending user prompt + pending approvals + pending circuit break                                |
+| Answer or cancel a `ui__askUser` / storeAs prompt | `POST /api/e2e-control/sessions/:ref/user-prompts` with `{"requestId": "...", "action": "answer"}` or `"cancel"`, plus `"value"`                   |
+| Approve or deny a tool approval                   | `POST /api/e2e-control/sessions/:ref/tool-approvals` with `{"toolCallId": "...", "approved": true}` or `{"toolCallId": "...", "approved": false}`  |
+| Resume a waiting circuit breaker                  | `POST /api/e2e-control/sessions/:ref/circuit-break-resume` (no body; answers `409` if none is waiting)                                             |
+| Resolve the next native file dialog (attach/save) | `POST /api/e2e-control/picker` with `{"path": "/abs/path"}` or `{"cancel": true}` — one-shot, arm it right before the action that opens the dialog |
+| Show/hide or resize the isolated main window      | `POST /api/e2e-control/window` with `{"visible": true, "width": 1280, "height": 800}` → returns actual `{visible, width, height}`                  |
+
+## GUI automation over HTTP (debug control plane, #2902)
+
+All `/api/e2e-control/ui/*` routes require a debug build, `LIBRAGENT_E2E_CONTROL=1`, an explicit `LIBRAGENT_DATA_DIR`, loopback peer + Host, and the `X-LibrAgent-E2E-Control` capability header. Release builds return `404`. LibrAgent never judges pass/fail: the external multimodal agent operates the isolated GUI through these routes, takes window-only screenshots, and judges visually from the saved PNG files.
+
+| Need                                      | Call                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capture the isolated instance window only | `GET /api/e2e-control/ui/screenshot` (`?includeBase64=true` optional) → `{path, width, height, bytes, base64?}` written under `<LIBRAGENT_DATA_DIR>/e2e_captures/` (PID-scoped; never captures the full monitor or by title)                                                                                              |
+| Navigate to a route, session, or panel    | `POST /api/e2e-control/ui/navigate` with `{"path": "/settings"}`, `{"sessionId": "<id>", "panel": "planning"}`, or `{"panel": "processes"\|"planning"\|"workspace"\|"close"}` → `{ok, path, panel}`                                                                                                                       |
+| Inspect interactable elements             | `POST /api/e2e-control/ui/elements` with `{"selector"?: "...", "timeoutMs"?: 5000}` → `{elements: [{role, tag, label, id?, testId?, inputType?, disabled, bounds: {x, y, width, height}, visible}], count}`                                                                                                               |
+| Click, type, key, scroll, or hover        | `POST /api/e2e-control/ui/input` with `{"action": "click"\|"double_click"\|"right_click"\|"middle_click"\|"type"\|"key"\|"scroll"\|"hover", "selector"?: "...", "testId"?: "...", "x"?: 0, "y"?: 0, "text"?: "dummy-token-abcd", "key"?: "Enter", "modifiers"?: ["Ctrl"], "scrollAmount"?: 5, "axis"?: "vertical"}` → `{ok, delivery, ...}`. Element targets (`selector`/`testId`) are dispatched as DOM events inside the isolated instance's webview (`delivery: "dom"`) — no OS-level input is used. Raw `x`/`y` coordinates fall back to OS input (`delivery: "os"`) only when the instance window is focused and topmost at that point; otherwise `409`. Pointer actions and `scroll` require a target (`selector`/`testId` or `x`/`y`) — only `type`/`key` may aim at the cursor. There is no `drag` action |
+| Wait for a session or dialog state        | `POST /api/e2e-control/ui/wait` with `{"condition": "session-idle"\|"prompt-pending"\|"approval-pending"\|"circuit-break-pending"\|"dialog-open", "sessionId"?: "<id>", "timeoutMs"?: 15000, "pollMs"?: 250}` → `{condition, satisfied, timedOut, waitedMs, state}`                                                       |
+| Restart the isolated instance in place    | `POST /api/e2e-control/ui/restart` (no body) → `{ok, restarting, note}` (deletes `e2e_control.cap` before re-exec; re-read `<LIBRAGENT_DATA_DIR>/e2e_control.cap` once the restarted instance is healthy)                                                                                                                 |
+
+Without the control plane, prompts and approvals block until a human answers or
+`yolo`/`unsafe` auto-approves them.
+
+### Polling contract
+
+There is no event stream; poll `interactions` every **3.0 s** (the bench
+default, `DEFAULT_POLL_INTERVAL_SEC`). The snapshot carries
+`pendingUserPrompt` (`null` or `{requestId, kind, payload, createdAt}`),
+`pendingApprovals` (`[{toolCallId, toolName, reason, commandPreview,
+approvalKind, requestId?}]`) and `pendingCircuitBreak` (`null` or
+`{toolName, repetitionCount, toolCallId}`) — a waiting `ui__circuitBreak` is
+cleared with `POST .../sessions/:ref/circuit-break-resume` (#2901; the route
+answers HTTP 409 `{error}` when none is waiting). A prompt
+that just appeared or was just answered may lag one poll cycle — treat a
+single missed cycle as normal. A waiting prompt is stuck only after more than
+`LIBRAGENT_POLL_TIMEOUT_SEC` without an answer. `{delivered: false}` means the
+prompt was already gone: re-poll and judge from the fresh snapshot instead of
+retrying the same `requestId`. The authoritative contract lives in the
+`session_e2e/control.py` module docstring and is pinned by
+`benchmarks/harbor/test_session_e2e_automation.py`.
+
+## Evidence and results
+
+- Extract the transcript **before** cleanup: `GET /api/sessions/:id/messages?limit=500`.
+- One result per item: `pass` / `fail` / `blocked`, plus one evidence pointer (session id,
+  transcript excerpt, process output, or log grep line).
+- `fail` links a bug issue; `blocked` names its blocker.
+- Never print secret values in evidence; grep for presence/masking, not the value. Dummy
+  secrets only (for example `dummy-token-abcd`).
+
+## Item classification
+
+- `[auto]` — observable over HTTP: session status, transcript content, tool output, log greps, or visual/GUI items that the external agent reaches and captures through `/api/e2e-control/ui/*`.
+- `blocked` — items that cannot be automated yet, with a linked issue that tracks the missing piece. `[manual]` is not a valid final state.
+
+## Cleanup discipline
+
+- Terminate then delete every one-shot session; never leave orphan sessions behind.
+- `--keep-session` only while debugging a failed run.
+
+## Smoke matrix (one invocation)
+
+```
+node .agents/skills/libr-e2e-verify/scripts/smoke_matrix.cjs --assistant <config-id> \
+  --data-dir <isolated-dir> [--base-url http://127.0.0.1:<port>] \
+  [--workspace <scratch-dir>] [--api-token <key>] \
+  [--execution-mode yolo|unsafe] [--timeout 180] [--keep-session]
+```
+
+Runs health → create → control-plane probe → message → poll (driving pending tool
+approvals and user prompts through the control plane while the session is busy) →
+transcript check → terminate + delete, and prints one pass/fail table. Exit `0` only
+when every step passes; a release build passes the control-plane step as
+`absent (yolo/unsafe fallback)`, not as a failure.
+
+`--data-dir` is required and must be an isolated profile, not the user's
+prod, dev, or demo data directory. For the smoke matrix, record that
+instance's bound port in `<data-dir>/http_port` (one backend per isolated
+dir). On a normal profile without `LIBRAGENT_DATA_DIR`, each process instead
+publishes `~/.libragent/http_port.<pid>` and
+`<db>.backend.<pid>.json` — the matrix does not scan those. `--base-url` is
+optional. When set, it must be a loopback URL (`127.0.0.1`, `localhost`, or
+`::1`) on the same port as `<data-dir>/http_port`. The matrix does not
+default to port 3030 or probe other hosts. The script never starts or stops
+LibrAgent.
+
+## Tests
+
+The guard tests use `node:test`, not Vitest. Run them with:
+
+```
+node --test .agents/skills/libr-e2e-verify/scripts/smoke_matrix.test.cjs
+```

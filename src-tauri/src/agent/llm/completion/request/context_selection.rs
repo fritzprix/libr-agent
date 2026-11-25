@@ -39,27 +39,6 @@ pub async fn trigger_preflight_compaction_for_messages_or_error(
     })
 }
 
-pub fn build_compact_context_selection_options(
-    system_prompt: Option<String>,
-    tools_json: Option<String>,
-    provider: &str,
-    tool_call_group_visible_count: usize,
-    fallback_calibration_ratio: Option<f64>,
-) -> crate::agent::llm::context_selector::SelectionOptions {
-    crate::agent::llm::context_selector::SelectionOptions {
-        system_prompt,
-        tools_json,
-        max_messages: None,
-        max_tool_calls_per_message: Some(if provider == "gemini" {
-            100
-        } else {
-            tool_call_group_visible_count
-        }),
-        pin_first_user_message: false,
-        fallback_calibration_ratio,
-    }
-}
-
 pub fn resolve_preserved_calibration_ratio(
     raw_messages: &[Message],
     prompt_messages: &[Message],

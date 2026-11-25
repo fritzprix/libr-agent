@@ -19,6 +19,8 @@ const { spawnSync } = require('node:child_process');
 const ROOT = path.join(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'src-tauri', 'tests');
 const RUNNER = path.join(__dirname, 'run-rust-command.cjs');
+// Workspace member crates whose unit tests run after the app's `--lib` step.
+const WORKSPACE_TEST_CRATES = ['llm-client'];
 
 function hasFlag(args, flagNames) {
   return args.some((arg) => {
@@ -67,6 +69,56 @@ function isTransientWindowsExecFailure(output) {
   );
 }
 
+/** Backoff between EAGAIN retries while a full non-blocking pipe drains. */
+const EAGAIN_RETRY_DELAY_MS = 10;
+
+/**
+ * Push one captured stream fully onto its fd.
+ *
+ * Two truncation mechanisms had to die (#2776):
+ * - `process.stdout.write` is async on a pipe; `process.exit` right after
+ *   drops Node's userspace tail. Synchronous `fs.writeSync` avoids that.
+ * - `fs.writeSync` performs a single write call, which a pipe may accept
+ *   only partially; the remainder of the payload must be written in a loop
+ *   until the fd has taken every byte. A non-blocking pipe reports EAGAIN
+ *   instead, so retry after a short backoff.
+ */
+function writeAllSync(writeSync, fd, text, sleep) {
+  if (!text) {
+    return;
+  }
+  const buffer = Buffer.from(text);
+  let offset = 0;
+  while (offset < buffer.length) {
+    let written;
+    try {
+      // position=null: append at the fd's current offset, never seek.
+      written = writeSync(fd, buffer, offset, buffer.length - offset, null);
+    } catch (err) {
+      if (err && err.code === 'EAGAIN') {
+        sleep(EAGAIN_RETRY_DELAY_MS);
+        continue;
+      }
+      throw err;
+    }
+    if (typeof written !== 'number' || written <= 0) {
+      throw new Error(
+        `[rust-test-sequential] write to fd ${fd} made no progress at offset ${offset}`,
+      );
+    }
+    offset += written;
+  }
+}
+
+function writeCapturedOutput(stdout, stderr, deps = {}) {
+  const writeSync = deps.writeSync ?? fs.writeSync;
+  const stdoutFd = deps.stdoutFd ?? process.stdout.fd;
+  const stderrFd = deps.stderrFd ?? process.stderr.fd;
+  const sleep = deps.sleepMs ?? sleepMs;
+  writeAllSync(writeSync, stdoutFd, stdout, sleep);
+  writeAllSync(writeSync, stderrFd, stderr, sleep);
+}
+
 function runCargoTest(cargoArgs) {
   const env = { ...process.env };
   if (!env.CARGO_BUILD_JOBS) {
@@ -84,23 +136,34 @@ function runCargoTest(cargoArgs) {
   }
   const stdout = result.stdout ?? '';
   const stderr = result.stderr ?? '';
-  if (stdout) {
-    process.stdout.write(stdout);
-  }
-  if (stderr) {
-    process.stderr.write(stderr);
-  }
+  writeCapturedOutput(stdout, stderr);
   return {
     status: result.status ?? 1,
     output: `${stdout}${stderr}`,
   };
 }
 
-function runCargoTestWithRetries(cargoArgs, targetLabel) {
-  const maxAttempts = process.platform === 'win32' ? 5 : 1;
+/** Windows only: Defender may lock a freshly linked test exe for a few seconds. */
+const MAX_ATTEMPTS_WINDOWS = 5;
+/** Linear backoff base: attempt N waits N * RETRY_BASE_DELAY_MS before retry N+1. */
+const RETRY_BASE_DELAY_MS = 2000;
+
+function maxAttemptsFor(platform) {
+  return platform === 'win32' ? MAX_ATTEMPTS_WINDOWS : 1;
+}
+
+/**
+ * Retry a transient Windows exec-lock failure with linear backoff.
+ * `deps` exists for tests (inject `runCargoTest`/`sleepMs`/`maxAttempts`);
+ * the CLI path always uses the defaults.
+ */
+function runCargoTestWithRetries(cargoArgs, targetLabel, deps = {}) {
+  const run = deps.runCargoTest ?? runCargoTest;
+  const sleep = deps.sleepMs ?? sleepMs;
+  const maxAttempts = deps.maxAttempts ?? maxAttemptsFor(process.platform);
   let last = { status: 1, output: '' };
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    last = runCargoTest(cargoArgs);
+    last = run(cargoArgs);
     if (last.status === 0) {
       return 0;
     }
@@ -109,11 +172,11 @@ function runCargoTestWithRetries(cargoArgs, targetLabel) {
     if (!canRetry) {
       return last.status;
     }
-    const delayMs = attempt * 2000;
+    const delayMs = attempt * RETRY_BASE_DELAY_MS;
     console.error(
       `[rust-test-sequential] Transient Windows exec lock for ${targetLabel}; retry ${attempt}/${maxAttempts - 1} after ${delayMs / 1000}s...`,
     );
-    sleepMs(delayMs);
+    sleep(delayMs);
   }
   return last.status;
 }
@@ -137,9 +200,19 @@ function main() {
     process.exit(1);
   }
 
-  const totalSteps = targets.length + 1;
+  // Workspace crates have none of the app's features, so a feature-specific
+  // run (for example the edit-file one) leaves them out.
+  const crates = hasFlag(passthrough, [
+    '--features',
+    '--no-default-features',
+    '--all-features',
+  ])
+    ? []
+    : WORKSPACE_TEST_CRATES;
+  const leadSteps = 1 + crates.length;
+  const totalSteps = targets.length + leadSteps;
   console.error(
-    `[rust-test-sequential] ${totalSteps} targets (1 lib + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
+    `[rust-test-sequential] ${totalSteps} targets (1 lib + ${crates.length} crate + ${targets.length} integration) — linking one binary at a time (avoids multi-target OOM)`,
   );
 
   console.error(`\n[rust-test-sequential] (1/${totalSteps}) --lib`);
@@ -149,10 +222,25 @@ function main() {
     process.exit(libStatus);
   }
 
+  for (let i = 0; i < crates.length; i += 1) {
+    const crate = crates[i];
+    console.error(
+      `\n[rust-test-sequential] (${i + 2}/${totalSteps}) -p ${crate} --lib`,
+    );
+    const status = runCargoTestWithRetries(
+      ['-p', crate, '--lib', ...passthrough],
+      crate,
+    );
+    if (status !== 0) {
+      console.error(`[rust-test-sequential] FAILED: ${crate} (exit ${status})`);
+      process.exit(status);
+    }
+  }
+
   for (let i = 0; i < targets.length; i += 1) {
     const target = targets[i];
     console.error(
-      `\n[rust-test-sequential] (${i + 2}/${totalSteps}) --test ${target}`,
+      `\n[rust-test-sequential] (${i + leadSteps + 1}/${totalSteps}) --test ${target}`,
     );
     const status = runCargoTestWithRetries(
       ['--test', target, ...passthrough],
@@ -163,7 +251,7 @@ function main() {
         `[rust-test-sequential] FAILED: ${target} (exit ${status})`,
       );
       console.error(
-        `[rust-test-sequential] Stopping after first failure. Passed ${i + 1}/${totalSteps} before fail.`,
+        `[rust-test-sequential] Stopping after first failure. Passed ${i + leadSteps}/${totalSteps} before fail.`,
       );
       process.exit(status);
     }
@@ -173,4 +261,15 @@ function main() {
   process.exit(0);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  isTransientWindowsExecFailure,
+  maxAttemptsFor,
+  runCargoTestWithRetries,
+  writeCapturedOutput,
+  MAX_ATTEMPTS_WINDOWS,
+  RETRY_BASE_DELAY_MS,
+};

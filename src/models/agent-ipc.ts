@@ -169,12 +169,21 @@ export interface StreamingIssueReport {
   patternLength: number;
   /** For reasoning/output-budget: estimated non-tool output tokens at abort. */
   repetitionCount: number;
+  /** Reasoning/output-budget only: max output tokens in effect for the request. */
+  maxOutputTokens?: number;
+  /** Reasoning/output-budget only: where `maxOutputTokens` was resolved from. */
+  maxOutputTokensSource?: MaxOutputTokensSource;
 }
+
+/** Where a request's max output tokens came from (see `useExecuteCompletion`). */
+export type MaxOutputTokensSource = 'assistant' | 'settings' | 'fallback';
 
 export interface CompletionCancelRequest {
   sessionId: string;
   responseMessageId: string;
   reason: string;
+  /** True when Rust starts a fresh completion right after this cancel. */
+  willRetry: boolean;
 }
 
 export type AgentRuntimeError = MessageError;
@@ -325,6 +334,17 @@ export interface AgentSessionMetadata {
   dockerHostWorkspacePath?: string;
   /** Why the session has its current status, for example a Docker setup failure. */
   statusReason?: string | null;
+  /**
+   * Original session id when a `--session` headless run was written back as
+   * a fork instead of a merge (#2860).
+   */
+  forkedFrom?: string | null;
+  /**
+   * True while a different frontend process owns the session (#2759).
+   * Only present on `agent_list_sessions` items; opening/resuming/sending to
+   * such a session is refused by the backend.
+   */
+  openElsewhere?: boolean;
 }
 
 export interface AgentSessionListCursor {

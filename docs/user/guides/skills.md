@@ -114,7 +114,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 하위 에이전트를 나누는 법은 **[서브 에이전트 · 오케스트레이션](sub-agents.md)** 을 보세요.
 
-`delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
+`delegate`, `teamwork`, `org`, `divide-conquer`, `consensus-delegation`, `recruit`, `boost`
 
 ### 일정 · 웨이크
 
@@ -126,7 +126,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 ### 조사·문서
 
-`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `soul-awakening`
 
 `science-search` — 학술 논문 검색·DOI·유사 논문·인용 연결 (무료, API 키 불필요)
 
@@ -134,7 +134,7 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 
 ### 개발·연동·제작
 
-`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
+`git-workflow`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
 ### 자주 하는 조합
 
@@ -151,6 +151,23 @@ https://github.com/owner/repo/tree/main/skills/my-skill 스킬을 내 계정 전
 | 메일                | `@skill:email-integration`                           |
 | 어시스턴트 설정     | [Assistants](assistants.md)                          |
 | 반복 실행           | [Playbooks](playbooks.md) · [자동화](automation.md)  |
+
+---
+
+## 플러그인 (Claude Code 호환)
+
+LibrAgent는 **Skills** 화면에서 전역으로, 또는 채팅에서 현재 세션 전용으로 Claude Code 플러그인을 설치할 수 있습니다:
+
+- **채팅에서 설치**: `/plugin install <소스>`를 입력해 현재 세션에 플러그인을 추가합니다.
+- **플러그인 업데이트**: `/plugin update`를 입력하거나 **Skills** 화면의 업데이트 알림을 사용합니다.
+- **플러그인이 제공하는 기능**:
+  - **스킬** (이름 충돌 시 자동 네임스페이스 적용)
+  - **슬래시 명령어** (`commands/`)
+  - **서브 에이전트** (`agents/`)
+  - **MCP 서버** (설치 시 승인 후 실행)
+  - **라이프사이클 훅** (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`)
+
+**Skills** 화면이나 세션 도구 모달에서 언제든 플러그인을 켜고 끄거나 제거할 수 있습니다.
 
 ---
 

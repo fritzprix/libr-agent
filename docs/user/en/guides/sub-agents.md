@@ -131,11 +131,11 @@ Read only the auth module in this repo and summarize vulnerability candidates in
 | Skill                      | Pattern        | One line                                             |
 | -------------------------- | -------------- | ---------------------------------------------------- |
 | **`divide-conquer`**       | Parallel split | Non-overlapping pieces → merge                       |
-| **`hub-spoke`**            | Hub–spoke      | Coordinator steers workers; no worker-to-worker chat |
-| **`pipeline`**             | Sequential     | A output → B input → C …                             |
+| **`teamwork`** (hub-and-spoke)            | Hub–spoke      | Coordinator steers workers; no worker-to-worker chat |
+| **`teamwork`** (pipeline)             | Sequential     | A output → B input → C …                             |
 | **`consensus-delegation`** | Multi-view     | Same question to several experts → parent reconciles |
-| **`gatekeeper`**           | Quality gate   | Writer ↔ reviewer loop                              |
-| **`pair-programming`**     | Pair           | Two roles on a **shared work folder**                |
+| **`delegation-eval-loop`** (gatekeeper)           | Quality gate   | Writer ↔ reviewer loop                              |
+| **`teamwork`** (pair programming)     | Pair           | Two roles on a **shared work folder**                |
 
 ```
 @skill:divide-conquer
@@ -155,16 +155,16 @@ Different from one-off delegation. Use when you need a **team** and the **Org** 
 | --------------------- | ---------------------------------------------------------------------- |
 | **`teamwork`**        | Design the task force and roles — **prepare first**                    |
 | **`org`**             | Create member sessions visible under Org. Resume from the **Org root** |
-| **`org-restructure`** | Change roles or rules on an existing Org                               |
+| **`org`** (restructure) | Change roles or rules on an existing Org                               |
 
-Flow: `teamwork` prepare → `org` create → continue from sidebar **Org** → change structure with `org-restructure`.
+Flow: `teamwork` prepare → `org` create → continue from sidebar **Org** → change structure with `org` (restructure).
 
 - **Org** ≠ scheduled tasks (`schedule`) ≠ in-session reminders (`loop`) ≠ wake-on-done (`call-me-back`)
 - Plain parent–child delegation alone does **not** show under **Org**
 
 ```
 @skill:teamwork
-Create a research / implement / review task force and coordinate with hub-spoke.
+Create a research / implement / review task force and coordinate with hub-and-spoke.
 ```
 
 ---
@@ -203,7 +203,7 @@ Read proposal.md in this folder as an investor.
 - The pieces must **not overlap**. If two children change the same file, one will overwrite the other.
 - If children use the same folder, give each child a **different file name**.
 - After the merge, check the whole result. Ask again only for the pieces that have a problem.
-- If a piece needs the result of an earlier piece, do not use this pattern. Use `pipeline`.
+- If a piece needs the result of an earlier piece, do not use this pattern. Use `teamwork` (pipeline).
 
 ```text
 @skill:divide-conquer
@@ -212,7 +212,7 @@ Make 3 groups of 4 and work on the groups at the same time.
 Use glossary.md for the terms. At the end, check that no link is broken.
 ```
 
-### `hub-spoke`: one leader directs the specialists
+### `teamwork` (hub-and-spoke): one leader directs the specialists
 
 **Use it when**: the work has different jobs, such as research, analysis, and a first draft, and one agent must put them together.
 
@@ -221,13 +221,13 @@ Use glossary.md for the terms. At the end, check that no link is broken.
 - Tell the leader to ask for **summaries and file lists**, not long chat records. If the records are too long, the leader cannot work.
 
 ```text
-@skill:hub-spoke
+@skill:teamwork hub-and-spoke
 Check if we should start to use a new payment service.
 You are the leader. The workers are: 1 price research, 2 how to use it and how hard it is to start, 3 law and security check.
 Get a one-page summary from each worker. Then make a comparison table and a recommendation.
 ```
 
-### `pipeline`: do the work in steps
+### `teamwork` (pipeline): do the work in steps
 
 **Use it when**: the result of one step is the input of the next step. Example: research → first draft → review → final version.
 
@@ -237,7 +237,7 @@ Get a one-page summary from each worker. Then make a comparison table and a reco
 - If the steps do not depend on each other, `divide-conquer` is faster.
 
 ```text
-@skill:pipeline
+@skill:teamwork pipeline
 Write a blog post with the title "Make a weekly report with a local agent".
 Step 1: research, with at least 5 sources. Step 2: first draft. Step 3: check the facts and the tone. Step 4: final version.
 Save the result of each step in the drafts folder.
@@ -260,27 +260,27 @@ Risks: - [point]: [why it is important]
 
 Tip: do not make a new assistant for each point of view. In your request, write the role, for example "You are the cost reviewer". This is enough.
 
-### `gatekeeper`: make, check, and repeat
+### `delegation-eval-loop` (gatekeeper): make, check, and repeat
 
 **Use it when**: the result must pass fixed rules.
 
 **How it works**: The writer makes the result. The reviewer checks it against the rules. The reviewer decides to **pass** or to **reject**. If the reviewer rejects it, the writer gets the list of problems, fixes them, and sends the result again. The loop stops after **3 rounds at most**. This stops the loop that never ends because of small differences.
 
 ```text
-@skill:gatekeeper
+@skill:delegation-eval-loop gatekeeper
 Let the writer make a first draft of this month's notice.
 The reviewer checks 3 rules: 1 no wrong facts, 2 the most important point is first, 3 each item has no more than two sentences.
 If the notice does not pass in 3 rounds, tell me what is still wrong.
 ```
 
-### `pair-programming`: two agents take turns
+### `teamwork` (pair programming): two agents take turns
 
 **Use it when**: you want two agents to change the same file in turns and check each other. You can use it for code and for long documents.
 
 **How it works**: Two children work in the **same folder**. One child (the driver) makes the change and writes what it changed. The other child (the navigator) reads the change and shows the problems. The parent gives the turn to each child. When the work goes to the next stage, the children **change roles**.
 
 ```text
-@skill:pair-programming
+@skill:teamwork pair programming
 Improve the setup section in user-guide.md together.
 One agent changes the text. The other agent reads the changes and finds what is wrong or not clear.
 When half of the work is done, change the roles.
@@ -334,7 +334,7 @@ These features are **not** delegation and are **not** Org. Choose the one that y
 
 1. **`teamwork`**: First, the agent decides if the work really has many tracks. If one agent is enough, it does not make a team. Then it sets the goal, the roles, and the way of work. It puts the team rule files (`MISSION.md`, `ROLES.md`, and others) in a folder that only the app uses. The way of work is one of these: **in order (Sequential)**, **leader at the center (hub-and-spoke)**, or **free work from a shared board (Swarm)**.
 2. **`org`**: The agent makes the Org **one time** from the leader chat. It makes the team members as part of the Org. Later, you continue from the **leader chat of the Org**. If you open the chat of one member, this is not the same as opening the Org.
-3. **`org-restructure`**: The agent adds, removes, or joins roles, and changes rules. It does not remove the team.
+3. **`org`** (restructure): The agent adds, removes, or joins roles, and changes rules. It does not remove the team.
 4. **`postmortem-improve`**: When the work is done, or the same failure happens again, the agent writes what it learned. Then it makes the team better.
 
 You can move an Org to another computer. Read [export and import](#where-it-shows-in-the-ui).
@@ -347,11 +347,11 @@ You can move an Org to another computer. Read [export and import](#where-it-show
 | ----------------------------------- | ---------------------------------- |
 | One child, get the result           | `@skill:delegate`                  |
 | Parallel independent pieces         | `@skill:divide-conquer`            |
-| Central coordinator + workers       | `@skill:hub-spoke`                 |
-| Ordered stages                      | `@skill:pipeline`                  |
+| Central coordinator + workers       | `@skill:teamwork hub-and-spoke`                 |
+| Ordered stages                      | `@skill:teamwork pipeline`                  |
 | Same topic, many viewpoints         | `@skill:consensus-delegation`      |
-| Write ↔ strict review loop         | `@skill:gatekeeper`                |
-| Two agents pair on code             | `@skill:pair-programming`          |
+| Write ↔ strict review loop         | `@skill:delegation-eval-loop gatekeeper`                |
+| Two agents pair on code             | `@skill:teamwork pair programming`          |
 | Long-lived team + Org UI            | `@skill:teamwork` → `@skill:org`   |
 | Hire a new specialist assistant     | `@skill:recruit` (then `delegate`) |
 | Slim tools on an existing assistant | `@skill:boost`                     |

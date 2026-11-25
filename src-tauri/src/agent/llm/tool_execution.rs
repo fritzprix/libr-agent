@@ -1,8 +1,10 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::natural_recovery::{
     build_loop_prevention_guidance, loop_prevention_tool_result, LoopPreventionShortCircuit,
 };
 use crate::agent::state::AgentSession;
 use crate::agent::state::PendingApprovalKind;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
 use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::commands::agent_commands::{ToolCancellation, ToolExecutionResult};
@@ -29,13 +31,68 @@ enum ApprovalOutcome {
     ChannelClosed,
 }
 
+/// Identifiers of the tool call awaiting approval: the session running it and the
+/// call itself. Borrowed for the build; each payload copies what it needs.
+struct ToolCallRef<'a> {
+    session_id: &'a str,
+    tool_call_id: &'a str,
+    tool_name: &'a str,
+}
+
+/// The record to store and the event to emit for one pending approval. Both carry
+/// the same display arguments: the request's masked arguments when it has them,
+/// otherwise the tool call's own arguments. The approval card, the Session API
+/// listing and the resume re-emit read these arguments; execution never does — it
+/// runs the tool call's own arguments (#2968). Split out of `request_approval` so
+/// the store-and-emit wiring is testable without a live session.
+fn build_pending_approval(
+    call: &ToolCallRef<'_>,
+    args_str: &str,
+    approval_request: &ToolApprovalRequest,
+    approval_kind: PendingApprovalKind,
+    sender: oneshot::Sender<bool>,
+    request_id: Option<String>,
+) -> (
+    crate::agent::state::PendingApprovalData,
+    crate::agent::events::AgentEvent,
+) {
+    let display_arguments = approval_request
+        .masked_arguments
+        .as_deref()
+        .unwrap_or(args_str);
+    let description = Some(approval_request.description.clone());
+    let input_preview = Some(approval_request.input_preview.clone());
+    let data = crate::agent::state::PendingApprovalData {
+        sender,
+        tool_name: call.tool_name.to_string(),
+        arguments: display_arguments.to_string(),
+        approval_kind,
+        request_id: request_id.clone(),
+        description: description.clone(),
+        input_preview: input_preview.clone(),
+    };
+    let event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
+        session_id: call.session_id.to_string(),
+        tool_call_id: call.tool_call_id.to_string(),
+        tool_name: call.tool_name.to_string(),
+        arguments: display_arguments.to_string(),
+        approval_kind,
+        request_id,
+        description,
+        input_preview,
+    };
+    (data, event)
+}
+
 impl ToolExecutionContext<'_> {
     fn emit_tool_execution_started(&self, tool_name: &str) {
         let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
             session_id: self.session_id.to_string(),
             tool_name: tool_name.to_string(),
         };
-        if let Err(error) = crate::agent::tauri_events::emit_agent_event(self.app_handle, event) {
+        if let Err(error) =
+            TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(event)
+        {
             log::error!("Failed to emit tool execution started event: {}", error);
         }
     }
@@ -128,25 +185,29 @@ impl ToolExecutionContext<'_> {
             .await;
         let request_id = has_permission_relay_channel
             .then(crate::agent::tool_approvals::generate_channel_permission_request_id);
-        let description = Some(approval_request.description.clone());
-        let input_preview = Some(approval_request.input_preview.clone());
+        // #2968: the card shows these arguments, so a transport that may carry
+        // secrets is stored and emitted already masked; execution never reads
+        // them back, it runs the tool call's own arguments.
+        let (approval_data, approval_event) = build_pending_approval(
+            &ToolCallRef {
+                session_id: self.session_id,
+                tool_call_id,
+                tool_name,
+            },
+            args_str,
+            approval_request,
+            approval_kind,
+            tx,
+            request_id.clone(),
+        );
+        let description = approval_data.description.clone();
+        let input_preview = approval_data.input_preview.clone();
 
         {
             let active = self.active_sessions.read().await;
             if let Some(session) = active.get(self.session_id) {
                 let mut approvals = session.pending_approvals.write().await;
-                approvals.insert(
-                    tool_call_id.to_string(),
-                    crate::agent::state::PendingApprovalData {
-                        sender: tx,
-                        tool_name: tool_name.to_string(),
-                        arguments: args_str.to_string(),
-                        approval_kind,
-                        request_id: request_id.clone(),
-                        description: description.clone(),
-                        input_preview: input_preview.clone(),
-                    },
-                );
+                approvals.insert(tool_call_id.to_string(), approval_data);
             }
         }
 
@@ -166,24 +227,34 @@ impl ToolExecutionContext<'_> {
             );
         }
 
-        let approval_event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
-            session_id: self.session_id.to_string(),
-            tool_call_id: tool_call_id.to_string(),
-            tool_name: tool_name.to_string(),
-            arguments: args_str.to_string(),
-            approval_kind,
-            request_id: request_id.clone(),
-            description: description.clone(),
-            input_preview: input_preview.clone(),
-        };
         if let Err(error) =
-            crate::agent::tauri_events::emit_agent_event(self.app_handle, approval_event)
+            TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(approval_event)
         {
             log::error!(
                 "Failed to emit ToolExecutionRequiresApproval event: {}",
                 error
             );
         }
+
+        // Notification hook (#2925): run approved Notification handlers; ignore decisions.
+        let mut notification_params = crate::services::hooks::HookEnvelopeParams::new(
+            self.session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::Notification,
+        );
+        notification_params.notification_type = Some("permission".to_string());
+        notification_params.notification_message = Some(format!(
+            "Tool {} requires approval: {}",
+            tool_name,
+            description.as_deref().unwrap_or_default()
+        ));
+        let _ = crate::services::hooks::dispatch_hook_event(
+            crate::services::hooks::HookEvent::Notification,
+            "permission",
+            &notification_params,
+            self.session_id,
+        )
+        .await;
 
         if let (Some(request_id), Some(description), Some(input_preview)) =
             (request_id, description, input_preview)
@@ -198,7 +269,7 @@ impl ToolExecutionContext<'_> {
                 input_preview: input_preview.clone(),
             };
             if let Err(error) =
-                crate::agent::tauri_events::emit_agent_event(self.app_handle, channel_event)
+                TauriEventDispatcher::from_handle(self.app_handle).emit_agent_event(channel_event)
             {
                 log::error!("Failed to emit ChannelPermissionRequest event: {}", error);
             }
@@ -602,73 +673,124 @@ pub async fn execute_tool_calls(
             continue;
         }
 
+        // PreToolUse hook (#2925): runs after hard security/root guards and before
+        // approval/execution. Applies matcher on `tool_name` and `permissionDecision`
+        // (allow / deny / ask).
+        let mut pre_tool_params = crate::services::hooks::HookEnvelopeParams::new(
+            &session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::PreToolUse,
+        );
+        pre_tool_params.tool_name = Some(tool_name.clone());
+        pre_tool_params.tool_input = Some(args.clone());
+        let pre_tool_outcome = crate::services::hooks::dispatch_hook_event(
+            crate::services::hooks::HookEvent::PreToolUse,
+            tool_name,
+            &pre_tool_params,
+            &session_id,
+        )
+        .await;
+        if let Some(ctx) = pre_tool_outcome.joined_additional_context() {
+            crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
+        }
+
         let yolo_enabled = context.current_yolo_mode().await;
-        if let Some(approval_request) = crate::agent::tool_approvals::approval_request_for_runtime(
+        let is_hard_approval = matches!(
+            &policy_decision,
+            ToolExecutionPolicyDecision::RequireHardApproval(_)
+        );
+        let base_approval_request = crate::agent::tool_approvals::approval_request_for_runtime(
             &policy_decision,
             yolo_enabled,
             unsafe_enabled,
+        )
+        .cloned();
+
+        match apply_pre_tool_hook_decision(
+            tool_name,
+            args_str,
+            base_approval_request,
+            is_hard_approval,
+            pre_tool_outcome.decision,
+            pre_tool_outcome.reason,
         ) {
-            let approval_kind = match &policy_decision {
-                ToolExecutionPolicyDecision::RequireHardApproval(_) => PendingApprovalKind::Hard,
-                _ => PendingApprovalKind::Standard,
-            };
-            match context
-                .request_approval(
-                    tool_call_id,
-                    tool_name,
-                    args_str,
-                    approval_request,
-                    approval_kind,
-                )
-                .await
-            {
-                ApprovalOutcome::Approved => {}
-                ApprovalOutcome::Rejected => {
-                    context
-                        .continue_after_tool(
-                            tool_call_id,
-                            error_result("User rejected the tool execution."),
-                            "tool rejection",
-                        )
-                        .await;
-                    // User rejected this tool — cancel remaining calls in the batch too.
-                    inject_cancel_tombstones_for_remaining(&context, &tool_calls[index + 1..])
-                        .await;
-                    break;
-                }
-                ApprovalOutcome::ChannelClosed => {
-                    let session_status = {
-                        let active = context.active_sessions.read().await;
-                        active
-                            .get(context.session_id)
-                            .map(|s| s.metadata.status.clone())
-                    };
-                    if !crate::agent::workflow::should_continue_after_approval_channel_closed(
-                        session_status.as_ref(),
-                    ) {
-                        log::info!(
-                            "Session {} is no longer active and busy ({:?}) after approval channel closure; cleanly discarding workflow continuation",
-                            context.session_id,
-                            session_status
-                        );
+            PreToolHookResolution::Block { reason } => {
+                context
+                    .continue_after_tool(
+                        tool_call_id,
+                        error_result(reason),
+                        "hook-blocked tool execution",
+                    )
+                    .await;
+                index += 1;
+                continue;
+            }
+            PreToolHookResolution::Execute => {}
+            PreToolHookResolution::RequestApproval {
+                request: approval_request,
+                kind: approval_kind,
+            } => {
+                match context
+                    .request_approval(
+                        tool_call_id,
+                        tool_name,
+                        args_str,
+                        &approval_request,
+                        approval_kind,
+                    )
+                    .await
+                {
+                    ApprovalOutcome::Approved => {}
+                    ApprovalOutcome::Rejected => {
+                        context
+                            .continue_after_tool(
+                                tool_call_id,
+                                error_result("User rejected the tool execution."),
+                                "tool rejection",
+                            )
+                            .await;
+                        // User rejected this tool — cancel remaining calls in the batch too.
+                        inject_cancel_tombstones_for_remaining(&context, &tool_calls[index + 1..])
+                            .await;
                         break;
                     }
+                    ApprovalOutcome::ChannelClosed => {
+                        let session_status = {
+                            let active = context.active_sessions.read().await;
+                            active
+                                .get(context.session_id)
+                                .map(|s| s.metadata.status.clone())
+                        };
+                        if !crate::agent::workflow::should_continue_after_approval_channel_closed(
+                            session_status.as_ref(),
+                        ) {
+                            log::info!(
+                                "Session {} is no longer active and busy ({:?}) after approval channel closure; cleanly discarding workflow continuation",
+                                context.session_id,
+                                session_status
+                            );
+                            break;
+                        }
 
-                    // Cancel/terminate dropped the approval waiter while the session is still active and busy.
-                    // Close this call and let the cancel check at the top tombstone any remainder.
-                    context
-                        .continue_after_tool(
-                            tool_call_id,
-                            cancelled_tool_result(),
-                            "approval cancelled",
-                        )
-                        .await;
-                    index += 1;
-                    continue;
+                        // Cancel/terminate dropped the approval waiter while the session is still active and busy.
+                        // Close this call and let the cancel check at the top tombstone any remainder.
+                        context
+                            .continue_after_tool(
+                                tool_call_id,
+                                cancelled_tool_result(),
+                                "approval cancelled",
+                            )
+                            .await;
+                        index += 1;
+                        continue;
+                    }
                 }
             }
         }
 
+        // `args` is moved into `execute_tool` below; keep a copy for the
+        // PostToolUse hook envelope.
+        let post_tool_input = args.clone();
         let execution_started = std::time::Instant::now();
         let (mut result, process_was_cancelled) = proxy_manager
             .run_with_process_cancel_scope(
@@ -687,9 +809,352 @@ pub async fn execute_tool_calls(
         {
             result.cancellation = Some(ToolCancellation::user());
         }
+        let tool_ended_with_error = result.is_error;
         context
             .continue_after_tool(tool_call_id, result, "tool execution")
             .await;
+
+        // PostToolUse hook (#2925): runs after a successful tool call. Adds
+        // `additionalContext` and `decision: "block"` feedback to the next LLM request.
+        if !tool_ended_with_error {
+            let mut post_tool_params = crate::services::hooks::HookEnvelopeParams::new(
+                &session_id,
+                std::path::PathBuf::from("."),
+                crate::services::hooks::HookEvent::PostToolUse,
+            );
+            post_tool_params.tool_name = Some(tool_name.clone());
+            post_tool_params.tool_input = Some(post_tool_input);
+            post_tool_params.tool_response = Some(serde_json::json!({ "is_error": false }));
+            let post_tool_outcome = crate::services::hooks::dispatch_hook_event(
+                crate::services::hooks::HookEvent::PostToolUse,
+                tool_name,
+                &post_tool_params,
+                &session_id,
+            )
+            .await;
+            if let Some(ctx) = post_tool_outcome.joined_additional_context() {
+                crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
+            }
+            if post_tool_outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+                let reason = post_tool_outcome
+                    .reason
+                    .filter(|r| !r.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        format!(
+                            "PostToolUse hook blocked continuation after '{}'.",
+                            tool_name
+                        )
+                    });
+                crate::services::hooks::push_turn_hook_context(
+                    &session_id,
+                    &format!("[PostToolUse hook block]: {reason}"),
+                );
+            }
+        }
         index += 1;
+    }
+}
+
+/// Resolution of combining runtime tool-approval policy with a `PreToolUse` hook
+/// decision (#2925 G1.2). Pure so every policy × hook-decision cell is unit-tested.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PreToolHookResolution {
+    Execute,
+    RequestApproval {
+        request: crate::agent::tool_approvals::ToolApprovalRequest,
+        kind: PendingApprovalKind,
+    },
+    Block {
+        reason: String,
+    },
+}
+
+pub(crate) fn apply_pre_tool_hook_decision(
+    tool_name: &str,
+    args_str: &str,
+    approval_request: Option<crate::agent::tool_approvals::ToolApprovalRequest>,
+    is_hard_approval: bool,
+    decision: Option<crate::services::hooks::HookDecision>,
+    reason: Option<String>,
+) -> PreToolHookResolution {
+    let trimmed_reason = reason.filter(|r| !r.trim().is_empty());
+    match decision {
+        Some(crate::services::hooks::HookDecision::Block) => PreToolHookResolution::Block {
+            reason: trimmed_reason
+                .unwrap_or_else(|| format!("Tool '{}' blocked by PreToolUse hook.", tool_name)),
+        },
+        Some(crate::services::hooks::HookDecision::Allow) if !is_hard_approval => {
+            PreToolHookResolution::Execute
+        }
+        Some(crate::services::hooks::HookDecision::Ask) => {
+            let kind = if is_hard_approval {
+                PendingApprovalKind::Hard
+            } else {
+                PendingApprovalKind::Standard
+            };
+            let request = approval_request.unwrap_or_else(|| {
+                crate::agent::tool_approvals::ToolApprovalRequest {
+                    description: trimmed_reason.unwrap_or_else(|| {
+                        format!("PreToolUse hook requested confirmation for {tool_name}")
+                    }),
+                    input_preview: args_str.to_string(),
+                    masked_arguments: None,
+                }
+            });
+            PreToolHookResolution::RequestApproval { request, kind }
+        }
+        _ => match approval_request {
+            Some(request) => PreToolHookResolution::RequestApproval {
+                request,
+                kind: if is_hard_approval {
+                    PendingApprovalKind::Hard
+                } else {
+                    PendingApprovalKind::Standard
+                },
+            },
+            None => PreToolHookResolution::Execute,
+        },
+    }
+}
+
+#[cfg(test)]
+mod pre_tool_hook_tests {
+    use super::{apply_pre_tool_hook_decision, PreToolHookResolution};
+    use crate::agent::state::PendingApprovalKind;
+    use crate::agent::tool_approvals::ToolApprovalRequest;
+    use crate::services::hooks::HookDecision;
+
+    fn sample_req() -> ToolApprovalRequest {
+        ToolApprovalRequest {
+            description: "policy requires approval".to_string(),
+            input_preview: "{\"cmd\":\"rm\"}".to_string(),
+            masked_arguments: None,
+        }
+    }
+
+    #[test]
+    fn block_always_wins_and_propagates_reason() {
+        for (req, hard) in [
+            (None, false),
+            (Some(sample_req()), false),
+            (Some(sample_req()), true),
+        ] {
+            let res = apply_pre_tool_hook_decision(
+                "workspace__runShell",
+                "{}",
+                req,
+                hard,
+                Some(HookDecision::Block),
+                Some("denied by policy hook".to_string()),
+            );
+            assert_eq!(
+                res,
+                PreToolHookResolution::Block {
+                    reason: "denied by policy hook".to_string()
+                }
+            );
+        }
+
+        let fallback = apply_pre_tool_hook_decision(
+            "workspace__runShell",
+            "{}",
+            None,
+            false,
+            Some(HookDecision::Block),
+            Some("   ".to_string()),
+        );
+        assert_eq!(
+            fallback,
+            PreToolHookResolution::Block {
+                reason: "Tool 'workspace__runShell' blocked by PreToolUse hook.".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn allow_clears_standard_approval_but_never_clears_hard_approval() {
+        let standard = apply_pre_tool_hook_decision(
+            "workspace__writeFile",
+            "{}",
+            Some(sample_req()),
+            false,
+            Some(HookDecision::Allow),
+            None,
+        );
+        assert_eq!(standard, PreToolHookResolution::Execute);
+
+        let hard = apply_pre_tool_hook_decision(
+            "workspace__runShell",
+            "{}",
+            Some(sample_req()),
+            true,
+            Some(HookDecision::Allow),
+            None,
+        );
+        assert_eq!(
+            hard,
+            PreToolHookResolution::RequestApproval {
+                request: sample_req(),
+                kind: PendingApprovalKind::Hard,
+            }
+        );
+    }
+
+    #[test]
+    fn ask_forces_confirmation_even_when_runtime_had_no_approval_request() {
+        // Simulates YOLO mode where `approval_request_for_runtime` returned None.
+        let yolo_ask = apply_pre_tool_hook_decision(
+            "workspace__runShell",
+            "{\"cmd\":\"ls\"}",
+            None,
+            false,
+            Some(HookDecision::Ask),
+            Some("confirm shell command".to_string()),
+        );
+        assert_eq!(
+            yolo_ask,
+            PreToolHookResolution::RequestApproval {
+                request: ToolApprovalRequest {
+                    description: "confirm shell command".to_string(),
+                    input_preview: "{\"cmd\":\"ls\"}".to_string(),
+                    masked_arguments: None,
+                },
+                kind: PendingApprovalKind::Standard,
+            }
+        );
+
+        let hard_ask = apply_pre_tool_hook_decision(
+            "workspace__runShell",
+            "{}",
+            Some(sample_req()),
+            true,
+            Some(HookDecision::Ask),
+            None,
+        );
+        assert_eq!(
+            hard_ask,
+            PreToolHookResolution::RequestApproval {
+                request: sample_req(),
+                kind: PendingApprovalKind::Hard,
+            }
+        );
+    }
+
+    #[test]
+    fn none_decision_preserves_runtime_policy() {
+        assert_eq!(
+            apply_pre_tool_hook_decision("t", "{}", None, false, None, None),
+            PreToolHookResolution::Execute
+        );
+        assert_eq!(
+            apply_pre_tool_hook_decision("t", "{}", Some(sample_req()), false, None, None),
+            PreToolHookResolution::RequestApproval {
+                request: sample_req(),
+                kind: PendingApprovalKind::Standard,
+            }
+        );
+    }
+}
+
+#[cfg(test)]
+mod pending_approval_tests {
+    use super::{build_pending_approval, ToolCallRef};
+    use crate::agent::events::AgentEvent;
+    use crate::agent::state::PendingApprovalKind;
+    use crate::agent::tool_approvals::{
+        evaluate_tool_execution_policy, ToolApprovalRequest, ToolExecutionPolicyDecision,
+    };
+    use tokio::sync::oneshot;
+
+    fn event_arguments(event: &AgentEvent) -> &str {
+        let AgentEvent::ToolExecutionRequiresApproval { arguments, .. } = event else {
+            panic!("expected a ToolExecutionRequiresApproval event");
+        };
+        arguments
+    }
+
+    /// #2968 (gatekeeper G1.1): the arguments stored in `pending_approvals` (the
+    /// source for the Session API listing and the resume re-emit) and the
+    /// arguments emitted for the approval card both come from the request's
+    /// masked arguments — a literal query value, header or fragment never
+    /// reaches either.
+    #[tokio::test]
+    async fn mcp_server_approval_stores_and_emits_masked_arguments() {
+        let args = serde_json::json!({
+            "name": "svc",
+            "transport": {
+                "type": "http",
+                "url": "http://127.0.0.1:9001/mcp?token=literal-secret&key={{secret:URLKEY}}#frag",
+                "headers": { "Authorization": "Bearer literal-header" },
+            },
+        });
+        let decision = evaluate_tool_execution_policy("tool__registerServer", &args).await;
+        let ToolExecutionPolicyDecision::RequireHardApproval(request) = decision else {
+            panic!("expected hard approval, got {decision:?}");
+        };
+        let (tx, _rx) = oneshot::channel();
+        let (stored, event) = build_pending_approval(
+            &ToolCallRef {
+                session_id: "sess-2968",
+                tool_call_id: "tc-2968",
+                tool_name: "tool__registerServer",
+            },
+            &args.to_string(),
+            &request,
+            PendingApprovalKind::Hard,
+            tx,
+            None,
+        );
+
+        assert_eq!(stored.arguments, event_arguments(&event));
+        for arguments in [&stored.arguments, event_arguments(&event)] {
+            assert!(!arguments.contains("literal-secret"), "{arguments}");
+            assert!(!arguments.contains("literal-header"), "{arguments}");
+            assert!(!arguments.contains("#frag"), "{arguments}");
+            assert!(arguments.contains("token=***"), "{arguments}");
+            assert!(
+                arguments.contains("{{secret:URLKEY}}"),
+                "templates must stay visible: {arguments}"
+            );
+        }
+    }
+
+    /// The opposite case: a request with no masked arguments keeps the tool
+    /// call's raw arguments on both the stored record and the event, and the
+    /// kind and request id reach both payloads.
+    #[test]
+    fn approval_without_masked_arguments_keeps_raw_arguments() {
+        let request = ToolApprovalRequest {
+            description: "run the thing".to_string(),
+            input_preview: "preview".to_string(),
+            masked_arguments: None,
+        };
+        let raw = r#"{"command":"ls -la"}"#;
+        let (tx, _rx) = oneshot::channel();
+        let (stored, event) = build_pending_approval(
+            &ToolCallRef {
+                session_id: "sess-raw",
+                tool_call_id: "tc-raw",
+                tool_name: "workspace__runShell",
+            },
+            raw,
+            &request,
+            PendingApprovalKind::Standard,
+            tx,
+            Some("req-9".to_string()),
+        );
+        assert_eq!(stored.arguments, raw);
+        assert_eq!(event_arguments(&event), raw);
+        assert_eq!(stored.request_id.as_deref(), Some("req-9"));
+        let AgentEvent::ToolExecutionRequiresApproval {
+            request_id,
+            approval_kind,
+            ..
+        } = &event
+        else {
+            panic!("expected a ToolExecutionRequiresApproval event");
+        };
+        assert_eq!(request_id.as_deref(), Some("req-9"));
+        assert_eq!(*approval_kind, PendingApprovalKind::Standard);
     }
 }

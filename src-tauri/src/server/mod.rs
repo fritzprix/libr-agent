@@ -1,22 +1,40 @@
 pub mod access_guard;
 pub mod api_key;
+pub mod backend_descriptor;
 #[cfg(debug_assertions)]
 pub mod e2e_control;
 pub mod handlers;
 pub mod mcp_handler;
 pub mod pairing;
+pub mod readiness;
 pub mod routes;
+pub mod session_ownership;
+pub mod shared_backend;
 pub mod wake;
 pub mod wake_listener;
 
 use log::info;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::agent::AgentSessionManager;
 
 /// Process-wide bound HTTP port (`0` = not set yet).
 static ACTIVE_HTTP_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// Bind failure from [`init`], so startup can fail immediately instead of
+/// reporting a started backend after the publish wait (#2823).
+static HTTP_BIND_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+fn note_http_bind_error(message: String) {
+    if let Ok(mut slot) = HTTP_BIND_ERROR.lock() {
+        *slot = Some(message);
+    }
+}
+
+pub(crate) fn take_http_bind_error() -> Option<String> {
+    HTTP_BIND_ERROR.lock().ok().and_then(|mut slot| slot.take())
+}
 
 /// Record the port the HTTP server actually bound (may differ from Settings request).
 pub fn set_active_http_port(port: u16) {
@@ -25,7 +43,9 @@ pub fn set_active_http_port(port: u16) {
 
 /// Active LibrAgent HTTP port for external inject / wake URLs.
 ///
-/// Prefers the in-process bound port, then `~/.libragent/http_port`, else **3030**.
+/// Prefers the in-process bound port, then this process's own persisted
+/// record `~/.libragent/http_port.<pid>`, else **3030**. Records are per
+/// pid (#2855), so this never answers with another process's port.
 pub fn active_http_port() -> u16 {
     let bound = ACTIVE_HTTP_PORT.load(Ordering::Relaxed);
     if bound != 0 {
@@ -34,10 +54,17 @@ pub fn active_http_port() -> u16 {
     read_persisted_http_port().unwrap_or(3030)
 }
 
-/// `~/.libragent/http_port` is shared by every instance under one HOME. An instance
-/// with an overridden data dir (e.g. an isolated bench instance) must not clobber the
-/// primary instance's port.
-fn should_persist_global_http_port(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
+/// Per-process port record inside `~/.libragent`: a second backend on the
+/// same profile writes its own file instead of overwriting the first
+/// one's artifact (#2855).
+fn home_http_port_file(home: &std::path::Path, pid: u32) -> std::path::PathBuf {
+    home.join(".libragent").join(format!("http_port.{pid}"))
+}
+
+/// An instance with an overridden data dir (e.g. an isolated bench
+/// instance) keeps its port record out of the shared `~/.libragent`
+/// directory, as before #2855.
+fn should_persist_home_http_port(data_dir_override: Option<&std::ffi::OsStr>) -> bool {
     data_dir_override.is_none_or(|value| value.is_empty())
 }
 
@@ -45,18 +72,111 @@ fn read_persisted_http_port() -> Option<u16> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .ok()?;
-    let raw = std::fs::read_to_string(
-        std::path::PathBuf::from(home)
-            .join(".libragent")
-            .join("http_port"),
-    )
+    let raw = std::fs::read_to_string(home_http_port_file(
+        std::path::Path::new(&home),
+        std::process::id(),
+    ))
     .ok()?;
     let port: u16 = raw.trim().parse().ok()?;
     (port > 0).then_some(port)
 }
 
+/// Bind the first free listener in `requested_port..requested_port + max_attempts`.
+///
+/// `requested_port == 0` asks the OS for any free port; the caller must read
+/// the real port back from the returned listener (`local_addr()`).
+fn bind_first_available_listener(
+    bind_addr: std::net::Ipv4Addr,
+    requested_port: u16,
+    max_attempts: u16,
+) -> Result<std::net::TcpListener, String> {
+    for offset in 0..max_attempts {
+        let attempt_port = requested_port.saturating_add(offset);
+        match std::net::TcpListener::bind((bind_addr, attempt_port)) {
+            Ok(listener) => {
+                if attempt_port != requested_port {
+                    log::warn!(
+                        "HTTP server port {} was in use; automatically fallback to port {}",
+                        requested_port,
+                        attempt_port
+                    );
+                }
+                return Ok(listener);
+            }
+            Err(e) => {
+                log::debug!("Port {} in use or unavailable: {}", attempt_port, e);
+            }
+        }
+    }
+    Err(format!(
+        "Failed to bind HTTP server on port range {}..{}",
+        requested_port,
+        requested_port.saturating_add(max_attempts)
+    ))
+}
+
 /// Initialize and start the HTTP server.
 /// If the requested port is in use, automatically fallback to subsequent available ports.
+/// Serve `routes` on the already-bound `listener`, on a spawned task.
+///
+/// Every request is tagged with the accepted socket's peer address as a
+/// `std::net::SocketAddr` request extension before the warp filter runs; that
+/// is where `access_guard::loopback_peer_guard` reads it.
+///
+/// This deliberately does not go through `warp::serve(..).serve_incoming(..)`:
+/// warp's `serve_incoming` wraps every accepted socket in an internal `LiftIo`
+/// whose `remote_addr()` is always `None`, so `warp::addr::remote()` never
+/// sees the real peer and the loopback peer guard rejected every real request
+/// (#2956). `AddrIncoming` yields `AddrStream`s that carry the accepted
+/// socket's address instead.
+///
+/// `init` uses this; the integration test drives the same accept path with the
+/// production guard chain over a real socket.
+pub fn serve_http<F>(listener: tokio::net::TcpListener, routes: F) -> tokio::task::JoinHandle<()>
+where
+    F: warp::Filter + Clone + Send + Sync + 'static,
+    F::Extract: warp::reply::Reply,
+    F::Future: Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut incoming = match warp::hyper::server::conn::AddrIncoming::from_listener(listener) {
+            Ok(incoming) => incoming,
+            Err(error) => {
+                log::error!("Failed to adopt HTTP listener for serving: {error}");
+                return;
+            }
+        };
+        // Match warp's own bind path, which sets nodelay on accepted sockets.
+        incoming.set_nodelay(true);
+        let warp_service = warp::service(routes);
+        let make_service = warp::hyper::service::make_service_fn(
+            move |addr_stream: &warp::hyper::server::conn::AddrStream| {
+                let peer_addr = addr_stream.remote_addr();
+                let service = warp_service.clone();
+                async move {
+                    Ok::<_, std::convert::Infallible>(warp::hyper::service::service_fn(
+                        move |mut request| {
+                            let mut service = service.clone();
+                            async move {
+                                request.extensions_mut().insert(peer_addr);
+                                warp::hyper::service::Service::call(&mut service, request).await
+                            }
+                        },
+                    ))
+                }
+            },
+        );
+        if let Err(error) = warp::hyper::Server::builder(incoming)
+            .serve(make_service)
+            .await
+        {
+            log::warn!("HTTP server loop exited with error: {error}");
+        }
+        info!("HTTP server stopped");
+    })
+}
+
+/// Port `0` binds an OS-assigned port; the returned value is the real port.
 pub async fn init(
     agent_manager: Arc<AgentSessionManager>,
     requested_port: u16,
@@ -70,84 +190,128 @@ pub async fn init(
         std::net::Ipv4Addr::LOCALHOST
     };
 
+    // A bind error recorded by an earlier failed init must not fail a
+    // later startup's wait (S1.2 review).
+    take_http_bind_error();
+
+    // Multiple backends may run on one profile (#2855): a second process
+    // binds the next free port through the fallback below instead of being
+    // refused. Backend descriptor records stay per-pid discovery, never a
+    // bind gate.
+
     let max_attempts = 10u16;
-    let mut bound_port = requested_port;
-    let mut bound_listener = None;
-
-    for offset in 0..max_attempts {
-        let attempt_port = requested_port.saturating_add(offset);
-        match std::net::TcpListener::bind((bind_addr, attempt_port)) {
-            Ok(listener) => {
-                bound_port = attempt_port;
-                bound_listener = Some(listener);
-                if attempt_port != requested_port {
-                    log::warn!(
-                        "HTTP server port {} was in use; automatically fallback to port {}",
-                        requested_port,
-                        attempt_port
-                    );
-                }
-                break;
-            }
-            Err(e) => {
-                log::debug!("Port {} in use or unavailable: {}", attempt_port, e);
-            }
-        }
-    }
-
-    let listener = bound_listener.ok_or_else(|| {
-        format!(
-            "Failed to bind HTTP server on port range {}..{}",
-            requested_port,
-            requested_port.saturating_add(max_attempts)
-        )
-    })?;
-    drop(listener);
+    // Keep the bound listener and serve through it: dropping it and asking
+    // warp to re-bind the same port left a TOCTOU window where another
+    // process could steal the port between the probe and the real bind.
+    let listener = bind_first_available_listener(bind_addr, requested_port, max_attempts)
+        .inspect_err(|err| note_http_bind_error(err.clone()))?;
+    let bound_port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to read bound HTTP port: {e}"))?
+        .port();
 
     info!("Starting HTTP server on {}:{}", bind_addr, bound_port);
 
     set_active_http_port(bound_port);
 
-    // Persist active HTTP port to ~/.libragent/http_port for external scripts/tools
-    if should_persist_global_http_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {
+    // Publish this runtime's own record so other processes on this profile
+    // can find it. Records are per-pid; publishing never touches another
+    // running backend's record.
+    if let Err(error) = backend_descriptor::publish(bound_port) {
+        log::warn!("Failed to publish backend descriptor: {error}");
+    }
+
+    // Persist this process's port to `~/.libragent/http_port.<pid>` for
+    // external scripts/tools. Each backend writes only its own record, so
+    // several backends on one profile never clobber each other (#2855).
+    if should_persist_home_http_port(std::env::var_os("LIBRAGENT_DATA_DIR").as_deref()) {
         if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-            let dir = std::path::PathBuf::from(home).join(".libragent");
-            let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::write(dir.join("http_port"), bound_port.to_string());
+            let path = home_http_port_file(std::path::Path::new(&home), std::process::id());
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&path, bound_port.to_string());
         }
     }
 
     #[cfg(debug_assertions)]
     crate::server::e2e_control::init_capability_token();
 
+    // Start the cross-process session ownership guard (#2856). Only
+    // processes that run this HTTP server participate: a headless liblet
+    // never reaches this point and therefore never claims anything.
+    session_ownership::init(crate::state::get_database_connection().clone());
+    session_ownership::spawn_heartbeat_loop(agent_manager.clone());
+
     let routes = routes::get_routes(agent_manager, mcp_enabled, app_control_enabled, expose);
 
-    let server_future = warp::serve(routes).run((bind_addr.octets(), bound_port));
+    // Serve through the already-bound listener. Letting warp bind the port
+    // itself would reopen the probe-then-rebind race the helper above closes.
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("Failed to set HTTP listener non-blocking: {e}"))?;
+    let listener = tokio::net::TcpListener::from_std(listener)
+        .map_err(|e| format!("Failed to adopt HTTP listener: {e}"))?;
 
-    // Spawn the server in a separate task so it doesn't block
-    tokio::spawn(async move {
-        server_future.await;
-        info!("HTTP server stopped");
-    });
+    // Spawns the serving task; dropping the handle detaches it, so the server
+    // lives for the lifetime of the process.
+    let _server = serve_http(listener, routes);
 
     Ok(bound_port)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::should_persist_global_http_port;
+    use super::{
+        bind_first_available_listener, home_http_port_file, should_persist_home_http_port,
+    };
     use std::ffi::OsStr;
+    use std::net::Ipv4Addr;
 
     #[test]
-    fn default_data_dir_persists_global_port() {
-        assert!(should_persist_global_http_port(None));
-        assert!(should_persist_global_http_port(Some(OsStr::new(""))));
+    fn port_zero_advertises_os_assigned_port() {
+        let listener =
+            bind_first_available_listener(Ipv4Addr::LOCALHOST, 0, 1).expect("port 0 should bind");
+        let port = listener.local_addr().expect("local_addr").port();
+        assert_ne!(port, 0, "port 0 must advertise the real OS-assigned port");
     }
 
     #[test]
-    fn overridden_data_dir_does_not_clobber_global_port() {
-        assert!(!should_persist_global_http_port(Some(OsStr::new(
+    fn occupied_port_falls_back_to_next_free() {
+        let first = bind_first_available_listener(Ipv4Addr::LOCALHOST, 0, 1).expect("seed bind");
+        let first_port = first.local_addr().expect("seed local_addr").port();
+
+        let second = bind_first_available_listener(Ipv4Addr::LOCALHOST, first_port, 10)
+            .expect("fallback bind");
+        let second_port = second.local_addr().expect("fallback local_addr").port();
+        assert_ne!(second_port, first_port, "occupied port must fall back");
+    }
+
+    #[test]
+    fn default_data_dir_persists_home_port_record() {
+        assert!(should_persist_home_http_port(None));
+        assert!(should_persist_home_http_port(Some(OsStr::new(""))));
+    }
+
+    #[test]
+    fn overridden_data_dir_does_not_write_home_port_record() {
+        assert!(!should_persist_home_http_port(Some(OsStr::new(
             "/tmp/bench/com.fritzprix.libragent"
         ))));
+    }
+
+    #[test]
+    fn persisted_port_record_is_per_process() {
+        let home = std::path::Path::new("/home/u");
+        assert_eq!(
+            home_http_port_file(home, 4242),
+            std::path::PathBuf::from("/home/u/.libragent/http_port.4242")
+        );
+        // Two backends on one profile get distinct files: neither
+        // overwrites the other's port artifact (#2855).
+        assert_ne!(
+            home_http_port_file(home, 4242),
+            home_http_port_file(home, 4243)
+        );
     }
 }

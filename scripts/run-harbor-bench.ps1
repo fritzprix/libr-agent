@@ -180,6 +180,32 @@ function Get-HostOsToken {
   return "unknown"
 }
 
+# Match bash append_workspace_mode_excludes: skip tasks whose task.toml declares
+# requires_workspace_mode mismatching the selected workspace mode. The Harbor
+# adapter raises in setup() on a mismatch, so a host-mode run must skip the
+# managed-only privileged tasks instead of failing every trial (PR #2917 G2.1).
+function Get-WorkspaceModeExcludes([string]$Root) {
+  $excludes = [System.Collections.Generic.List[string]]::new()
+  $mode = if ($env:LIBRAGENT_HARBOR_WORKSPACE_MODE) {
+    $env:LIBRAGENT_HARBOR_WORKSPACE_MODE.Trim().ToLowerInvariant()
+  } else {
+    "host"
+  }
+  Get-ChildItem -Path $Root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    $toml = Join-Path $_.FullName "task.toml"
+    if (-not (Test-Path $toml)) { return }
+    $want = Select-String -Path $toml -Pattern '^\s*requires_workspace_mode\s*=\s*"([^"]+)"' |
+      Select-Object -First 1
+    if (-not $want) { return }
+    $required = $want.Matches[0].Groups[1].Value
+    if ($required -eq $mode) { return }
+    Write-Host "==> Excluding $($_.Name) (requires_workspace_mode=$required, mode=$mode)"
+    $excludes.Add("-x") | Out-Null
+    $excludes.Add($_.Name) | Out-Null
+  }
+  return $excludes.ToArray()
+}
+
 function Get-HostOsExcludes([string]$Root) {
   $excludes = [System.Collections.Generic.List[string]]::new()
   $hostOs = Get-HostOsToken
@@ -588,6 +614,7 @@ switch ($Preset) {
     Write-Step "Preset: local path ($resolvedPath)"
     $harborArgs += @("-p", $resolvedPath)
     $harborArgs += Get-HostOsExcludes $resolvedPath
+    $harborArgs += Get-WorkspaceModeExcludes $resolvedPath
     foreach ($pattern in (Expand-IncludePatterns $Include)) {
       $harborArgs += @("-i", $pattern)
     }

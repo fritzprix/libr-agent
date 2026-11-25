@@ -86,7 +86,9 @@
       "description": "Description",
       "fullConfiguration": "Full Configuration",
       "expand": "Expand configuration",
-      "collapse": "Collapse configuration"
+      "collapse": "Collapse configuration",
+      "pluginOwned": "Plugin: {{name}}",
+      "pluginOwnedHint": "Installed by a plugin. Edit is disabled; uninstall the plugin to remove it."
     }
   },
   "status": {
@@ -274,7 +276,10 @@
       "subagentsCount_one": "+{{count}} subagent",
       "subagentsCount_other": "+{{count}} subagents",
       "subagentsKept": "Subagents kept",
-      "bookmarkedBadge": "Bookmarked"
+      "bookmarkedBadge": "Bookmarked",
+      "openElsewhere": "Open elsewhere",
+      "forked": "Forked",
+      "forkedFrom": "Forked from session {{id}}"
     },
     "actions": {
       "view": "View",
@@ -302,7 +307,8 @@
       "confirmDelete": "Confirm Delete",
       "confirmDeleteAria": "Confirm deletion",
       "cancel": "Cancel",
-      "cancelDeletionAria": "Cancel deletion"
+      "cancelDeletionAria": "Cancel deletion",
+      "openElsewhereAria": "Session {{name}} is open in another process"
     },
     "emptyState": {
       "title": "No sessions yet",
@@ -532,7 +538,7 @@
       "circuitBreaker": "Tool Loop Limit",
       "circuitBreakerDescription": "Number of repeated errors or tool actions before stopping the task.",
       "maxOutputTokens": "Max Output Tokens (Default)",
-      "maxOutputTokensDescription": "Default maximum output tokens for new sessions if not specified by assistant.",
+      "maxOutputTokensDescription": "Default maximum output tokens when the assistant does not set its own. Read on every request.",
       "defaultSessionMaxDepth": "Session Branching Limit (Advanced)",
       "defaultSessionMaxDepthDescription": "Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.",
       "defaultSessionMaxDepthPlaceholder": "e.g., 3",
@@ -568,8 +574,8 @@
       },
       "shellRuntimeBootstrap": "Shell runtime bootstrap",
       "shellRuntimeBootstrapDescription": "Loads only Python and Node paths in the terminal to start commands faster.",
-      "allowLinkedWorktrees": "File tools can use linked git worktrees",
-      "allowLinkedWorktreesDescription": "When the workspace is a git repository, file tools can also read and edit files in the other working folders of the same repository (git worktrees). Turn off to allow the workspace folder only.",
+      "allowLinkedWorktrees": "File tools and shell working directories can use linked git worktrees",
+      "allowLinkedWorktreesDescription": "When the workspace is a git repository, file tools can also read and edit files, and shell commands can run, in the other working folders of the same repository (git worktrees). Turn off to allow the workspace folder only.",
       "performance": "Performance & Concurrency",
       "performanceDescription": "These runtime limits control how many agents and workspace processes can run at once.",
       "title": "Advanced Runtime Controls",
@@ -894,7 +900,55 @@
       "importSuccessWithOverwriteAndSkipped_one": "Imported {{count}} skill ({{overwrittenCount}} overwritten, {{skippedCount}} skipped)",
       "importSuccessWithOverwriteAndSkipped_other": "Imported {{count}} skills ({{overwrittenCount}} overwritten, {{skippedCount}} skipped)",
       "importSkippedOnly_one": "Skipped {{count}} conflicting skill",
-      "importSkippedOnly_other": "Skipped {{count}} conflicting skills"
+      "importSkippedOnly_other": "Skipped {{count}} conflicting skills",
+      "installConfirmTitle": "Review skills and hooks",
+      "installConfirmDescription": "Confirm which skills to install and whether approved plugin hooks may run during your sessions.",
+      "skillsToInstall": "Skills to install",
+      "hooksToInstall": "Plugin hooks",
+      "hookStatusExecuted": "Executed",
+      "hookStatusStubbed": "Not supported",
+      "approveHooksLabel": "Allow hooks to run",
+      "approveHooksHint": "Supported hook events run automatically during the session once approved. Unsupported events are skipped.",
+      "mcpServersToInstall": "Plugin MCP servers",
+      "approveHooksMcpLabel": "Allow hooks to run and MCP servers to start",
+      "approveMcpLabel": "Allow MCP servers to start",
+      "approveMcpHint": "Approved MCP servers start automatically when a session opens. Approved hook events also run automatically; unsupported ones are skipped.",
+      "mcpEnvNames": "env: {{names}}",
+      "mcpHeaderNames": "headers: {{names}}",
+      "installWithMcp": "Install and approve servers",
+      "approveHooksToolApprovalHint": "This plugin includes PreToolUse hooks that can allow, ask for confirmation on, or block tool calls.",
+      "installWithoutHooks": "Install without hook approval",
+      "installWithHooks": "Install and approve hooks",
+      "pluginSourcesTitle": "Installed plugin sources",
+      "hooksApproved": "Hooks approved and may run",
+      "hooksNotApproved": "Hooks installed but not approved to run",
+      "hookEvents": "Hook events",
+      "pluginSourceUpdated": "Plugin updated.",
+      "pluginSourceRemoved": "Plugin source removed.",
+      "commandsToInstall": "Slash commands to install",
+      "agentsToInstall": "Subagents to install",
+      "agentUnmappedTools": "Tools with no mapping are not granted (restricted entries such as Bash(git:*) count as unmapped): {{tools}}",
+      "agentGrantedServices": "Granted services: {{services}}",
+      "agentGrantsAllServices": "No tools line: all LibrAgent services will be granted.",
+      "agentGrantsNoServices": "No services granted (no tool maps).",
+      "agentWorkspaceGrantNote": "The workspace service includes file writes and shell execution.",
+      "userConfigTitle": "Configuration this plugin asks for",
+      "userConfigHint": "These values are given to the plugin when it runs. A sensitive value is stored in this computer's secure storage and is never shown again.",
+      "userConfigMissing": "Required: {{names}}",
+      "pluginDisabledBadge": "disabled",
+      "pluginUpdateAria": "Update plugin",
+      "pluginOwnedBadge": "plugin",
+      "pluginOwnedTooltip": "Installed by a plugin. Remove the plugin to delete it.",
+      "disablePlugin": "Disable plugin",
+      "enablePlugin": "Enable plugin",
+      "pluginDetails": "Details",
+      "pluginSourceEnabled": "Plugin enabled.",
+      "pluginSourceDisabled": "Plugin disabled. It stays installed; restart a session or type /reload to apply.",
+      "pluginUpdateNoticeTitle": "Update this plugin?",
+      "pluginUpdateNoticeBody": "An update re-downloads the plugin. It can change the plugin MCP servers and hooks, and those can run code on your machine. Agreeing approves this whole update, including any changed MCP servers and hooks.",
+      "pluginUpdateAgree": "Agree & update",
+      "pluginUpdateAvailable": "update available",
+      "pluginUpdatedReload": "Plugin updated. It applies when a session opens again; type /reload to apply it now."
     },
     "dev": {
       "devOnly": "DEV ONLY",
@@ -981,6 +1035,8 @@
     "noServers": "No extensions installed. Add one or choose a recommended extension above.",
     "updating": "Updating...",
     "unnamed": "Unnamed Server",
+    "pluginOwned": "Plugin",
+    "pluginOwnedHint": "Installed by a plugin. Edit and delete are disabled; uninstall the plugin to remove it.",
     "noDescription": "No description",
     "transport": "Transport",
     "toolsAvailable_one": "{{count}} tool available",
@@ -1550,7 +1606,22 @@
       "badgeBuiltin": "builtin",
       "badgeMcp": "mcp",
       "viewDescription": "View Description",
-      "viewSchema": "View Input Schema"
+      "viewSchema": "View Input Schema",
+      "plugins": {
+        "title": "Plugins",
+        "empty": "No plugins are active in this session. Use /plugin install <git-url> to add one.",
+        "scopeGlobal": "global",
+        "scopeSession": "session",
+        "installedAt": "Installed {{time}}",
+        "skills": "Skills",
+        "hooks": "Hooks",
+        "hooksNotApproved": "not approved",
+        "history": "Install history",
+        "actionInstall": "Installed",
+        "actionUninstall": "Uninstalled",
+        "disabled": "disabled",
+        "version": "Version"
+      }
     },
     "panels": {
       "shellTitle": "Agent panels",
@@ -1636,6 +1707,10 @@
     },
     "bubble": {
       "toolError": "Tool Execution Error",
+      "fallbackNoticeLabel": "Model fallback",
+      "fallbackNotice": "The server rejected the request (HTTP {{status}}). Retrying with fallback model {{model}}.",
+      "fallbackNoticeNoStatus": "The primary model failed. Retrying with fallback model {{model}}.",
+      "fallbackNoticeDetails": "Show server error",
       "notification": "Notification",
       "channel": "CHANNEL",
       "assistant": "ASSISTANT",
@@ -1886,7 +1961,26 @@
     "tryAgain": "Try Again",
     "goToSettings": "Configure API Key in Settings",
     "invalidContextState": "This session needs a larger context limit. Open Settings, raise Max Input Context, then try again.",
-    "openContextSettings": "Open Context Settings"
+    "openContextSettings": "Open Context Settings",
+    "reasoningStop": {
+      "budgetReason": "The model spent its output budget on reasoning without giving an answer or calling a tool, so the turn was stopped.",
+      "budgetNumbers": "Used about {{used}} tokens. The cutoff is {{budget}} tokens, which is 90% of Max Output Tokens.",
+      "sourceAssistant": "Max Output Tokens is {{max}}, set on this assistant. Changing the Settings default will not change this session.",
+      "sourceSettings": "Max Output Tokens is {{max}}, from Settings → Chat Interface → Max Output Tokens (Default).",
+      "sourceFallback": "Max Output Tokens is {{max}}, the built-in default, because no value is set in Settings.",
+      "budgetNextSteps": "Next: raise Max Output Tokens (Default) in Settings, then try again. The new value applies to the next request. Trying again with nothing changed often stops the same way.",
+      "budgetNextStepsAssistant": "Next: try again, or narrow the request so it needs less reasoning. Trying again with nothing changed often stops the same way.",
+      "thinkingOnlyReason": "The model finished with only internal reasoning: no answer and no tool call.",
+      "thinkingOnlyNextSteps": "Next: try again, or ask for a direct answer. If the model may have hit its output limit, raise Max Output Tokens (Default) in Settings first.",
+      "thinkingLoopReason": "The model kept repeating the same reasoning, so the turn was stopped.",
+      "textLoopReason": "The model kept repeating the same text, so the turn was stopped.",
+      "loopNumbers": "Detected a {{patternLength}}-character pattern repeated {{repetitionCount}} times.",
+      "thinkingLoopNextSteps": "Next: try again, or rephrase or narrow the request. If this was a false alarm, raise Thinking Loop Min Pattern Length or Thinking Loop Min Repetitions in Settings → Advanced.",
+      "textLoopNextSteps": "Next: try again, or rephrase or narrow the request.",
+      "autoRetries": "Automatic retries already used: {{retries}}.",
+      "openOutputTokenSettings": "Open Max Output Tokens Settings",
+      "openLoopSettings": "Open Advanced Settings"
+    }
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",
@@ -2068,6 +2162,11 @@
       "docsExport": {
         "title": "Get answers as PDF, Word, or PowerPoint",
         "body": "Type @skill:docs and ask for a report, proposal, or meeting minutes — the agent saves a ready-to-share PDF, DOCX, or PPTX file.",
+        "cta": "Try it in chat"
+      },
+      "plugins": {
+        "title": "Install plugins with /plugin install",
+        "body": "Add Claude Code plugins in chat or from Skills to unlock new slash commands, subagents, hooks, and MCP tools.",
         "cta": "Try it in chat"
       }
     }

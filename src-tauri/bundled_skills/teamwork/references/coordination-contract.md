@@ -26,7 +26,7 @@ For execution substrate, make the contract explicit:
 
 - plain child sessions via `agent__listAgents(type="sessions")` plus `agent__messageToSession(..., complexity=...)` for a matching Idle child, or `agent__spawnSession(..., complexity=...)` when creation is required; use `delegate` for delegation mechanics when needed
 - explicit org lineage via `agent__createOrg(...)` plus reuse with `agent__messageToSession(..., complexity=...)` or creation with `agent__spawnSession(..., complexity=...)`, then `org` for org-specific operating rules
-- scheduled task groups for recurring automation via `scheduled_task__createScheduledTask(...)` and related `scheduled_task` tools, then `schedule` for scheduled-group operating rules
+- global scheduled tasks for standalone recurring automation via `scheduled_task__createScheduledTask(...)` and related `scheduled_task` tools, then `schedule` for operating rules
 
 Make that choice explicit.
 
@@ -44,7 +44,7 @@ Must contain:
 - hard constraints
 - definition of done
 - required deliverables
-- execution mode notes if the team will later be driven by explicit org lineage or scheduled task groups
+- execution mode notes if the team will later be driven by explicit org lineage or global scheduled tasks
 
 If the mission is vague, every downstream file becomes vague too.
 
@@ -141,6 +141,6 @@ At minimum capture:
 - the execution substrate
 - the workspace sharing policy
 - whether explicit org lineage is intended
-- whether scheduled task groups are intended
+- whether global scheduled tasks are intended
 - refresh semantics notes for downstream sessions
 - the parent-workspace inheritance policy for org-visible children

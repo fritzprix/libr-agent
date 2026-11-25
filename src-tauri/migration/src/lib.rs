@@ -1,6 +1,7 @@
 pub use sea_orm_migration::prelude::*;
 
 pub mod helpers; // Shared migration utilities (idempotency helpers, etc.)
+pub mod session_version; // sessions.version trigger SQL (#2878), shared with the write-back
 
 mod m20260206_000001_create_all_tables;
 mod m20260208_000002_add_llm_fields_to_sessions;
@@ -51,6 +52,10 @@ mod m20261018_000046_add_sessions_status_index;
 mod m20261030_000047_add_status_reason_to_sessions;
 mod m20261104_000048_add_secret_names_to_mcp_servers;
 mod m20261105_000049_add_encrypted_secrets_to_mcp_servers;
+mod m20261116_000050_create_session_ownership;
+mod m20261117_000051_add_run_claim_to_scheduled_tasks;
+mod m20261117_000052_add_forked_from_to_sessions;
+mod m20261117_000053_add_version_to_sessions;
 
 pub struct Migrator;
 
@@ -107,6 +112,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000047_add_status_reason_to_sessions::Migration),
             Box::new(m20261104_000048_add_secret_names_to_mcp_servers::Migration),
             Box::new(m20261105_000049_add_encrypted_secrets_to_mcp_servers::Migration),
+            Box::new(m20261116_000050_create_session_ownership::Migration),
+            Box::new(m20261117_000051_add_run_claim_to_scheduled_tasks::Migration),
+            Box::new(m20261117_000052_add_forked_from_to_sessions::Migration),
+            Box::new(m20261117_000053_add_version_to_sessions::Migration),
         ]
     }
 }

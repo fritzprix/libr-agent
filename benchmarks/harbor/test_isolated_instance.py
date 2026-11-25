@@ -18,11 +18,15 @@ from benchmarks.harbor.isolated_instance import (
     instance_env,
     issue_api_key,
     instance_running,
+    launch,
+    main,
     read_env_api_key,
     reset_run_dir,
     resolve_env_auth_headers,
+    restart,
     safe_print,
     sandbox_command,
+    set_window,
     stop,
 )
 
@@ -122,6 +126,227 @@ def test_reset_run_dir_starts_from_pristine_seed(seeded) -> None:
     conn = sqlite3.connect(layout.db_path)
     assert [r[0] for r in conn.execute("SELECT id FROM mcp_servers")] == ["keep-1"]
     assert not (layout.data_dir / "user_skills").exists()
+
+
+class _StubProc:
+    """A finished process: restart's stop phase sees a dead pid and touches nothing."""
+
+    pid = 999_999_999
+
+    def poll(self) -> int:
+        return 0
+
+
+def _stub_launch_seams(monkeypatch: pytest.MonkeyPatch, record: dict[str, object]) -> None:
+    """Replace process spawn and health wait so tests exercise launch/restart logic only."""
+    import benchmarks.harbor.isolated_instance as ii
+
+    def fake_spawn(layout: InstanceLayout, command: list[str], env: dict[str, str]) -> _StubProc:
+        record["command"] = command
+        record["env"] = env
+        return _StubProc()
+
+    monkeypatch.setattr(ii, "_spawn_app", fake_spawn)
+    monkeypatch.setattr(ii, "_wait_healthy", lambda *args, **kwargs: True)
+    monkeypatch.setattr(ii, "_port_in_use", lambda port: False)
+
+
+def test_restart_relaunches_same_data_dir_and_keeps_run_state(seeded, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, layout, _ = seeded
+    record: dict[str, object] = {}
+    _stub_launch_seams(monkeypatch, record)
+    app_bin = layout.root / "appbin"
+    app_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    reset_run_dir(layout)
+    conn = sqlite3.connect(layout.db_path)
+    conn.execute("INSERT INTO mcp_servers VALUES ('survivor', 'srv')")
+    conn.commit()
+    conn.close()
+    marker = layout.data_dir / "during_run.json"
+    marker.write_text("keep", encoding="utf-8")
+
+    pid = restart(layout, app_bin, timeout_sec=1.0)
+
+    assert pid == _StubProc.pid
+    conn = sqlite3.connect(layout.db_path)
+    assert "survivor" in [r[0] for r in conn.execute("SELECT id FROM mcp_servers")]
+    conn.close()
+    assert marker.read_text(encoding="utf-8") == "keep"
+    # The relaunch points at the same instance data dir, not the primary profile.
+    env = record["env"]
+    assert isinstance(env, dict)
+    assert env["LIBRAGENT_DATA_DIR"] == str(layout.data_dir.resolve())
+
+
+def test_restart_requires_app_bin(seeded, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, layout, _ = seeded
+    record: dict[str, object] = {}
+    _stub_launch_seams(monkeypatch, record)
+    reset_run_dir(layout)
+
+    with pytest.raises(InstanceError, match="App binary not found"):
+        restart(layout, layout.root / "no-such-bin", timeout_sec=1.0)
+
+
+def test_launch_still_rebuilds_run_dir_from_seed(seeded, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, layout, _ = seeded
+    record: dict[str, object] = {}
+    _stub_launch_seams(monkeypatch, record)
+    app_bin = layout.root / "appbin"
+    app_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    reset_run_dir(layout)
+    conn = sqlite3.connect(layout.db_path)
+    conn.execute("INSERT INTO mcp_servers VALUES ('leaked', 'memory')")
+    conn.commit()
+    conn.close()
+
+    launch(layout, app_bin, timeout_sec=1.0)
+
+    conn = sqlite3.connect(layout.db_path)
+    assert [r[0] for r in conn.execute("SELECT id FROM mcp_servers")] == ["keep-1"]
+    conn.close()
+
+
+def test_restart_without_run_dir_is_rejected(seeded) -> None:
+    _, layout, _ = seeded
+    with pytest.raises(InstanceError, match="Run 'launch' first"):
+        restart(layout, layout.root / "appbin", timeout_sec=1.0)
+
+
+class _WindowProc:
+    def __init__(self, returncode: int = 0, stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _fake_window_run(record: dict[str, object], proc: _WindowProc):
+    calls: list[list[str]] = record.setdefault("calls", [])  # type: ignore[assignment]
+
+    def run(argv, **kwargs):  # noqa: ANN001, ANN202 - test seam
+        record["argv"] = argv
+        calls.append(argv)
+        return proc
+
+    return run
+
+
+def _running_instance(tmp_path: Path) -> tuple[InstanceLayout, subprocess.Popen[bytes]]:
+    """A real short-lived process recorded as the instance pid. Caller must kill it."""
+    import os
+    import subprocess
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, LIBRAGENT_DATA_DIR=str(layout.data_dir.resolve()))
+    child = subprocess.Popen(["sleep", "60"], env=env)
+    layout.pid_file.write_text(str(child.pid), encoding="utf-8")
+    return layout, child
+
+
+def _kill_instance(child: subprocess.Popen[bytes]) -> None:
+    child.kill()
+    child.wait()
+
+
+def test_set_window_builds_pid_scoped_xdotool_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import benchmarks.harbor.isolated_instance as ii
+
+    layout, child = _running_instance(tmp_path)
+    record: dict[str, object] = {}
+    monkeypatch.setattr(ii.shutil, "which", lambda name: "/usr/bin/xdotool")
+    monkeypatch.setattr(ii.subprocess, "run", _fake_window_run(record, _WindowProc()))
+    try:
+        set_window(layout, width=1280, height=800)
+        assert record["argv"] == [
+            "xdotool", "search", "--all", "--pid", str(child.pid), "windowsize", "1280", "800",
+        ]  # fmt: skip
+        set_window(layout, visible=False)
+        assert record["argv"] == ["xdotool", "search", "--all", "--pid", str(child.pid), "windowminimize"]
+        set_window(layout, width=1024, height=768, visible=True)
+        assert record["argv"] == [
+            "xdotool", "search", "--all", "--pid", str(child.pid),
+            "windowsize", "1024", "768", "windowmap", "windowraise",
+        ]  # fmt: skip
+        # Never selects windows by title/class: every call is --pid scoped.
+        calls = record["calls"]
+        assert isinstance(calls, list) and len(calls) == 3
+        assert all(argv[:4] == ["xdotool", "search", "--all", "--pid"] for argv in calls)
+    finally:
+        _kill_instance(child)
+
+
+def test_set_window_rejects_bad_arguments(tmp_path: Path) -> None:
+    layout, child = _running_instance(tmp_path)
+    try:
+        with pytest.raises(InstanceError, match="together"):
+            set_window(layout, width=800)
+        with pytest.raises(InstanceError, match="Nothing to set"):
+            set_window(layout)
+        with pytest.raises(InstanceError, match="200x200"):
+            set_window(layout, width=100, height=100)
+    finally:
+        _kill_instance(child)
+
+
+def test_set_window_requires_running_instance_and_xdotool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import benchmarks.harbor.isolated_instance as ii
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True)
+    with pytest.raises(InstanceError, match="not running"):
+        set_window(layout, visible=True)
+
+    layout, child = _running_instance(tmp_path)
+    try:
+        monkeypatch.setattr(ii.shutil, "which", lambda name: None)
+        with pytest.raises(InstanceError, match="xdotool"):
+            set_window(layout, visible=True)
+        # xdotool failure surfaces as InstanceError with its stderr.
+        monkeypatch.setattr(ii.shutil, "which", lambda name: "/usr/bin/xdotool")
+        monkeypatch.setattr(
+            ii.subprocess, "run", _fake_window_run({}, _WindowProc(returncode=1, stderr="no display"))
+        )
+        with pytest.raises(InstanceError, match="no display"):
+            set_window(layout, visible=True)
+    finally:
+        _kill_instance(child)
+
+
+def test_set_window_rejects_stale_pid_not_owned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#2916 G1.2: a pid file pointing at a live but unrelated process (PID
+    reuse) must be rejected by the ownership guard BEFORE xdotool runs, or a
+    stranger program's windows would be resized/minimized."""
+    import os
+    import subprocess
+
+    import benchmarks.harbor.isolated_instance as ii
+
+    layout = InstanceLayout(tmp_path / "bench")
+    layout.root.mkdir(parents=True, exist_ok=True)
+    # Live process whose environment does NOT carry this instance's data dir.
+    child = subprocess.Popen(["sleep", "60"], env=dict(os.environ))
+    layout.pid_file.write_text(str(child.pid), encoding="utf-8")
+    record: dict[str, object] = {}
+    monkeypatch.setattr(ii.shutil, "which", lambda name: "/usr/bin/xdotool")
+    monkeypatch.setattr(ii.subprocess, "run", _fake_window_run(record, _WindowProc()))
+    try:
+        with pytest.raises(InstanceError, match="stale"):
+            set_window(layout, visible=True)
+        assert record.get("calls", []) == []
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_restart_cli_subcommand_reports_missing_bin(seeded, tmp_path: Path) -> None:
+    _, layout, _ = seeded
+    reset_run_dir(layout)
+    code = main(["--root", str(layout.root), "restart", "--app-bin", str(tmp_path / "no-bin")])
+    assert code == 1
 
 
 def test_instance_env_isolates_data_and_xdg_dirs(tmp_path: Path) -> None:

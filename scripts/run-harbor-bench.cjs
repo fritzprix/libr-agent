@@ -153,19 +153,20 @@ const INSTANCE_ROOT = path.join(
   'bench-instance',
 );
 const SEED_INFO_PATH = path.join(INSTANCE_ROOT, 'seed', 'seed.json');
+const APP_BIN_NAME = isWindows ? 'libragent.exe' : 'libragent';
 const RELEASE_APP_BIN = path.join(
   repoRoot,
   'src-tauri',
   'target',
   'release',
-  'libragent',
+  APP_BIN_NAME,
 );
 const DEBUG_APP_BIN = path.join(
   repoRoot,
   'src-tauri',
   'target',
   'debug',
-  'libragent',
+  APP_BIN_NAME,
 );
 // Must match build.devUrl in src-tauri/tauri.conf.json.
 const DEV_URL_PORT = 1420;
@@ -327,9 +328,11 @@ function stopFrontendServer(pid) {
 }
 
 async function runIsolated(benchCommand, benchArgs) {
-  if (process.platform !== 'linux') {
-    // Stopping detached sidecars relies on /proc/<pid>/environ.
-    console.error(`${ISOLATED_FLAG} is only supported on Linux.`);
+  if (process.platform !== 'linux' && process.platform !== 'win32') {
+    // Stopping detached sidecars relies on /proc/<pid>/environ on Linux and
+    // on a named job object assigned at launch on Windows (#2905). macOS has
+    // no stop path for detached sidecars, so it stays unsupported.
+    console.error(`${ISOLATED_FLAG} is only supported on Linux and Windows.`);
     return 1;
   }
   const concurrentIndex = benchArgs.indexOf('--concurrent');
@@ -430,7 +433,12 @@ const debugAppBin = rawArgv.includes(DEBUG_APP_BIN_FLAG);
  */
 function applyWorkspaceMode(mode) {
   process.env.LIBRAGENT_HARBOR_WORKSPACE_MODE = mode;
-  // Read by the bench instance launcher and the Harbor adapter.
+  // Read by the bench instance launcher and the Harbor adapter. On Linux "1"
+  // puts the instance in a bubblewrap sandbox; on Windows there is no bwrap
+  // and the isolated instance itself is the safety condition (named job
+  // object + redirected profiles), so the flag is set there too and the
+  // adapter additionally refuses Windows host mode outside CI runners
+  // (libragent_agent.resolve_workspace_mode).
   if (mode === 'host') {
     process.env.LIBRAGENT_BENCH_INSTANCE_SANDBOX = '1';
   } else {
@@ -458,7 +466,19 @@ if (plan.immediate !== null) {
 }
 
 if (isolated) {
-  const sh = path.join(repoRoot, 'scripts', 'run-harbor-bench.sh');
+  // Same dispatch as the non-isolated path below: bash script on POSIX,
+  // PowerShell script (with -Flag args) on Windows.
+  const isolatedCommand = isWindows
+    ? [
+        'powershell',
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        path.join(repoRoot, 'scripts', 'run-harbor-bench.ps1'),
+      ]
+    : ['bash', path.join(repoRoot, 'scripts', 'run-harbor-bench.sh')];
+  const isolatedArgs = isWindows ? toPowerShellArgs(argv) : argv;
   // Between runs (launch, stop) Ctrl+C must not kill the runner before the instance is
   // stopped; runBenchChild adds its own handler while Harbor is running.
   process.on('SIGINT', () => interrupt.press());
@@ -467,7 +487,7 @@ if (isolated) {
     for (const mode of workspaceModes) {
       applyWorkspaceMode(mode);
       console.log(`==> Workspace mode: ${mode}`);
-      const status = await runIsolated(['bash', sh], argv);
+      const status = await runIsolated(isolatedCommand, isolatedArgs);
       if (status !== 0) {
         exitStatus = status;
       }

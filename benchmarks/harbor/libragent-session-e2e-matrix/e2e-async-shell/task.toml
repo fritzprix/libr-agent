@@ -1,0 +1,32 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-async-shell"
+description = "Session API E2E: start an async shell command via spawnProcess and verify its output in the transcript"
+keywords = ["libragent", "session-e2e", "async-shell", "spawnProcess"]
+
+[[task.authors]]
+name = "fritzprix"
+
+[metadata]
+difficulty = "easy"
+category = "session-api-e2e"
+tags = ["matrix", "async-shell", "workspace", "issue-2907"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "async-shell-2907"
+auto_answer_interactive = false
+approve_standard_tools = true
+synthetic_secret_env = "LIBRAGENT_E2E_SYNTHETIC_SECRET"
+
+[verifier]
+timeout_sec = 120.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

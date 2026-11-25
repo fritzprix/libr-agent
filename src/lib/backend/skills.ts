@@ -1,8 +1,12 @@
 import { safeInvoke } from './core';
 import type {
   ManagedSkillsOverview,
+  PluginSourceOverview,
+  PluginUpdateStatus,
+  SessionPluginEntry,
   SkillImportPreview,
   SkillImportResult,
+  SessionPluginsOverview,
   SkillMetadata,
 } from '@/types/skills';
 
@@ -67,11 +71,13 @@ export async function importUserSkills(
   filePath: string,
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
+  approveHooks?: boolean,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('import_user_skills', {
     filePath,
     overwriteExisting,
     excludedSkillNames,
+    approveHooks,
   });
 }
 
@@ -87,11 +93,97 @@ export async function installGitHubSkills(
   repoUrl: string,
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
+  approveHooks?: boolean,
+  pluginOptions?: Record<string, string>,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_github_skills', {
     repoUrl,
     overwriteExisting,
     excludedSkillNames,
+    approveHooks,
+    pluginOptions,
+  });
+}
+
+export async function listPluginSources(): Promise<PluginSourceOverview[]> {
+  return safeInvoke<PluginSourceOverview[]>('list_plugin_sources');
+}
+
+export async function deletePluginSource(sourceId: string): Promise<void> {
+  return safeInvoke<void>('delete_plugin_source', { sourceId });
+}
+
+/**
+ * Turn a global plugin on or off (#2927). Its files stay in place, so
+ * enabling again needs no download; an open session applies the change when
+ * it opens again or on `/reload`.
+ */
+export async function setPluginSourceEnabled(
+  sourceId: string,
+  enabled: boolean,
+): Promise<void> {
+  return safeInvoke<void>('set_plugin_source_enabled', { sourceId, enabled });
+}
+
+/**
+ * Check every global plugin for a newer source (#2927 D6 update indicator).
+ * Only plugins with a recorded install commit are queried; a failed remote
+ * check reports "no update".
+ */
+export async function checkPluginSourceUpdates(): Promise<PluginUpdateStatus[]> {
+  return safeInvoke<PluginUpdateStatus[]>('check_plugin_source_updates');
+}
+
+/**
+ * Resolve a `/plugin update <name|git-url>` target to the installed plugin
+ * (#2927 item 4): the session install wins, then a global one.
+ */
+export async function resolvePluginTarget(
+  sessionId: string,
+  target: string,
+): Promise<SessionPluginEntry> {
+  return safeInvoke<SessionPluginEntry>('resolve_plugin_target', {
+    sessionId,
+    target,
+  });
+}
+
+/** Previews a GitHub plugin install scoped to a single session. */
+export async function previewSessionPluginInstall(
+  sessionId: string,
+  repoUrl: string,
+): Promise<SkillImportPreview> {
+  return safeInvoke<SkillImportPreview>('preview_session_plugin_install', {
+    sessionId,
+    repoUrl,
+  });
+}
+
+/** Installs a GitHub plugin for one session only (survives resume). */
+export async function installSessionPlugin(
+  sessionId: string,
+  repoUrl: string,
+  overwriteExisting: boolean,
+  excludedSkillNames?: string[],
+  approveHooks?: boolean,
+  pluginOptions?: Record<string, string>,
+): Promise<SkillImportResult> {
+  return safeInvoke<SkillImportResult>('install_session_plugin', {
+    sessionId,
+    repoUrl,
+    overwriteExisting,
+    excludedSkillNames,
+    approveHooks,
+    pluginOptions,
+  });
+}
+
+/** Lists active (global + session) plugins and the session install history. */
+export async function listSessionPlugins(
+  sessionId: string,
+): Promise<SessionPluginsOverview> {
+  return safeInvoke<SessionPluginsOverview>('list_session_plugins', {
+    sessionId,
   });
 }
 

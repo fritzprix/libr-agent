@@ -23,7 +23,11 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import { useChatSubmit } from '../hooks/useChatSubmit';
+import { useSessionPluginInstall } from '../hooks/useSessionPluginInstall';
+import { PluginUpdateNoticeDialog } from '@/features/skills/components/PluginUpdateNoticeDialog';
+import { SkillsConflictDialog } from '@/features/skills/components/SkillsConflictDialog';
 import { useInputToken } from '../hooks/useInputToken';
+import { usePluginCommands } from '../hooks/usePluginCommands';
 import { usePlaybookSearch } from '../hooks/usePlaybookSearch';
 import { InputTokenDropdown } from './InputTokenDropdown';
 import {
@@ -80,6 +84,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   });
   const { availableTools: tools } = useSessionAgentTools();
 
+  // Plugin slash commands for the `/` dropdown (#2922).
+  const {
+    commands: pluginCommands,
+    refresh: refreshPluginCommands,
+  } = usePluginCommands(session?.id);
+
   const {
     stage,
     typeResults,
@@ -90,7 +100,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onTypeSelect,
     onArgSelect,
     onDismiss,
-  } = useInputToken(skills, tools);
+  } = useInputToken(skills, tools, pluginCommands);
 
   // null = dropdown not active; string (incl. '') = active with current query
   const fileQuery =
@@ -125,6 +135,13 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     await refreshSkills();
   }, [refreshSkills]);
 
+  const {
+    startInstall: startPluginInstall,
+    startUpdate: startPluginUpdate,
+    dialogProps: pluginDialogProps,
+    updateNoticeProps: pluginUpdateNoticeProps,
+  } = useSessionPluginInstall(session?.id);
+
   const { input, setInput, handleSubmit } = useChatSubmit({
     session,
     submit,
@@ -137,6 +154,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     onSubmitted: refreshScopedSkills,
     onClearSession: clearSessionHistory,
     onExecutionModeChange: applyExecutionMode,
+    onPluginInstall: startPluginInstall,
+    onPluginUpdate: startPluginUpdate,
+    onPluginCommandsChanged: refreshPluginCommands,
   });
 
   const attachedFiles = pendingFiles;
@@ -641,6 +661,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           </Tooltip>
         )}
       </form>
+      {pluginDialogProps.pendingInstall ? (
+        <SkillsConflictDialog {...pluginDialogProps} />
+      ) : null}
+      <PluginUpdateNoticeDialog {...pluginUpdateNoticeProps} />
     </div>
   );
 }

@@ -16,8 +16,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ORT_VERSION = '1.28.0';
-const ORT_SHA256 =
-  'a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407';
+// Official Microsoft.ML.OnnxRuntime NuGet package (published 2026-07-25).
+// GitHub release downloads for microsoft/onnxruntime return 404 since 2026-11-17.
+const ORT_NUPKG_URL = `https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ORT_VERSION}/microsoft.ml.onnxruntime.${ORT_VERSION}.nupkg`;
+const ORT_NUPKG_SHA512 =
+  'd97d83d031fa744cd67dab61e88deecc8b6c3c11b1a98951b0fcf73852bb4bd4df935d0c71674a19e80d8d3f0a98e02d9129e8df24c5f5ea38de60ef9fdb1a97';
 
 const repoRoot = path.resolve(__dirname, '..');
 const stageRoot = path.join(repoRoot, 'src-tauri', 'onnxruntime-linux');
@@ -28,8 +31,8 @@ const appimageOrt =
   process.argv.includes('--appimage-ort') ||
   process.env.LIBRAGENT_APPIMAGE_ORT === '1';
 
-function sha256File(filePath) {
-  const hash = crypto.createHash('sha256');
+function sha512File(filePath) {
+  const hash = crypto.createHash('sha512');
   hash.update(fs.readFileSync(filePath));
   return hash.digest('hex');
 }
@@ -61,40 +64,36 @@ function stageOnnxRuntime() {
   }
 
   fs.mkdirSync(stageRoot, { recursive: true });
-  const tarball = path.join(
+  const nupkg = path.join(
     stageRoot,
-    `onnxruntime-linux-x64-${ORT_VERSION}.tgz`,
+    `microsoft.ml.onnxruntime.${ORT_VERSION}.nupkg`,
   );
-  const url = `https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz`;
-  execFileSync('curl', ['-fsSL', '-o', tarball, url], { stdio: 'inherit' });
-
-  const digest = sha256File(tarball);
-  if (digest !== ORT_SHA256) {
-    fs.rmSync(tarball, { force: true });
-    throw new Error(
-      `ONNX Runtime ${ORT_VERSION} checksum mismatch: got ${digest}, expected ${ORT_SHA256}`,
-    );
-  }
-
-  const extractDir = path.join(stageRoot, 'extract');
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.mkdirSync(extractDir, { recursive: true });
-  execFileSync('tar', ['-xzf', tarball, '-C', extractDir], {
+  execFileSync('curl', ['-fsSL', '-o', nupkg, ORT_NUPKG_URL], {
     stdio: 'inherit',
   });
 
-  const extractedLib = path.join(
-    extractDir,
-    `onnxruntime-linux-x64-${ORT_VERSION}`,
-    'lib',
-  );
+  const digest = sha512File(nupkg);
+  if (digest !== ORT_NUPKG_SHA512) {
+    fs.rmSync(nupkg, { force: true });
+    throw new Error(
+      `ONNX Runtime ${ORT_VERSION} NuGet checksum mismatch: got ${digest}, expected ${ORT_NUPKG_SHA512}`,
+    );
+  }
+
+  // The nupkg ships libonnxruntime.so (SONAME libonnxruntime.so.1) and
+  // libonnxruntime_providers_shared.so under runtimes/linux-x64/native.
   fs.rmSync(libDir, { recursive: true, force: true });
-  fs.cpSync(extractedLib, libDir, { recursive: true });
-  fs.rmSync(extractDir, { recursive: true, force: true });
-  fs.rmSync(tarball, { force: true });
-  // cp follows the archive's symlinks into absolute paths under the extract
-  // directory, which is then removed. Recreate relative SONAME links.
-  removeLink(linkerName);
+  fs.mkdirSync(libDir, { recursive: true });
+  execFileSync(
+    'unzip',
+    ['-q', '-o', '-j', nupkg, 'runtimes/linux-x64/native/*', '-d', libDir],
+    { stdio: 'inherit' },
+  );
+  fs.rmSync(nupkg, { force: true });
+
+  // Match the layout of the former GitHub tgz: versioned file plus SONAME and
+  // linker-name symlinks.
+  fs.renameSync(linkerName, sharedObject);
   removeLink(soname);
   fs.symlinkSync(`libonnxruntime.so.${ORT_VERSION}`, soname);
   fs.symlinkSync('libonnxruntime.so.1', linkerName);

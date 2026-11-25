@@ -29,11 +29,7 @@ pub(super) fn is_tool_error_message(message: &Message) -> bool {
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
 
-    if metadata_tool_error {
-        return true;
-    }
-
-    false
+    metadata_tool_error
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

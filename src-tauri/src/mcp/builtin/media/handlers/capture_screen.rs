@@ -9,6 +9,26 @@ use super::fetch::MAX_BYTES;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::{MCPContent, MCPResult};
 
+/// Encode an RGBA frame as PNG bytes.
+///
+/// Shared between `media__captureScreen` and the debug E2E control-plane
+/// window screenshot route (#2902).
+pub fn encode_rgba_png(image: &image::RgbaImage) -> Result<Vec<u8>, String> {
+    let mut png_bytes = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut png_bytes, ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode screenshot as PNG: {e}"))?;
+    Ok(png_bytes.into_inner())
+}
+
+/// Encode PNG bytes as standard Base64.
+///
+/// Shared between `media__captureScreen` and the debug E2E control-plane
+/// window screenshot route (#2902).
+pub fn encode_png_base64(png_bytes: &[u8]) -> String {
+    general_purpose::STANDARD.encode(png_bytes)
+}
+
 fn screen_capture_guidance() -> Vec<String> {
     vec![
         "Verify that 'display_index' corresponds to an active monitor (use 0 for primary display).".to_string(),
@@ -253,17 +273,7 @@ pub async fn handle_capture_screen(
         let width = image.width();
         let height = image.height();
 
-        let mut png_bytes = std::io::Cursor::new(Vec::new());
-        image
-            .write_to(&mut png_bytes, ImageFormat::Png)
-            .map_err(|e| {
-                (
-                    ErrorCategory::OperationFailed,
-                    format!("Failed to encode screenshot as PNG: {e}"),
-                )
-            })?;
-
-        let data = png_bytes.into_inner();
+        let data = encode_rgba_png(&image).map_err(|msg| (ErrorCategory::OperationFailed, msg))?;
         if data.len() > MAX_BYTES {
             return Err((
                 ErrorCategory::OperationFailed,
@@ -307,7 +317,7 @@ pub async fn handle_capture_screen(
         Ok(payload) => {
             let byte_len = payload.png_data.len();
             let size_kb = byte_len / 1024;
-            let base64_data = general_purpose::STANDARD.encode(&payload.png_data);
+            let base64_data = encode_png_base64(&payload.png_data);
 
             // Persist to temp file for efficient download (avoids re-sending base64 over IPC)
             let file_uri = super::persist_media_to_temp_file(

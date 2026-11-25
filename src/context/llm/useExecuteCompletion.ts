@@ -18,6 +18,7 @@ import {
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/lib/services/settings-service';
+import type { MaxOutputTokensSource } from '@/models/agent-ipc';
 import { buildServiceRuntimeConfig } from './service-runtime-config';
 import { buildStreamingMessage } from './streaming-message-utils';
 import {
@@ -140,10 +141,14 @@ export function useExecuteCompletion({
       };
 
       try {
-        const resolvedMaxTokens =
-          maxTokens ||
-          settingsRef.current.advanced?.defaultMaxOutputTokens ||
-          8192;
+        const settingsMaxTokens =
+          settingsRef.current.advanced?.defaultMaxOutputTokens;
+        const resolvedMaxTokens = maxTokens || settingsMaxTokens || 8192;
+        const maxTokensSource: MaxOutputTokensSource = maxTokens
+          ? 'assistant'
+          : settingsMaxTokens
+            ? 'settings'
+            : 'fallback';
         const config: AIServiceConfig = {
           ...runtimeConfig,
           maxTokens: resolvedMaxTokens,
@@ -189,7 +194,10 @@ export function useExecuteCompletion({
           settingsRef,
           startTime,
           providerSupportsReasoningBudgetCap(provider)
-            ? { reasoningBudgetMaxTokens: resolvedMaxTokens }
+            ? {
+                reasoningBudgetMaxTokens: resolvedMaxTokens,
+                reasoningBudgetMaxTokensSource: maxTokensSource,
+              }
             : undefined,
         );
 

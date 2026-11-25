@@ -1,5 +1,7 @@
 use super::AgentSessionManager;
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{AgentSession, PendingApprovalData, PendingApprovalKind};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
@@ -47,6 +49,26 @@ pub async fn list_pending_approvals_in(
         .collect();
     items.sort_by(|a, b| a.tool_call_id.cmp(&b.tool_call_id));
     items
+}
+
+/// Count of pending tool approvals per active session.
+///
+/// The notification bell keeps its pending-approval counts in frontend state,
+/// which drops updates for sessions that are not in the loaded lists yet (#2971).
+/// The backend map is the authoritative source: an inactive session cannot hold
+/// pending approvals, so omitting it means zero.
+pub async fn pending_approval_counts_in(
+    active_sessions: &RwLock<HashMap<String, AgentSession>>,
+) -> HashMap<String, usize> {
+    let active = active_sessions.read().await;
+    let mut counts = HashMap::new();
+    for (session_id, session) in active.iter() {
+        let count = session.pending_approvals.read().await.len();
+        if count > 0 {
+            counts.insert(session_id.clone(), count);
+        }
+    }
+    counts
 }
 
 /// Re-emit pending tool-approval (and channel-permission) events after resume
@@ -99,7 +121,9 @@ pub(crate) async fn reemit_pending_approvals_on_resume(
     };
 
     for event in pending_events {
-        if let Err(e) = crate::agent::tauri_events::emit_agent_event(&manager.app_handle, event) {
+        if let Err(e) =
+            TauriEventDispatcher::from_handle(&manager.app_handle).emit_agent_event(event)
+        {
             log::error!("Failed to re-emit pending approval event on resume: {}", e);
         }
     }
@@ -119,7 +143,7 @@ fn complete_resolved_approval(
             tool_call_id,
             approved,
         };
-        if let Err(error) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+        if let Err(error) = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event) {
             log::error!(
                 "Failed to emit ToolExecutionApprovalResolved event: {}",
                 error
@@ -324,10 +348,10 @@ fn drain_matching_approvals(
 
 #[cfg(test)]
 mod tests {
-    use super::{drain_matching_approvals, pending_approval_ids};
-    use crate::agent::state::{PendingApprovalData, PendingApprovalKind};
+    use super::{drain_matching_approvals, pending_approval_counts_in, pending_approval_ids};
+    use crate::agent::state::{build_test_session, PendingApprovalData, PendingApprovalKind};
     use std::collections::HashMap;
-    use tokio::sync::oneshot;
+    use tokio::sync::{oneshot, RwLock};
 
     #[test]
     fn filters_out_hard_approvals_from_yolo_auto_approval() {
@@ -447,6 +471,36 @@ mod tests {
         assert_eq!(drained.len(), 2);
         assert!(approvals.is_empty());
     }
+
+    #[tokio::test]
+    async fn counts_pending_approvals_per_active_session() {
+        let mut active_sessions: HashMap<String, _> = HashMap::new();
+
+        let session_with_approvals = build_test_session("session-with-approvals");
+        {
+            let mut approvals = session_with_approvals.pending_approvals.write().await;
+            approvals.insert(
+                "call-1".to_string(),
+                sample_approval(PendingApprovalKind::Standard),
+            );
+            approvals.insert(
+                "call-2".to_string(),
+                sample_approval(PendingApprovalKind::Hard),
+            );
+        }
+        active_sessions.insert("session-with-approvals".to_string(), session_with_approvals);
+        active_sessions.insert(
+            "idle-session".to_string(),
+            build_test_session("idle-session"),
+        );
+
+        let active_sessions = RwLock::new(active_sessions);
+        let counts = pending_approval_counts_in(&active_sessions).await;
+
+        assert_eq!(counts.get("session-with-approvals").copied(), Some(2));
+        // A session with no pending approvals must not claim a bell badge (#2971).
+        assert_eq!(counts.get("idle-session"), None);
+    }
 }
 
 impl AgentSessionManager {
@@ -471,5 +525,9 @@ impl AgentSessionManager {
 
     pub async fn list_pending_approvals(&self, session_id: &str) -> Vec<PendingApprovalSummary> {
         list_pending_approvals_in(&self.active_sessions, session_id).await
+    }
+
+    pub async fn pending_approval_counts(&self) -> HashMap<String, usize> {
+        pending_approval_counts_in(&self.active_sessions).await
     }
 }

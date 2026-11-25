@@ -45,6 +45,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         docker_container_name: None,
         docker_host_workspace_path: None,
         status_reason: None,
+        forked_from: None,
     }
 }
 
@@ -97,6 +98,7 @@ fn build_agent_session(session_id: &str) -> AgentSession {
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
+        invalid_tool_args_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         pending_user_prompt: tauri_mcp_agent_lib::agent::state::new_user_prompt_slot(),
@@ -837,6 +839,142 @@ async fn test_handle_llm_response_duplicate_prevention() {
         assert_eq!(cached_msgs.len(), 1);
         assert_eq!(cached_msgs[0].id, "ast-1");
     }
+}
+
+fn build_assistant_text_message(session_id: &str, id: &str, text: &str) -> Message {
+    Message {
+        id: id.to_string(),
+        session_id: session_id.to_string(),
+        role: "assistant".to_string(),
+        content: vec![MCPContent::Text {
+            text: text.to_string(),
+        }],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: Some(false),
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: chrono::Utc::now().timestamp_millis(),
+        updated_at: chrono::Utc::now().timestamp_millis(),
+        source: None,
+        error: None,
+        metadata: None,
+    }
+}
+
+/// #2967 (gatekeeper G1.1): drives the real `handle_llm_response` on a Busy
+/// session with `pending_execution = None` — the resample case, where the
+/// discarded invalid reply cached nothing and a reply matching the last cached
+/// message is the turn's only finisher. It must pass the dedup drop, enter
+/// history (the turn settles: Busy → Idle), instead of being dropped.
+#[tokio::test]
+async fn duplicate_reply_on_a_busy_session_is_cached_and_processed() {
+    let db = common::setup_test_db_with_migrations().await;
+    let session_repo = SqliteSessionRepository::new(db.clone());
+    let session_repo_arc = Arc::new(session_repo.clone()) as Arc<dyn SessionRepository>;
+
+    // The terminal persist writes a `messages` row that references the session
+    // row, so both repositories must see the same SQLite database.
+    tauri_mcp_agent_lib::set_message_repository(SqliteMessageRepository::new(db.clone()));
+    tauri_mcp_agent_lib::set_pending_queue_repository(
+        tauri_mcp_agent_lib::repositories::SqlitePendingQueueRepository::new(db.clone()),
+    );
+    tauri_mcp_agent_lib::set_session_repository(session_repo.clone());
+
+    let session_id = "duplicate-reply-busy";
+    session_repo
+        .upsert_session(&build_session_metadata(session_id))
+        .await
+        .expect("session row");
+
+    let mut session = build_agent_session(session_id);
+    // Busy with nothing pending: only a processed reply can end the turn.
+    session.metadata.status = SessionStatus::Busy;
+    session
+        .messages
+        .write()
+        .await
+        .push(build_assistant_text_message(
+            session_id,
+            "assistant-last",
+            "All done.",
+        ));
+    *session.expected_response_id.write().await = Some("assistant-resampled".to_string());
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    active_sessions
+        .write()
+        .await
+        .insert(session_id.to_string(), session);
+
+    let mock_app = tauri::test::mock_app();
+    let mock_handle = mock_app.handle();
+    let app_handle: &tauri::AppHandle = unsafe {
+        &*(mock_handle as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
+    };
+
+    let temp_dir = tempfile::TempDir::new().expect("temp dir");
+    let session_workspace_manager = Arc::new(
+        tauri_mcp_agent_lib::session::SessionManager::new_with_base_dir(
+            temp_dir.path().join("busy-session-root"),
+        )
+        .expect("session manager"),
+    );
+    let proxy_manager = Arc::new(
+        tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager::new(
+            Arc::new(db.clone()),
+            session_workspace_manager,
+        ),
+    );
+
+    // Same signature as the last cached message, different id, matching the
+    // session's expected response id: the resample's regenerated answer.
+    let duplicate = build_assistant_text_message(session_id, "assistant-resampled", "All done.");
+    let result = tauri_mcp_agent_lib::agent::llm::response::handle_llm_response(
+        &session_repo_arc,
+        &active_sessions,
+        &proxy_manager,
+        app_handle,
+        session_id.to_string(),
+        duplicate,
+    )
+    .await;
+    result.expect("the matching reply must be processed, not dropped");
+
+    let messages = {
+        let sessions = active_sessions.read().await;
+        let messages = sessions
+            .get(session_id)
+            .expect("session")
+            .messages
+            .read()
+            .await
+            .clone();
+        messages
+    };
+    assert_eq!(
+        messages.len(),
+        2,
+        "the processed reply must enter history: {messages:?}"
+    );
+    assert_eq!(messages[1].id, "assistant-resampled");
+
+    // The reply was the turn's only finisher: processing it settles the turn.
+    assert_eq!(
+        active_sessions
+            .read()
+            .await
+            .get(session_id)
+            .expect("session")
+            .metadata
+            .status,
+        SessionStatus::Idle,
+        "the processed reply must settle the turn"
+    );
 }
 
 /// Simulates app restart → open session (active, empty cache) → UI Resume inject.

@@ -32,26 +32,217 @@ the trial log prints an explicit warning and the evidence file records
 Release builds and default dev runs (without `LIBRAGENT_E2E_CONTROL`) keep
 E2E control **disabled** (404).
 
-## Windows (host-mode, manual)
+## Windows (isolated, unattended) (#2905)
 
-`--isolated` does not run on Windows. To exercise the matrix there, start a
-**debug desktop instance** yourself with the opt-in flags and run Harbor in
-host mode against it:
+`--isolated` runs on Windows too. The same commands seed, launch, stop, and
+relaunch a disposable instance, and the harness answers prompts and approvals
+for **its own** instance exactly like on Linux:
 
 ```powershell
-$env:LIBRAGENT_E2E_CONTROL = "1"
-$env:LIBRAGENT_DATA_DIR = "C:\path\to\disposable\profile"
-pnpm tauri build --debug   # then launch that binary
+python -m benchmarks.harbor.isolated_instance seed --assistant-id <uuid>
+pnpm bench:session-e2e   # launches the debug binary under the disposable profile
 ```
 
-Caveat: the harness only answers prompts and approvals for **its own
-isolated instance**. Host-mode Windows runs therefore do not auto-resolve
-`requireUserInput` prompts yet — `e2e-interactive-echo` needs the isolated
-runner (Linux) until a Windows instance manager lands.
+Windows has no `/proc`, so the manager identifies the instance tree only by
+things it controls itself: a launch manifest (`instance.json`: PID, process
+creation time, per-launch job name) plus a **named job object** every process
+of the tree joins at launch. Stop first tries `taskkill /PID` (graceful), then
+terminates the job object — which also kills detached sidecars. A recycled PID
+is rejected via the creation-time stamp, and a stop can only reach the job
+whose random per-launch token is in the manifest. Processes are never selected
+by the `libragent` image name.
+
+Profile isolation mirrors the Linux XDG setup: `APPDATA`, `LOCALAPPDATA`,
+`USERPROFILE`, `HOME`, `TEMP`/`TMP` are redirected into the run dir, and the
+primary profile (`%APPDATA%\com.fritzprix.libragent`) is refused just like the
+Linux one. The bubblewrap host-mode workspace sandbox is Linux-only; on
+Windows the flag means the isolated instance itself is the safety condition
+(job object + redirected profiles). Because Windows has no bubblewrap
+filesystem sandbox, `libragent_agent.py` refuses `LIBRAGENT_HARBOR_WORKSPACE_MODE=host`
+on `win32` with `RuntimeError` (`LIBRAGENT_HARBOR_WORKSPACE_MODE=host on Windows runs task commands directly on this machine; allow it only on a disposable CI runner (CI=true), or pass --workspace-mode managed.`) unless `--workspace-mode managed` is used or `CI=true` is set explicitly on a throwaway/disposable Windows machine.
+
+The control-plane contract is shared across platforms: the debug-only,
+loopback, token-guarded S1/S3 HTTP routes for interaction polling and prompt
+and approval resolution behave the same on Windows — they are plain HTTP
+against the same debug binary. The file-picker injection and in-place restart
+routes land with #2903 (PR #2916) and are not part of this change. Window
+show/hide and resize now ride the same debug HTTP plane via
+`POST /api/e2e-control/window` (#2903 AC2, Tauri-side, so both platforms);
+the older X11 window-size helper stays Linux-side manager scaffolding only.
+
+For interactive debugging the manual host-mode path still works: start a
+debug desktop instance yourself with `$env:LIBRAGENT_E2E_CONTROL = "1"` and a
+disposable `$env:LIBRAGENT_DATA_DIR`, then run Harbor in host mode against it.
+
+Windows-gated tasks (`requires_host_os = "windows"`, auto-excluded on Linux):
+
+- `e2e-b11-no-runshell` — B-11: `workspace__runShell` unavailable on Windows,
+  `submitInteractiveShellInput` absent, PowerShell fallback succeeds.
+- `e2e-win-stdio-metachars-m6` — 2672 M-6: stdio MCP server argument
+  `a&b|c^d<e>f` reaches the spawned child verbatim without `cmd.exe` splitting.
+- `e2e-win-docs-doctor-o7` — 2565 O-7: `docs` skill `scripts/doctor.ps1`
+  prints `Doctor: OK` with no NTFS junction loop.
+- `e2e-win-shell-terminate-p6` — 2565 P-6 (Windows process half): the child
+  session's persistent PowerShell shell records its PID into the shared
+  workspace, and with `check_persistent_shell_after_terminate = true` the
+  harness proves it is alive while the child waits on `ui__askUser`, gone
+  after `terminate_child_on_prompt`, and the same PID still gone after a
+  settle window (no-replacement itself is owned by the backend
+  `force_kill_shell` unit test `force_kills_persistent_shell_without_leaving_manager_entry`).
+- **2672 D-4 (Windows Docker Desktop required)**: `\\?\` prefix stripping is
+  covered by Rust unit tests, while live `docker run` requires a local Windows
+  host with Docker Desktop running Linux containers.
+
+## Circuit-breaker Resume (#2901)
+
+`ui__circuitBreak` stops the workflow and waits for a human Resume click. Debug
+builds additionally expose `POST /api/e2e-control/sessions/:ref/circuit-break-resume`
+(loopback, token-gated), which injects the exact `ui__resumeCircuitBreak`
+tool-call the GUI button sends. `POST /api/sessions/:id/resume` is a different
+reload path (#2898) and never touches the dialog. The poller sees the waiting
+break in `GET …/interactions` (`pendingCircuitBreak`) and resumes it when the
+task spec sets `resume_circuit_break = true` (the default).
+
+## New tasks (#2901)
+
+- `e2e-askuser-answer` — one `ui__askUser` question answered through the control
+  plane; the agent must write the delivered answer verbatim to `answer.txt`.
+- `e2e-circuit-break-resume` — trips the tool-loop guard with six identical
+  `workspace__writeFile` calls, gets resumed through the new endpoint, and must
+  finish by writing `break_marker.txt`.
+- `e2e-tool-approval-normal` — pins `execution_mode = "normal"` so a workspace
+  write really opens a tool-approval request; the harness grants it through the
+  control plane and the verifier confirms the approved call executed.
+- `e2e-storeas-masked` — the agent runs a `storeAs` command; the harness answers
+  the prompt with the synthetic secret, the value must reach the shell env, and
+  the verifier fails if the secret literal appears anywhere in the trajectory.
+- `e2e-bool-string-coercion` — the agent sends `include_checked` as the string
+  `"true"`; the shared args helper must coerce it with its warning and the call
+  must run, and an `ui__askUser` question with the reserved-sounding key
+  `options` must reach the harness instead of being rejected by key-name rules.
+- `e2e-mcp-secret-template` — the agent registers an MCP server that needs a
+  key; the verifier requires the `{{secret:E2E_WEATHER_KEY}}` template in the
+  trajectory (tool-call arguments included), rejects any chat prompt for the
+  secret value, and fails if any secret literal appears anywhere.
+- `e2e-clarify-requirements` — a vague `기획해줘` request must trigger the
+  clarify flow; the verifier requires delivered clarification answers, the
+  clarify skill loaded, and a structured `requirements.md` maintained in the
+  workspace.
+- `e2e-askuser-cancel` — the harness cancels a waiting `ui__askUser` prompt
+  through the control plane (the same path the Cancel/Stop buttons drive,
+  `cancel_interactive = true`); the verifier requires the delivered cancel
+  record, an informational cancel tool result, and the agent continuing to
+  completion afterwards.
+- `e2e-askuser-options` — one `ui__askUser` call with an options question, a
+  `multiSelect` question, and a free-text question; the harness answers with
+  the task's `answer_value` (a JSON object keyed by question id), and the
+  verifier grades the keyed result shapes in the delivered tool result.
+- `e2e-answer-masked-logs` — a `storeAs` prompt is answered with the synthetic
+  secret; the verifier proves the value reached the shell, then byte-scans
+  every harness artifact under `/logs/agent/` (trajectory, compaction summary,
+  instance log) and fails if the recorded `injectedValue` appears in any of
+  them — only the evidence record itself may hold the exact value.
+- `e2e-two-session-prompts` — 2565 X-2: the parent spawns a child session and
+  both hold waiting `storeAs` prompts simultaneously. With
+  `resolve_child_interactions = true` and
+  `wait_for_overlapping_child_prompt = true`, the harness holds answers until
+  both sessions have a `pendingUserPrompt` in the same poll cycle
+  (`simultaneousPending: true`), answers the child first with a distinct value,
+  and answers the primary second. Each session writes the SHA-256 hex digest of
+  its env var so the verifier proves per-session answer isolation without
+  leaking literals.
+- `e2e-storeas-replace` — 2565 B-8: re-stores the same `storeAs` variable in
+  the persistent shell with a distinct second synthetic value
+  (`distinct_secret_per_prompt = true`), proving via SHA-256 digests that the
+  second value replaced the first while keeping `cwd` unchanged and leaking
+  neither literal.
+- `e2e-askuser-terminate-while-waiting` — 2565 P-6 (prompt half): a child
+  session blocks on `ui__askUser`; with `terminate_child_on_prompt = true`, the
+  harness terminates the child via `POST /api/sessions/:id/terminate`, verifies
+  `pendingUserPrompt` is cleared, and the parent completes cleanly. The Windows
+  process half of P-6 is covered by `e2e-win-shell-terminate-p6` (see the
+  Windows-gated list above).
+- `e2e-mcp-approval-preview` — 2672 M-3 + 2565 M-4: `tool__registerServer`
+  with a literal query param, URL fragment, and `{{secret:NAME}}` param; the
+  verifier asserts the `toolApproval` `commandPreview` masks literal values as
+  `***` while keeping `{{secret:NAME}}` visible, and that cancelling the secret
+  prompt writes no server row.
+- `e2e-mcp-secret-lifecycle` — 2565 M-2, M-6, M-8, X-6: registers an HTTP MCP
+  server with a URL `{{secret:NAME}}` template, updates it with
+  `reenterSecrets` (receiving a second distinct secret), verifies the MCP
+  secret store is separate from shell `storeAs` env, and byte-scans `/logs/agent/`
+  for zero leaks.
+- `e2e-skill-storeas-flows` — 2565 S-1, S-2, S-5, S-6 & 2685 E-3: exercises the
+  generic `storeAs` mechanism under the four skills' variable names
+  (`TELEGRAM_API_HASH`, `X_PASSWORD`,
+  `LIBRAGENT_EMAIL_PASSWORD`, `LIBRAGENT_GOOGLE_CLIENT_SECRET`) with distinct
+  synthetic values, verifying each via SHA-256 digest and byte-scanning
+  `/logs/agent/` for zero leaks. The skills' own instructions are not exercised.
+
+A task may pin its own session mode with `execution_mode` under
+`[metadata.libragent_session_e2e]`; otherwise it inherits
+`LIBRAGENT_EXECUTION_MODE` (unchanged behaviour for existing tasks).
+
+## Control-plane & restart tasks (#2903)
+
+- `e2e-picker-control-plane` — #2903 AC1: probes `POST /api/e2e-control/picker`
+  with both a path override and `cancel: true` on the live isolated debug
+  instance (`probe_picker_control = true`).
+- Window control (#2903 AC2, no Harbor task yet): `POST /api/e2e-control/window`
+  shows/hides and resizes the isolated instance's main window and
+  replies with the actual post-apply state;
+  `session_e2e.control.E2eControlClient.set_window` is the client. The
+  window-state Harbor/UI task is deferred to #2902 (S2), which will be its
+  first caller. The HTTP route works inside the app on every platform; the
+  X11 `set_window` in `isolated_instance.py` is the Linux manager-side
+  fallback.
+- `e2e-askuser-reload-submit` — 2565 P-5 & X-5: holds a waiting `ui__askUser`
+  prompt across a session metadata refetch/re-poll
+  (`re_poll_prompt_before_answer = true`), then delivers a structured JSON
+  answer and confirms the turn continues.
+- `e2e-askuser-restart-orphan` — 2565 P-8 & 2672 A-4: restarts the isolated
+  instance in place while `ui__askUser` is waiting
+  (`restart_while_prompt_waiting = true`) and verifies post-restart
+  `/api/sessions/:id/messages` contains
+  `User did not answer (app restarted).`.
+- `e2e-mcp-keychain-unavailable-restart` — 2672 M-5: runs with
+  `mock_keychain_mode = "unavailable"`, restarts the instance in place, and
+  verifies the MCP server row persists with non-empty `encrypted_secrets`
+  fallback and zero literal leaks.
+- `e2e-mcp-secret-readback-restart` — 2672 R-4: registers a `{{secret:NAME}}`
+  MCP server with `mock_keychain_mode = "succeed"`, restarts in place, and
+  verifies the masked config and `secret_names` survive with zero literal leaks.
+- `e2e-persistent-shell-reload-cwd` — 2685 P-4: changes persistent shell
+  working directory, triggers shell reload via `storeAs`, and verifies `pwd`
+  preserves the earlier directory.
+- `e2e-settings-persist-restart` — 2565 O-1 (restart half): restarts the
+  isolated instance in place and verifies `/api/settings/preferredModel` and the
+  `settings` table survive restart (visual restart badge/toast stays on S2).
 
 ## Coverage manifest
 
 See [`coverage-manifest.json`](./coverage-manifest.json) for all **65 checklist IDs** from issue #2565 (`implemented` | `deferred` | `ui-only` | `platform-specific` | `needs-product`). The issue's **74 result slots** are pass/fail/skip/open tallies, not extra checklist rows.
+
+## Release-build gating (2672 E-2)
+
+Release binaries cannot serve `/api/e2e-control/*` at all: the module
+declaration, the capability-token init, and both route-merge sites in
+`src-tauri/src/server/` are compile-time gated behind
+`#[cfg(debug_assertions)]`. `e2e_control_stays_compile_time_gated`
+(`src-tauri/tests/e2e_control_token_tests.rs`) pins every gate site, and
+`disabled_control_plane_answers_404_even_with_a_token` covers the debug
+runtime path where the control plane is off.
+
+## Local execution only (#2939)
+
+Session API E2E runs **locally only** on a debug build (`node scripts/run-rust-command.cjs build`) with an isolated profile (`--isolated`, or `LIBRAGENT_DATA_DIR` with throwaway `HOME`/XDG/AppData directories). It does not run in GitHub CI, and no `SESSION_E2E_*` secrets or LLM API keys are configured in CI or stored in the repository.
+
+When running locally:
+
+1. Build the debug binary (`node scripts/run-rust-command.cjs build`).
+2. Seed the disposable bench instance from your local profile (`pnpm bench:instance:seed --assistant-id <uuid>` on Linux, or `python -m benchmarks.harbor.isolated_instance seed --assistant-id <uuid>` on Windows). The source database is read-only; LLM keys stay inside the local isolated profile only.
+3. Set a synthetic test secret (`export LIBRAGENT_E2E_SYNTHETIC_SECRET="dummy-token-abcd"`) — never a real credential — and run `pnpm bench:session-e2e:n1` or `pnpm bench:session-e2e` (or drive the isolated instance directly from an external multimodal agent via `libr-e2e-verify` and `release-head-self-e2e`).
+4. `requires_host_os = "windows"` tasks (e.g. `e2e-b11-no-runshell`) run on a local Windows host and are auto-excluded on Linux; Linux-only tasks are auto-excluded on Windows the same way. On Windows, default `host` workspace mode raises `RuntimeError` (`LIBRAGENT_HARBOR_WORKSPACE_MODE=host on Windows runs task commands directly on this machine…`) because there is no bubblewrap sandbox: pass `--workspace-mode managed` (requires Docker Desktop), or set `CI=true` only on a throwaway/disposable Windows machine where unsandboxed host commands are acceptable.
 
 ## In-app orchestration (preferred)
 
@@ -64,3 +255,22 @@ Task `e2e-b6-log-variable-ref` keeps the known **variable-reference vs literal**
 ## B-11 Windows host requirement (#2655)
 
 `e2e-b11-no-runshell` only has a passing path on a **Windows host** (the task exists because `workspace__runShell` is absent there). Its `task.toml` declares `requires_host_os = "windows"`; the harbor runners (`scripts/run-harbor-bench.sh` / `.ps1`, `path` preset) auto-add `-x e2e-b11-no-runshell` when the host OS does not match. The verifier asserts **tool calls and observations** (no successful `runShell`, no `submitInteractiveShellInput`, a successful PowerShell call), not blob string matching.
+
+## Privileged-path test container & mock keychain (#2904)
+
+See [`../privileged-e2e-image/README.md`](../privileged-e2e-image/README.md) for the **test-only** privileged container (`e2etest` with synthetic password `e2e-sudo-fixture`, scoped `NOPASSWD` probe, fake `pkexec`, fake `e2e-askpass`) and the debug-only `LIBRAGENT_E2E_MOCK_KEYCHAIN` backend (`succeed` | `fail-write` | `fail-read` | `unavailable`). Never use this image for real work and never enable `NOPASSWD` sudo or fake `pkexec` on a host machine.
+
+- `e2e-sudo-askpass-flow` — 2565 P-1, B-1 & 2672 S-2 (`SUDO_PASSWORD` via `storeAs` + follow-up plain `sudo` via askpass).
+- `e2e-sudo-wrong-password` — 2565 B-2 (wrong `SUDO_PASSWORD` fails cleanly without hanging or leaking; the sudo tool result itself must report the rejection).
+- `e2e-sudo-setup-wizard-k2` — 2672 K-2 (asks once for `SUDO_PASSWORD`, plain `sudo` only; the verifier tokenizes commands and rejects `sudo -n`/`-S`/`--stdin`/`--non-interactive` in any spelling, combined short flags, `env` prefixes, and any `su`/`pkexec`).
+- `e2e-sudo-cancel-x1` — 2565 X-1 (cancelling a waiting `SUDO_PASSWORD` prompt cleans up the prompt and leaves the persistent shell usable).
+- `e2e-asroot-daemon-o3` — 2565 O-3 (`runShell(asRoot=true)` background daemon must be stopped by the product with the stopped-process notice; the daemon's own echo is not accepted as evidence).
+- `e2e-keychain-fail-and-fallback` — 2565 M-7 / 2672 M-4 (fail-write half only): the task pins `mock_keychain_mode = "fail-write"`, the harness copies the mock's log and store into `/logs/agent`, and the verifier reads them directly - a set error was recorded and no secret persisted. The 2672 M-5 unavailable→file-fallback half stays `deferred` until a task runs `unavailable` mode.
+
+**Required invocation for the privileged tasks (G1.2, G2.1).** Their fakes (`e2etest`, fake `pkexec`/`askpass`) live in the task image, so they declare `requires_workspace_mode = "managed"` and the adapter fails fast in any other mode (host mode would run `sudo` against this machine). The harbor runners auto-add `-x <task>` when the selected mode does not match (same mechanism as `requires_host_os`), so the host-mode matrix run skips them instead of failing every trial. Run them with the dedicated entry point:
+
+```bash
+pnpm bench:session-e2e:privileged   # --workspace-mode managed + include e2e-sudo-*,e2e-asroot-*
+```
+
+The shim logs live under the shared workspace at `/app/.e2e-privileged-logs/` (`pkexec.log`, `askpass.log`, `probe.log`), created empty in the image build, so existence alone proves nothing: the "never invoked" checks are only trusted after the same trial asserts the positive control - the sudo'd `e2e-nopasswd-probe` appended a record to `probe.log`, proving the verifier sees what the agent's privileged shell wrote (G2.2). The product's own askpass helper lives in a per-session `mktemp` dir by design (the password never touches argv), so the image `askpass.log` is a bypass detector: the product never calls it, and any record there means something went around the product shim.

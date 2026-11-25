@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
@@ -156,7 +158,8 @@ pub async fn regenerate_last_turn(
         session_id: session_id.clone(),
         message_ids: plan.deleted_message_ids.clone(),
     };
-    if let Err(error) = crate::agent::tauri_events::emit_agent_event(app_handle, remove_event) {
+    if let Err(error) = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(remove_event)
+    {
         log::warn!(
             "Failed to emit MessagesRemoved for session {}: {}",
             session_id,

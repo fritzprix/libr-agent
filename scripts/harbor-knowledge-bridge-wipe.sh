@@ -3,7 +3,18 @@
 # Safe to re-run. Does not delete sessions or assistants.
 set -euo pipefail
 
-API_URL="${LIBRAGENT_API_URL:-http://localhost:${LIBRAGENT_HTTP_PORT:-$(cat "$HOME/.libragent/http_port" 2>/dev/null || echo 3030)}/api}"
+# Resolve the port from per-process records ~/.libragent/http_port.<pid>;
+# several backends may coexist, so pick the first that answers health.
+resolve_libragent_port() {
+  local f p
+  for f in "$HOME"/.libragent/http_port.*; do
+    p=$(cat "$f" 2>/dev/null) || continue
+    curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && { echo "$p"; return 0; }
+  done
+  echo 3030
+}
+
+API_URL="${LIBRAGENT_API_URL:-http://localhost:${LIBRAGENT_HTTP_PORT:-$(resolve_libragent_port)}/api}"
 API_URL="${API_URL%/}"
 export API_URL
 export ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"

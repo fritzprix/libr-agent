@@ -81,7 +81,25 @@ async fn spawn_session_impl_inner(
     };
 
     let explicit_org = caller_explicit_org.clone();
-    let resolved_model = resolve_model_for_complexity(complexity).await?;
+    let mut resolved_model = resolve_model_for_complexity(complexity).await?;
+
+    // #2923: a plugin agent's declared `model` frontmatter overrides the
+    // caller's complexity tier. Claude Code tiers (haiku/sonnet/opus) map
+    // to LibrAgent complexity tiers; any other declared value means "no
+    // mapping" and inherits the parent session model (no override).
+    if crate::services::skill_service::is_plugin_agent_id(&assistant_id) {
+        if let Some(declared) = crate::services::skill_service::declared_plugin_agent_model(
+            &assistant_id,
+            Some(caller_session_id),
+        )
+        .await
+        {
+            match crate::services::skill_service::plugin_model_to_complexity(&declared) {
+                Some(tier) => resolved_model = resolve_model_for_complexity(tier).await?,
+                None => resolved_model = None,
+            }
+        }
+    }
     let requested_workspace_override = args
         .get("workspaceOverride")
         .and_then(|v| v.as_str())

@@ -7,21 +7,21 @@
   "cases": [
     {
       "id": "P-1",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-askpass-flow (privileged test container #2904): sudo -k && sudo true prompts once for SUDO_PASSWORD via storeAs and succeeds via askpass; input masking pixels stay on S2",
+      "harbor_task": "e2e-sudo-askpass-flow"
     },
     {
       "id": "P-2",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented",
+      "reason": "partial: e2e-askuser-answer (ui__askUser single-question round trip via E2E control); option/cancel/multi-question variants pending",
+      "harbor_task": "e2e-askuser-answer"
     },
     {
       "id": "P-3",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: harness cancels the waiting prompt through the control plane (same path the Stop button's cancel drives) and the agent continues; GUI Stop click itself remains manual",
+      "harbor_task": "e2e-askuser-cancel"
     },
     {
       "id": "P-4",
@@ -31,15 +31,15 @@
     },
     {
       "id": "P-5",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-reload-submit: pending ui__askUser prompt survives session metadata refetch/re-poll and delivers its answer to continue the turn; GUI dialog re-render stays on S2 (#2903)",
+      "harbor_task": "e2e-askuser-reload-submit"
     },
     {
       "id": "P-6",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-terminate-while-waiting: child session waiting on ui__askUser is terminated via POST /api/sessions/:id/terminate, pendingUserPrompt is verified cleared, and parent completes cleanly; Windows persistent-shell process half (2565 P-6, #2905) covered by e2e-win-shell-terminate-p6 with check_persistent_shell_after_terminate (shell alive while the prompt waits, force-killed by session terminate, same PID gone and still gone after settle; the no-replacement guarantee is owned by the backend unit test force_kills_persistent_shell_without_leaving_manager_entry); #2731 ledger retag awaits a passing local unattended run on an isolated debug profile (#2936)",
+      "harbor_task": "e2e-askuser-terminate-while-waiting"
     },
     {
       "id": "P-7",
@@ -49,27 +49,27 @@
     },
     {
       "id": "P-8",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-restart-orphan: isolated instance restarts in place while ui__askUser waits, and post-restart session messages contain User did not answer (app restarted). (#2903)",
+      "harbor_task": "e2e-askuser-restart-orphan"
     },
     {
       "id": "P-9",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-answer-masked-logs: storeAs answer delivered, value reaches shell, and the recorded injected secret is byte-scanned absent from trajectory, compaction summary, and instance log under /logs/agent/",
+      "harbor_task": "e2e-answer-masked-logs"
     },
     {
       "id": "B-1",
-      "status": "platform-specific",
-      "reason": "Linux sudo/host path",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-askpass-flow (privileged test container #2904): correct synthetic SUDO_PASSWORD succeeds via askpass without hanging or leaking",
+      "harbor_task": "e2e-sudo-askpass-flow"
     },
     {
       "id": "B-2",
-      "status": "platform-specific",
-      "reason": "Linux sudo/host path",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-wrong-password (privileged test container #2904): wrong synthetic SUDO_PASSWORD returns cleanly without hanging or leaking",
+      "harbor_task": "e2e-sudo-wrong-password"
     },
     {
       "id": "B-3",
@@ -103,9 +103,9 @@
     },
     {
       "id": "B-8",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-storeas-replace: re-storing the same storeAs variable with a distinct synthetic value replaces the old value in the persistent shell (verified via SHA-256 digests), preserves cwd, and leaks neither literal",
+      "harbor_task": "e2e-storeas-replace"
     },
     {
       "id": "B-9",
@@ -127,45 +127,45 @@
     },
     {
       "id": "B-12",
-      "status": "deferred",
-      "reason": "needs Windows/Linux desktop debug instance + E2E control; task scaffold pending",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-storeas-masked: storeAs prompt answered by harness, value reaches shell, secret masked in trajectory; graded from evidence/tool-results/files",
+      "harbor_task": "e2e-storeas-masked"
     },
     {
       "id": "S-1",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the telegram-cli skill's variable name (TELEGRAM_API_HASH) - distinct synthetic secret delivered to the persistent shell env (verified via SHA-256), zero literal leak in /logs/agent/; the skill's own instructions are not exercised",
+      "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-2",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the x-cli skill's variable name (X_PASSWORD) - distinct synthetic secret delivered to the persistent shell env (verified via SHA-256), zero literal leak in /logs/agent/; the skill's own instructions are not exercised",
+      "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-3",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "2672 S-3 store path is exactly e2e-storeas-masked (B-12): one-off runShell storeAs answer reaches the shell env, a later command reads $E2E_STORED_SECRET and writes SECRET_PRESENT, and the recorded secret never appears in output or the trajectory; the reject paths passed earlier in #2565's Linux run",
+      "harbor_task": "e2e-storeas-masked"
     },
     {
       "id": "S-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "2672 S-4 masking-in-logs is exactly e2e-answer-masked-logs (P-9): command text and variable names may appear, but the verifier byte-scans every artifact under /logs/agent/ (trajectory, compaction summary, instance log) and fails if the recorded injected value appears in any of them",
+      "harbor_task": "e2e-answer-masked-logs"
     },
     {
       "id": "S-5",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-bool-string-coercion: string \"true\" boolean coerced with helper warning and call runs; ui__askUser accepts reserved-sounding key 'options' (2672 S-5)",
+      "harbor_task": "e2e-bool-string-coercion"
     },
     {
       "id": "S-6",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the calendar-mgmt skill's variable name (LIBRAGENT_GOOGLE_CLIENT_SECRET) - distinct synthetic secret delivered to the persistent shell env (verified via SHA-256), zero literal leak in /logs/agent/; the skill's own instructions are not exercised",
+      "harbor_task": "e2e-skill-storeas-flows"
     },
     {
       "id": "S-7",
@@ -181,9 +181,9 @@
     },
     {
       "id": "M-2",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: {{secret:NAME}} template stored on registration and byte-scanned absent from trajectory and all /logs/agent/ artifacts",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "M-3",
@@ -193,9 +193,9 @@
     },
     {
       "id": "M-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-approval-preview: cancelling the MCP secret prompt via the control plane aborts registration and leaves no server row written",
+      "harbor_task": "e2e-mcp-approval-preview"
     },
     {
       "id": "M-5",
@@ -205,21 +205,21 @@
     },
     {
       "id": "M-6",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: HTTP URL {{secret:NAME}} query template registered and re-entered cleanly without leaking literal values",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "M-7",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=fail-write (#2904, pinned by e2e_mock_keychain_tests): secret write attempted, failed, and never persisted (store copy read by the verifier)",
+      "harbor_task": "e2e-keychain-fail-and-fallback"
     },
     {
       "id": "M-8",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: tool__updateServer with reenterSecrets prompts a second time and delivers a distinct synthetic value",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "M-9",
@@ -271,9 +271,9 @@
     },
     {
       "id": "O-1",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-settings-persist-restart: writes a sentinel via PUT /api/settings/complexityModelMapping pre-restart and asserts the same sentinel survives an in-place isolated restart in both HTTP GET and SQLite settings; visual restart badge/toast and Metric Display Mode removal stay on S2 (#2903)",
+      "harbor_task": "e2e-settings-persist-restart"
     },
     {
       "id": "O-2",
@@ -283,9 +283,9 @@
     },
     {
       "id": "O-3",
-      "status": "platform-specific",
-      "reason": "Linux sudo/host path",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-asroot-daemon-o3 (#2904): runShell(asRoot=true) background daemon stops stray process with notice in managed container or refuses cleanly outside managed container",
+      "harbor_task": "e2e-asroot-daemon-o3"
     },
     {
       "id": "O-4",
@@ -307,9 +307,9 @@
     },
     {
       "id": "O-7",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-win-docs-doctor-o7 (requires_host_os=windows, #2905): docs skill scripts/doctor.ps1 runs via PowerShell on Windows, prints Doctor: OK in tool output, and asserts no NTFS junction/mount error",
+      "harbor_task": "e2e-win-docs-doctor-o7"
     },
     {
       "id": "O-8",
@@ -331,68 +331,188 @@
     },
     {
       "id": "X-1",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-cancel-x1 (privileged test container #2904): cancelling a waiting SUDO_PASSWORD prompt cleans up the prompt and leaves the persistent shell usable",
+      "harbor_task": "e2e-sudo-cancel-x1"
     },
     {
       "id": "X-2",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented",
+      "reason": "Harbor e2e-two-session-prompts: waits until both parent and child have pendingUserPrompt in the same poll cycle (simultaneousPending: true), answers child first with a distinct value, and verifies each session's SHA-256 env digest without leaking literals",
+      "harbor_task": "e2e-two-session-prompts"
     },
     {
       "id": "X-3",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Every Harbor session-E2E task (e2e-askuser-answer/options/cancel/storeas-masked) drives a Session-API-origin turn that waits on askUser/storeAs and resolves it through the control plane; what the channel shows remains manual",
+      "harbor_task": "e2e-askuser-answer"
     },
     {
       "id": "X-4",
       "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
+      "reason": "unreachable from a single-session agent E2E flow: execute_tool_calls runs batched tool calls sequentially (src-tauri/src/agent/llm/tool_execution.rs), so a second prompt only arrives after the first resolves and can never observe the overlap; the one-prompt-at-a-time gate itself is pinned by unit test only_one_prompt_may_wait_per_session (src-tauri/src/agent/state/user_prompt.rs, runs via pnpm rust:test --lib)",
       "harbor_task": null
     },
     {
       "id": "X-5",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-reload-submit: reload/re-poll during ui__askUser followed by JSON answer submission delivers the structured payload to the tool call (#2903)",
+      "harbor_task": "e2e-askuser-reload-submit"
     },
     {
       "id": "X-6",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-lifecycle: confirms MCP secret store is separate from shell storeAs env ($E2E_LIFECYCLE_KEY is unset in workspace__runShell)",
+      "harbor_task": "e2e-mcp-secret-lifecycle"
     },
     {
       "id": "A-1",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-options: options question answers with the chosen option string (wire contract); radio/Other rendering and Submit gating remain ui-only",
+      "harbor_task": "e2e-askuser-options"
     },
     {
       "id": "A-2",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-options: multi-question ui__askUser result is JSON keyed by id with the multiSelect answer as a list; checkbox rendering remains ui-only",
+      "harbor_task": "e2e-askuser-options"
     },
     {
       "id": "A-3",
-      "status": "ui-only",
-      "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: control-plane cancel -> informational tool result -> agent continues (marker file); dialog rendering remains ui-only",
+      "harbor_task": "e2e-askuser-cancel"
     },
     {
       "id": "A-4",
-      "status": "deferred",
-      "reason": "not yet automated in Harbor dataset",
-      "harbor_task": null
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-restart-orphan: waiting prompt survives shutdown and startup recovery closes the orphaned tool call with User did not answer (app restarted). (2672 A-4, #2903)",
+      "harbor_task": "e2e-askuser-restart-orphan"
     },
     {
       "id": "A-5",
       "status": "ui-only",
       "reason": "requires UI automation (pixels/keyboard); E2E control covers backend state only",
+      "harbor_task": null
+    },
+    {
+      "id": "K-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-template: MCP server registration stores the key as {{secret:NAME}} and never asks for the value in chat (2672 K-3)",
+      "harbor_task": "e2e-mcp-secret-template"
+    },
+    {
+      "id": "K-1",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-clarify-requirements: vague request triggers clarify; verifier requires delivered answers, skill load, maintained requirements.md (2672 K-1)",
+      "harbor_task": "e2e-clarify-requirements"
+    },
+    {
+      "id": "E-2",
+      "status": "implemented-partial",
+      "reason": "Release binaries cannot serve /api/e2e-control/*: module, token init, and both route-merge sites are #[cfg(debug_assertions)]-gated; pinned by e2e_control_stays_compile_time_gated (source-grep pin) plus the runtime 404-without-capability test. Full evidence comes from a local release build 404 check against an isolated profile. (2672 E-2)",
+      "harbor_task": null
+    },
+    {
+      "id": "C-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-askuser-cancel: cancel a ui__askUser dialog via control plane -> informational result -> session continues without error state (2672 C-4)",
+      "harbor_task": "e2e-askuser-cancel"
+    },
+    {
+      "id": "C-1",
+      "status": "ui-only",
+      "reason": "old ui://interactive/ resource renders disabled form in chat UI; same check as 2565 A-5 (2672 C-1, S2 UI automation)",
+      "harbor_task": null
+    },
+    {
+      "id": "2672-M-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-approval-preview: tool__registerServer approval commandPreview masks literal query param values and URL fragments as *** while keeping exact {{secret:NAME}} visible (2672 M-3)",
+      "harbor_task": "e2e-mcp-approval-preview"
+    },
+    {
+      "id": "2685-E-3",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-skill-storeas-flows: generic storeAs mechanism with the email-integration skill's variable name (LIBRAGENT_EMAIL_PASSWORD) - secret delivered to the persistent shell env without leaking the literal into chat or logs; hidden-input pixels stay on S2; the skill's own instructions are not exercised (2685 E-3 / 2565 S-5)",
+      "harbor_task": "e2e-skill-storeas-flows"
+    },
+    {
+      "id": "E-1",
+      "status": "implemented",
+      "reason": "Harbor e2e-askuser-answer + e2e-tool-approval-normal: debug build with LIBRAGENT_E2E_CONTROL resolves pending askUser prompts and pending tool approvals through the control plane (2672 E-1)",
+      "harbor_task": "e2e-tool-approval-normal"
+    },
+    {
+      "id": "R-1",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-circuit-break-resume: repeated identical failing/looping tool calls trip the circuit breaker and emit guidance text, then resume via POST /api/e2e-control/sessions/:ref/circuit-break-resume (2672 R-1)",
+      "harbor_task": "e2e-circuit-break-resume"
+    },
+    {
+      "id": "R-2",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-tool-approval-normal: pins execution_mode=normal so a workspace tool requires approval and executes after control-plane approval (2672 R-2 normal approval half)",
+      "harbor_task": "e2e-tool-approval-normal"
+    },
+    {
+      "id": "2672-S-2",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-askpass-flow (privileged test container #2904): runInPersistentShell storeAs SUDO_PASSWORD lets later plain sudo work via askpass (2672 S-2)",
+      "harbor_task": "e2e-sudo-askpass-flow"
+    },
+    {
+      "id": "2672-K-2",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-sudo-setup-wizard-k2 (privileged test container #2904): asks once for SUDO_PASSWORD via storeAs, uses plain sudo, asserts fake pkexec log empty and no sudo -n/-S or su (2672 K-2)",
+      "harbor_task": "e2e-sudo-setup-wizard-k2"
+    },
+    {
+      "id": "2672-M-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-keychain-fail-and-fallback + debug-only LIBRAGENT_E2E_MOCK_KEYCHAIN=fail-write (#2904, pinned by e2e_mock_keychain_tests) (2672 M-4)",
+      "harbor_task": "e2e-keychain-fail-and-fallback"
+    },
+    {
+      "id": "2672-M-5",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-keychain-unavailable-restart: LIBRAGENT_E2E_MOCK_KEYCHAIN=unavailable stores the secret in encrypted_secrets fallback and verifies the row and {{secret:NAME}} template survive an in-place restart without leaking literals (endpoint is intentionally unreachable under network_mode=no-network, so live post-restart server connection is narrowed out; 2672 M-5, #2903)",
+      "harbor_task": "e2e-mcp-keychain-unavailable-restart"
+    },
+    {
+      "id": "S3-PICKER",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-picker-control-plane + Rust e2e_control_token_tests + dialog.test.ts: POST /api/e2e-control/picker arms path and cancel overrides and POST /api/e2e-control/picker/take consumes each once (leaving no override armed) as a control-plane store round-trip on an isolated debug instance; native OS dialog rendering stays on S2 (#2903)",
+      "harbor_task": "e2e-picker-control-plane"
+    },
+    {
+      "id": "2672-R-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-mcp-secret-readback-restart: {{secret:NAME}} MCP server is stored masked in mcp_servers with secret_names and survives an in-place isolated restart with zero literal leaks (2672 R-4, #2903)",
+      "harbor_task": "e2e-mcp-secret-readback-restart"
+    },
+    {
+      "id": "2685-P-4",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-persistent-shell-reload-cwd: persistent shell preserves its changed working directory across a shell reload triggered by storeAs secret injection (2685 P-4, #2903)",
+      "harbor_task": "e2e-persistent-shell-reload-cwd"
+    },
+    {
+      "id": "2672-M-6",
+      "status": "implemented-partial",
+      "reason": "Harbor e2e-win-stdio-metachars-m6 (requires_host_os=windows, #2905): registers a stdio MCP server with arg a&b|c^d<e>f and verifies the spawned child receives the literal arg verbatim without cmd.exe shell splitting",
+      "harbor_task": "e2e-win-stdio-metachars-m6"
+    },
+    {
+      "id": "2672-D-4",
+      "status": "platform-specific",
+      "reason": "Requires a local Windows host with Docker Desktop running Linux containers (#2905): \\?\\ prefix stripping is unit-tested in Rust, while live docker run is verified locally on a Windows machine with Docker Desktop",
+      "harbor_task": null
+    },
+    {
+      "id": "S3-WINDOW",
+      "status": "implemented-partial",
+      "reason": "POST /api/e2e-control/window shows/hides and resizes the isolated debug instance's main window (guard chain and validation pinned by e2e_control_token_tests) and session_e2e.control.E2eControlClient.set_window drives it (no caller yet on purpose: it is the client for the deferred #2902 window-state task); the Harbor/UI window-state task is deferred to #2902 (S2) per the issue (#2903 AC2)",
       "harbor_task": null
     }
   ]

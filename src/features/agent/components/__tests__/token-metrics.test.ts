@@ -12,7 +12,7 @@ describe('token-metrics helpers', () => {
     expect(calculateCacheHitPercent(24148, 8389)).toBe(100);
   });
 
-  it('does not carry stale cached token fields into a new turn', () => {
+  it('does not carry stale cached token fields or durations into a new turn', () => {
     const previous: TokenUsage = {
       promptTokens: 24148,
       completionTokens: 300,
@@ -22,6 +22,8 @@ describe('token-metrics helpers', () => {
         cachedContentTokenCount: 24038,
         evalDuration: 1200,
         timeToFirstToken: 450,
+        promptEvalDuration: 420,
+        loadDuration: 100,
       },
     };
 
@@ -38,7 +40,22 @@ describe('token-metrics helpers', () => {
     expect(merged?.promptTokens).toBe(8389);
     expect(merged?.cachedPromptTokens).toBeUndefined();
     expect(merged?.details?.cachedContentTokenCount).toBeUndefined();
-    expect(merged?.details?.evalDuration).toBe(1200);
-    expect(merged?.details?.timeToFirstToken).toBe(450);
+    expect(merged?.details?.evalDuration).toBeUndefined();
+    expect(merged?.details?.timeToFirstToken).toBeUndefined();
+    expect(merged?.details?.promptEvalDuration).toBeUndefined();
+    expect(merged?.details?.loadDuration).toBeUndefined();
+  });
+
+  it('falls back to previous metrics when current metrics are null', () => {
+    const previous: TokenUsage = {
+      promptTokens: 120,
+      completionTokens: 45,
+      totalTokens: 165,
+      details: {
+        evalDuration: 321,
+      },
+    };
+
+    expect(mergeDisplayTokenUsage(previous, null)).toEqual(previous);
   });
 });

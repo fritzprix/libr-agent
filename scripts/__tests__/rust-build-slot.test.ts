@@ -15,17 +15,30 @@ import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
-const { maxConcurrent, releaseBuildSlot, tryAcquire } =
-  require('../rust-build-slot.cjs') as {
-    maxConcurrent: (env: NodeJS.ProcessEnv, totalMem: number) => number;
-    releaseBuildSlot: (slot: { file: string; token: string }) => void;
-    tryAcquire: (
-      dir: string,
-      limit: number,
-      label: string,
-      pid?: number,
-    ) => { file: string; token: string } | null;
-  };
+const {
+  ageFailedOwnStartForTests,
+  maxConcurrent,
+  pidStart,
+  releaseBuildSlot,
+  resetIdentityCacheForTests,
+  setStartTimeReaderForTests,
+  startTimeFor,
+  tryAcquire,
+} = require('../rust-build-slot.cjs') as {
+  ageFailedOwnStartForTests: () => void;
+  maxConcurrent: (env: NodeJS.ProcessEnv, totalMem: number) => number;
+  pidStart: (pid: number) => string | null;
+  releaseBuildSlot: (slot: { file: string; token: string }) => void;
+  resetIdentityCacheForTests: () => void;
+  setStartTimeReaderForTests: (reader: (pid: number) => string | null) => void;
+  startTimeFor: (pid: number) => string | null;
+  tryAcquire: (
+    dir: string,
+    limit: number,
+    label: string,
+    pid?: number,
+  ) => { file: string; token: string } | null;
+};
 
 const GIB = 1024 ** 3;
 const runner = path.resolve(__dirname, '..', 'run-rust-command.cjs');
@@ -35,11 +48,11 @@ function deadPid(): number {
   return spawnSync(process.execPath, ['-e', '0']).pid;
 }
 
-describe('rust build slot', () => {
+describe('rust build slot', { timeout: 15000 }, () => {
   let dir: string;
 
   // Windows shells out to PowerShell for process start times. Pay that once
-  // here so the 5s default test timeout is not racing a cold runner.
+  // so later tests reuse the cached lookup.
   beforeAll(() => {
     const warmupDir = mkdtempSync(path.join(tmpdir(), 'rust-slot-warmup-'));
     try {
@@ -53,6 +66,7 @@ describe('rust build slot', () => {
   }, 30000);
 
   beforeEach(() => {
+    resetIdentityCacheForTests();
     dir = mkdtempSync(path.join(tmpdir(), 'rust-slot-'));
   });
 
@@ -102,32 +116,83 @@ describe('rust build slot', () => {
     const ancient = Date.now() - 7 * 60 * 60 * 1000;
     writeFileSync(
       path.join(dir, 'slot-0.json'),
-      JSON.stringify({ pid: process.pid, token: 'reused-pid', since: ancient }),
+      JSON.stringify({
+        pid: process.pid,
+        token: 'ancient-holder',
+        since: ancient,
+      }),
     );
     expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
   });
 
   it('takes a slot whose live PID now belongs to another process', () => {
     mkdirSync(dir, { recursive: true });
+    // Use the cached production path (startTimeFor), not a separate pidStart
+    // call: a second PowerShell spawn on a loaded Windows runner can time out
+    // while this check still sees a value (#2848). beforeAll warms the lookup.
+    const realStart = startTimeFor(process.pid);
+    expect(
+      realStart,
+      'need a readable process start time for PID-reuse detection',
+    ).toBeTruthy();
+
     writeFileSync(
       path.join(dir, 'slot-0.json'),
       JSON.stringify({
         pid: process.pid,
-        pidStart: 'an-earlier-process',
-        token: 'reused-pid',
+        pidStart: `${realStart}-earlier`,
+        token: 'reused-pid-identity',
         since: Date.now(),
       }),
     );
     expect(tryAcquire(dir, 1, 'next')).not.toBeNull();
   });
 
-  it('keeps a slot whose holder start time matches', () => {
+  it('remembers a failed own-PID start read for IDENTITY_RECHECK_MS then retries', () => {
+    let calls = 0;
+    setStartTimeReaderForTests(() => {
+      calls += 1;
+      return null;
+    });
+    expect(startTimeFor(process.pid)).toBeNull();
+    expect(startTimeFor(process.pid)).toBeNull();
+    expect(calls).toBe(1);
+
+    ageFailedOwnStartForTests();
+    expect(startTimeFor(process.pid)).toBeNull();
+    expect(calls).toBe(2);
+  });
+
+  it('keeps a live holder even when its start time cannot be read', () => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'slot-0.json'),
+      JSON.stringify({
+        pid: process.pid,
+        pidStart: null,
+        token: 'unknown-start',
+        since: Date.now(),
+      }),
+    );
+    expect(tryAcquire(dir, 1, 'next')).toBeNull();
+  });
+
+  it('refuses a second slot while this process still holds one', () => {
     const held = tryAcquire(dir, 1, 'a');
     const record = JSON.parse(readFileSync(held!.file, 'utf8')) as {
       pidStart: string | null;
     };
-    expect(record.pidStart).toBeTruthy();
+    expect(record.pidStart === null || typeof record.pidStart === 'string').toBe(
+      true,
+    );
     expect(tryAcquire(dir, 1, 'b')).toBeNull();
+  });
+
+  it('returns no start time for a dead PID without waiting on a spawn', () => {
+    const dead = deadPid();
+    const started = Date.now();
+    expect(pidStart(dead)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('leaves a stale slot alone while another contender reclaims it', () => {

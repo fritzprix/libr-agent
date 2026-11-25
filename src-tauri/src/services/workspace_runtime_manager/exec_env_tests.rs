@@ -93,6 +93,7 @@ fn docker_session(env: Vec<(&str, &str)>) -> SessionMetadata {
         docker_container_name: Some("libragent-session-s1".to_string()),
         docker_host_workspace_path: Some("/tmp/s1".to_string()),
         status_reason: None,
+        forked_from: None,
     }
 }
 

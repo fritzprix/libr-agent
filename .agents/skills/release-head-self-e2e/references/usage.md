@@ -1,8 +1,11 @@
-# Usage examples — release → HEAD self-E2E
+# Usage recipes — release → HEAD external E2E
 
-## A. Latest release → HEAD: ticket generation only (`plan` + optional `github-write`)
+The tester is the external multimodal agent that loads this skill. Two recipes.
 
-**Goal:** Pin SHAs, map diff to matrix rows, dedupe, draft or file a tracking issue. **Do not** run E2E.
+## A. Plan only (`read-only` / `plan` scope)
+
+**Goal:** pin SHAs, map the range to #2731 rows, dedupe prior tickets, draft the tracking
+issue. No GitHub writes, no app testing.
 
 ### Bash (repo root)
 
@@ -20,10 +23,9 @@ python3 .agents/skills/release-head-self-e2e/scripts/map_diff_to_cases.py \
   --json > ".libragent/work/release-head-self-e2e/${RUN_ID}/case-hints.json"
 ```
 
-Then load `@skill:release-head-self-e2e` in a LibrAgent session with workspace at repo root.
-Ask: “scope `plan`: write `plan.md` and `dedupe.md` from pins and manifest; no GitHub POST.”
-
-For an issue: “scope `github-write`: create one tracking issue from `plan.md`.”
+Then write `plan.md` (row ID, why in range, risk, runner) and `dedupe.md` (kept/skipped
+tracking tickets with links). Draft the tracking-issue body; post it only in
+`github-write` scope.
 
 ### PowerShell
 
@@ -42,40 +44,44 @@ python3 .agents/skills/release-head-self-e2e/scripts/map_diff_to_cases.py `
   --json | Set-Content -Encoding utf8 "$Root/case-hints.json"
 ```
 
-## B. Full self-E2E execution (`execute-e2e`)
+## B. Full external E2E run (`execute-e2e` scope)
 
-**Goal:** Parent orchestrator delegates executor + verifier children; zero-human where supported.
+**Goal:** steps 1–5 end to end: pins → tracking issue → test every row → results
+comment → bug issues.
 
-### Windows (primary)
+### Linux (desktop debug build)
 
-```powershell
-# Isolated profile — not production %LOCALAPPDATA%
-$env:LIBRAGENT_E2E_CONTROL = "1"
-$env:LIBRAGENT_E2E_SYNTHETIC_SECRET = "synthetic-e2e-fixture-only"
-# Start debug app in another terminal: pnpm tauri dev
-
-# Optional Harbor single-task smoke (secondary to delegate path):
-pnpm bench:session-e2e:n1
+```bash
+# Isolated profile — never the primary data dir.
+export LIBRAGENT_DATA_DIR="$HOME/e2e-profile-$RUN_ID"
+export LIBRAGENT_E2E_CONTROL=1
+export LIBRAGENT_E2E_SYNTHETIC_SECRET="dummy-token-abcd"
+# Start the debug app in another terminal: pnpm tauri dev
+# Then read the capability token:  cat "$LIBRAGENT_DATA_DIR/e2e_control.cap"
 ```
 
-In LibrAgent (Coding Expert or harness assistant), with repo workspace:
+For each planned row, in order:
 
-```
-Load @skill:release-head-self-e2e and @skill:delegate.
-Scope execute-e2e. Run-id <RUN_ID>. Serialize cases.
-Use references/executor-brief.md and references/verifier-brief.md for children.
-Blocked only for native GUI paths outside the app window; storeAs/uiAskUser
-prompts are answered by the harness via the debug E2E control plane.
-```
+1. **Session rows:** follow `@skill:libr-e2e-verify` (lifecycle → control-plane
+   approvals/prompts → transcript → cleanup). Evidence = session id + transcript excerpt.
+2. **GUI rows:** drive `/api/e2e-control/ui/*` (navigate → elements → input →
+   screenshot), open the saved PNG, and judge pass/fail visually yourself. Evidence =
+   screenshot file name.
+3. Record `pass` / `fail` / `blocked` + evidence in `progress.jsonl` as you go.
 
-Parent keeps running; harvest `GET /api/sessions/:id/messages?limit=500` before child delete when using Session API helpers from briefs.
+After the queue: post the step-4 results comment, then file (or comment on) one bug
+issue per new problem per the step-5 rules.
 
-### Linux desktop debug
+### Windows
 
-Same env vars; matrix rows marked `platform-specific` for Windows-only PowerShell paths stay `blocked` on Linux — not pass.
+Same recipe (`pnpm tauri dev`, `LIBRAGENT_DATA_DIR` to a throwaway dir). Linux-only
+rows (sudo/askpass, X11) are `blocked (platform)` on Windows — not `pass`. The reverse
+applies to Windows-only rows on Linux.
 
 ## C. What not to do
 
 - Do not run this skill on install to auto-open GitHub issues.
-- Do not enable `LIBRAGENT_E2E_CONTROL` on a shared production-profile debug build without isolation.
-- Do not substitute Harbor green for delegate evidence when the skill scope is internal self-E2E.
+- Do not enable `LIBRAGENT_E2E_CONTROL` on a shared production-profile debug build.
+- Do not treat a green Harbor task as the verdict — recipes only; your evidence decides.
+- Do not fall back to OS-level desktop automation when the control plane is absent;
+  mark the row `blocked: no debug control plane`.

@@ -1,0 +1,408 @@
+#!/usr/bin/env node
+/**
+ * libr-e2e-verify smoke matrix — one invocation, one pass/fail table.
+ *
+ * Runs: health -> create session -> control-plane probe -> message -> poll
+ *       (driving pending approvals/prompts while busy) -> control-plane result
+ *       -> transcript check -> terminate + delete.
+ *
+ * The control-plane step passes as "absent (yolo/unsafe fallback)" on release
+ * builds (404/405), fails on 403 (plane enabled but capability header missing
+ * or wrong), and only fails on other errors when an enabled plane misbehaves.
+ * Exit code 0 only when every step passes.
+ *
+ * Usage:
+ *   node smoke_matrix.cjs --assistant <config-id> --data-dir <isolated-dir>
+ *     [--base-url http://127.0.0.1:<port>] [--workspace <scratch-dir>]
+ *     [--api-token <key>] [--execution-mode yolo|unsafe] [--timeout 180]
+ *     [--keep-session]
+ *
+ * --data-dir is required and must not be the user's prod/dev/demo data
+ * directory. <data-dir>/http_port is required. --base-url, when passed, must
+ * be a loopback URL (127.0.0.1, localhost, or ::1) on that same port. This
+ * script never stops a process.
+ *
+ * Default execution mode is `yolo`; `unsafe` also auto-approves hard-approval
+ * tools and should run against a scratch --workspace, never the repo.
+ */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const args = process.argv.slice(2);
+function arg(name, fallback) {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
+}
+function flag(name) {
+  return args.includes(`--${name}`);
+}
+
+const assistantId = arg('assistant', null);
+const workspacePath = arg('workspace', null);
+const apiToken = arg('api-token', process.env.LIBRAGENT_API_KEY || null);
+const executionMode = arg('execution-mode', 'yolo');
+const dataDir = arg('data-dir', process.env.LIBRAGENT_DATA_DIR || null);
+const timeoutSec = Number(arg('timeout', '180'));
+const keepSession = flag('keep-session');
+
+function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function samePath(left, right) {
+  const a = canonicalPath(left);
+  const b = canonicalPath(right);
+  if (process.platform === 'win32') return a.toLowerCase() === b.toLowerCase();
+  return a === b;
+}
+
+function userProfileDirs() {
+  const home = os.homedir();
+  const names = ['com.fritzprix.libragent', 'com.fritzprix.libragent-demo'];
+  let base;
+  if (process.platform === 'win32') {
+    base = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+  } else if (process.platform === 'darwin') {
+    base = path.join(home, 'Library', 'Application Support');
+  } else {
+    base = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+  }
+  return names.map((name) => path.resolve(base, name));
+}
+
+function readIsolatedPort(dir) {
+  const portFile = path.join(dir, 'http_port');
+  if (!fs.existsSync(portFile)) {
+    console.error(
+      'Missing <data-dir>/http_port. The smoke matrix will not guess a port, including 3030.',
+    );
+    process.exit(2);
+  }
+  const port = fs.readFileSync(portFile, 'utf8').trim();
+  const number = Number(port);
+  if (!/^\d+$/.test(port) || number < 1 || number > 65535) {
+    console.error(`Isolated http_port is not a port number: ${portFile}`);
+    process.exit(2);
+  }
+  return port;
+}
+
+function parsedHttpUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return parsed;
+}
+
+function portOf(parsed) {
+  if (parsed.port) return parsed.port;
+  return parsed.protocol === 'https:' ? '443' : '80';
+}
+
+function isLoopback(parsed) {
+  const host = parsed.hostname.toLowerCase();
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+if (!dataDir) {
+  console.error(
+    'Missing --data-dir (or LIBRAGENT_DATA_DIR). The smoke matrix only talks to an isolated profile, never the user profile on port 3030.',
+  );
+  process.exit(2);
+}
+if (userProfileDirs().some((dir) => samePath(dir, dataDir))) {
+  console.error(
+    `Refusing ${dataDir}: that is a user profile. Pass an isolated LIBRAGENT_DATA_DIR.`,
+  );
+  process.exit(2);
+}
+
+const isolatedPort = readIsolatedPort(dataDir);
+const requestedUrl = arg('base-url', null);
+let baseUrl;
+if (requestedUrl) {
+  const parsed = parsedHttpUrl(requestedUrl);
+  const requestedPort = parsed ? portOf(parsed) : null;
+  if (requestedPort !== isolatedPort) {
+    console.error(
+      `Refusing ${requestedUrl}: its port does not match ${path.join(dataDir, 'http_port')} (${isolatedPort}).`,
+    );
+    process.exit(2);
+  }
+  if (!isLoopback(parsed)) {
+    console.error(
+      `Refusing ${requestedUrl}: --base-url must use a loopback host (127.0.0.1, localhost, or ::1).`,
+    );
+    process.exit(2);
+  }
+  baseUrl = requestedUrl.replace(/\/$/, '');
+} else {
+  baseUrl = `http://127.0.0.1:${isolatedPort}`;
+}
+
+if (!assistantId) {
+  console.error('Missing --assistant <config-id>. Run with --assistant <id>.');
+  process.exit(2);
+}
+
+const results = [];
+let sessionId = null;
+let aborted = false;
+
+function record(step, ok, evidence) {
+  results.push({ step, ok, evidence });
+  if (!ok) aborted = aborted || step === 'health' || step === 'create';
+}
+
+async function call(method, url, body, headers) {
+  const h = Object.assign({ 'Content-Type': 'application/json' }, headers || {});
+  if (apiToken) h['Authorization'] = `Bearer ${apiToken}`;
+  const res = await fetch(url, {
+    method,
+    headers: h,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+  let json = null;
+  try {
+    json = await res.json();
+  } catch (_) {
+    /* non-JSON body */
+  }
+  return { status: res.status, json };
+}
+
+// Control-plane state: probed once after create; blocking interactions are
+// driven from the poll loop so a pending approval never deadlocks the run.
+const capFile = dataDir ? path.join(dataDir, 'e2e_control.cap') : null;
+const cap = capFile && fs.existsSync(capFile) ? fs.readFileSync(capFile, 'utf8').trim() : null;
+const capHeaders = cap ? { 'X-LibrAgent-E2E-Control': cap } : {};
+const cp = { probed: false, enabled: false, status: 0, approved: 0, prompts: 0, resumed: 0, failReason: null };
+
+async function probeControlPlane() {
+  const st = await call('GET', `${baseUrl}/api/e2e-control/status`, undefined, capHeaders);
+  cp.status = st.status;
+  cp.probed = true;
+  if (st.status === 200) {
+    cp.enabled = true;
+  } else if (st.status === 403) {
+    cp.failReason = `403 plane enabled but capability header missing or wrong — check e2e_control.cap / --data-dir (cap ${cap ? 'found' : 'missing'})`;
+  }
+  // 404/405 = plane absent; other statuses report their evidence at record time.
+}
+
+async function driveInteractions() {
+  if (!cp.enabled || !sessionId) return;
+  const inter = await call(
+    'GET',
+    `${baseUrl}/api/e2e-control/sessions/${sessionId}/interactions`,
+    undefined,
+    capHeaders,
+  );
+  if (inter.status !== 200) return;
+  const snap = inter.json || {};
+  for (const p of snap.pendingApprovals || []) {
+    const id = p.toolCallId || p.tool_call_id;
+    if (!id) continue;
+    const r = await call(
+      'POST',
+      `${baseUrl}/api/e2e-control/sessions/${sessionId}/tool-approvals`,
+      { toolCallId: id, approved: true },
+      capHeaders,
+    );
+    if (r.status === 200) cp.approved += 1;
+  }
+  const prompt = snap.pendingUserPrompt || snap.pending_user_prompt;
+  if (prompt && prompt.requestId) {
+    // The harness cannot know a secret value, so cancel secret prompts.
+    const body =
+      prompt.kind === 'secret'
+        ? { requestId: prompt.requestId, action: 'cancel' }
+        : { requestId: prompt.requestId, action: 'answer', value: 'E2E-SMOKE-OK' };
+    const r = await call(
+      'POST',
+      `${baseUrl}/api/e2e-control/sessions/${sessionId}/user-prompts`,
+      body,
+      capHeaders,
+    );
+    if (r.status === 200) cp.prompts += 1;
+  }
+  const breakPending = snap.pendingCircuitBreak || snap.pending_circuit_break;
+  if (breakPending) {
+    // Circuit-breaker Resume (#2901): same ui__resumeCircuitBreak path the GUI
+    // button drives; NOT the Session API reload POST /api/sessions/:id/resume.
+    const r = await call(
+      'POST',
+      `${baseUrl}/api/e2e-control/sessions/${sessionId}/circuit-break-resume`,
+      undefined,
+      capHeaders,
+    );
+    if (r.status === 200) cp.resumed += 1;
+  }
+}
+
+function assistantTextFrom(messagesJson) {
+  const list = (messagesJson && (messagesJson.messages || messagesJson)) || [];
+  return (Array.isArray(list) ? list : [])
+    .filter((m) => m.role === 'assistant')
+    .map((m) =>
+      Array.isArray(m.content)
+        ? m.content
+            .filter((c) => c.type === 'text')
+            .map((c) => c.text || '')
+            .join('')
+        : String(m.content || ''),
+    )
+    .join('\n');
+}
+
+async function main() {
+  // 1. Health gate
+  try {
+    const res = await call('GET', `${baseUrl}/api/health`);
+    const ok = res.status === 200 && (!res.json || res.json.status === 'ok');
+    record('health', ok, `GET /api/health -> ${res.status}`);
+  } catch (err) {
+    record('health', false, `GET /api/health failed: ${err.message}`);
+  }
+  if (aborted) return;
+
+  // 2. Create an idle session (no request => no workflow started yet)
+  const createBody = { assistantId, executionMode };
+  if (workspacePath) createBody.workspacePath = workspacePath;
+  try {
+    const res = await call('POST', `${baseUrl}/api/sessions`, createBody);
+    sessionId = res.json && res.json.id ? res.json.id : null;
+    record(
+      'create',
+      res.status === 200 || res.status === 201 ? !!sessionId : false,
+      `POST /api/sessions -> ${res.status} id=${sessionId || '-'}`,
+    );
+  } catch (err) {
+    record('create', false, `POST /api/sessions failed: ${err.message}`);
+  }
+  if (!sessionId) return;
+
+  try {
+    // 3. Probe the control plane before the first message
+    try {
+      await probeControlPlane();
+    } catch (err) {
+      cp.probed = true;
+      cp.failReason = `probe failed: ${err.message}`;
+    }
+
+    // 4. Send one message
+    const msg = await call('POST', `${baseUrl}/api/sessions/${sessionId}/messages`, {
+      content: 'Reply with exactly: E2E-SMOKE-OK',
+      source: 'api',
+    });
+    record(
+      'message',
+      msg.status === 200 &&
+        msg.json &&
+        (msg.json.status === 'processed' || msg.json.status === 'queued'),
+      `POST messages -> ${msg.status} ${msg.json ? msg.json.status : '-'}`,
+    );
+
+    // 5. Poll until idle, driving blocking interactions each loop. A fresh
+    // `idle` before the workflow starts does not count: require a `busy`
+    // observation or a non-empty assistant reply.
+    const deadline = Date.now() + timeoutSec * 1000;
+    let status = '?';
+    let sawBusy = false;
+    while (Date.now() < deadline) {
+      const st = await call('GET', `${baseUrl}/api/sessions/${sessionId}`);
+      status = st.json && st.json.status ? String(st.json.status).toLowerCase() : '?';
+      if (status === 'busy') sawBusy = true;
+      await driveInteractions();
+      if (status === 'idle') {
+        if (sawBusy) break;
+        const msgs = await call('GET', `${baseUrl}/api/sessions/${sessionId}/messages?limit=500`);
+        if (assistantTextFrom(msgs.json).trim().length > 0) break;
+      }
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    record('poll', status === 'idle', `status=${status} sawBusy=${sawBusy} (timeout ${timeoutSec}s)`);
+
+    // 6. Control plane result (debug builds with LIBRAGENT_E2E_CONTROL=1)
+    if (!cp.probed) {
+      record('control-plane', false, cp.failReason || 'not probed');
+    } else if (cp.enabled) {
+      const inter = await call(
+        'GET',
+        `${baseUrl}/api/e2e-control/sessions/${sessionId}/interactions`,
+        undefined,
+        capHeaders,
+      );
+      const snap = inter.json || {};
+      const pend = inter.status === 200 ? (snap.pendingApprovals || []).length : -1;
+      const promptLeft =
+        inter.status === 200 && (snap.pendingUserPrompt || snap.pending_user_prompt) ? 1 : 0;
+      record(
+        'control-plane',
+        inter.status === 200 && pend === 0 && promptLeft === 0,
+        `enabled; approved=${cp.approved}; prompts=${cp.prompts}; final pending=${pend}${promptLeft ? ' +prompt' : ''}`,
+      );
+    } else if (cp.status === 404 || cp.status === 405) {
+      record('control-plane', true, `absent (${cp.status}; yolo/unsafe fallback)`);
+    } else {
+      record(
+        'control-plane',
+        false,
+        cp.failReason || `GET /api/e2e-control/status -> ${cp.status} (cap ${cap ? 'found' : 'missing'})`,
+      );
+    }
+
+    // 7. Transcript check (before cleanup)
+    const msgs = await call('GET', `${baseUrl}/api/sessions/${sessionId}/messages?limit=500`);
+    const assistantText = assistantTextFrom(msgs.json);
+    const excerpt = assistantText.trim().slice(0, 60).replace(/\s+/g, ' ');
+    record(
+      'transcript',
+      msgs.status === 200 && assistantText.trim().length > 0,
+      assistantText.includes('E2E-SMOKE-OK')
+        ? 'assistant replied with E2E-SMOKE-OK'
+        : `assistant reply: "${excerpt}"`,
+    );
+  } finally {
+    // 8. Cleanup discipline
+    if (!keepSession) {
+      try {
+        await call('POST', `${baseUrl}/api/sessions/${sessionId}/terminate`);
+      } catch (_) {
+        /* best effort */
+      }
+      const del = await call('DELETE', `${baseUrl}/api/sessions/${sessionId}`);
+      record('cleanup', del.status === 200, `DELETE /api/sessions/${sessionId} -> ${del.status}`);
+    } else {
+      record('cleanup', true, `kept (--keep-session) id=${sessionId}`);
+    }
+  }
+}
+
+(async () => {
+  try {
+    await main();
+  } catch (err) {
+    record('abort', false, err.message);
+  }
+  const width = Math.max(6, ...results.map((r) => r.step.length));
+  console.log(`\nlibr-e2e-verify smoke matrix — ${baseUrl} — session ${sessionId || '-'}\n`);
+  for (const r of results) {
+    console.log(`  ${r.step.padEnd(width)}  ${r.ok ? 'PASS' : 'FAIL'}  ${r.evidence}`);
+  }
+  const failed = results.filter((r) => !r.ok).length;
+  console.log(`\n  ${results.length - failed}/${results.length} passed${failed ? ` — ${failed} failed` : ''}\n`);
+  process.exit(failed === 0 ? 0 : 1);
+})();

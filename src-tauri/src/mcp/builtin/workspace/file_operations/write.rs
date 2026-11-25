@@ -1,4 +1,3 @@
-use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use super::utils::{
     format_file_content_preview, format_file_size, format_preview_line, initial_prefix_hash_state,
@@ -196,7 +195,7 @@ impl WorkspaceServer {
         };
 
         // 2. Path traversal validation
-        if path_str.contains("..") {
+        if crate::mcp::builtin::utils::has_parent_traversal(path_str) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Path traversal patterns (..) are not allowed",
@@ -261,13 +260,18 @@ impl WorkspaceServer {
                     format!("Path validation failed: {}", e),
                     ToolGroup::Workspace,
                 )
-                .guidance(path_validation_failure_guidance(
-                    &e,
-                    vec![
-                        "Verify the target path is not a protected location".to_string(),
-                        "Use workspace__listDirectory to see available paths".to_string(),
-                    ],
-                ))
+                .guidance(
+                    self.path_failure_guidance(
+                        &e,
+                        path_str,
+                        &target_session_id,
+                        vec![
+                            "Verify the target path is not a protected location".to_string(),
+                            "Use workspace__listDirectory to see available paths".to_string(),
+                        ],
+                    )
+                    .await,
+                )
                 .to_mcp_result());
             }
         };

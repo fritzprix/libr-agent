@@ -91,10 +91,16 @@ pub(super) fn docker_mount_path(path: &Path) -> RuntimeResult<String> {
 
 /// The host workspace is mounted at the session workdir, which is also the root
 /// that file tools map to the host workspace.
+///
+/// `scratch_dir` is the session scratch directory (#2946), mounted at the
+/// container's `/tmp` so a temp file a container tool writes lands on the host
+/// inside the session and is removed with it. `None` keeps the container's own
+/// `/tmp` (an attached container, or a session without a scratch directory).
 pub fn build_docker_volume_args(
     host_workspace: &Path,
     workdir: &str,
     teamwork_dir: Option<&Path>,
+    scratch_dir: Option<&Path>,
 ) -> RuntimeResult<Vec<String>> {
     let workdir = workdir.trim_end_matches('/');
     let mut args = Vec::new();
@@ -109,6 +115,11 @@ pub fn build_docker_volume_args(
         );
         args.push("-v".to_string());
         args.push(tw_mount);
+    }
+
+    if let Some(scratch) = scratch_dir {
+        args.push("-v".to_string());
+        args.push(format!("{}:/tmp", docker_mount_path(scratch)?));
     }
 
     Ok(args)
@@ -197,7 +208,7 @@ mod tests {
         let host_workspace = Path::new("/home/user/workspace");
 
         // Test case 1: No teamwork directory
-        let args = build_docker_volume_args(host_workspace, "/workspace", None).unwrap();
+        let args = build_docker_volume_args(host_workspace, "/workspace", None, None).unwrap();
         assert!(args.contains(&"-v".to_string()));
         assert!(args
             .iter()
@@ -205,8 +216,8 @@ mod tests {
 
         // Test case 2: With teamwork directory
         let teamwork_dir = Path::new("/home/user/.libragent/teamwork-artifacts/123");
-        let args =
-            build_docker_volume_args(host_workspace, "/workspace", Some(teamwork_dir)).unwrap();
+        let args = build_docker_volume_args(host_workspace, "/workspace", Some(teamwork_dir), None)
+            .unwrap();
         assert_eq!(args.len(), 4);
         assert_eq!(args[0], "-v");
         assert!(args[1].contains("/home/user/workspace:/workspace"));
@@ -216,11 +227,40 @@ mod tests {
         ));
     }
 
+    // #2946: the session scratch directory is the container's /tmp, so a temp
+    // file a container tool writes lands inside the session on the host.
+    #[test]
+    fn the_scratch_directory_is_mounted_as_container_tmp() {
+        let scratch = Path::new("/home/user/.libragent/workspaces/s1/.libragent/tmp");
+        let args = build_docker_volume_args(
+            Path::new("/home/user/workspace"),
+            "/workspace",
+            None,
+            Some(scratch),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-v",
+                "/home/user/workspace:/workspace",
+                "-v",
+                "/home/user/.libragent/workspaces/s1/.libragent/tmp:/tmp",
+            ]
+        );
+        // Without a scratch directory the container keeps its own /tmp.
+        let args =
+            build_docker_volume_args(Path::new("/home/user/workspace"), "/workspace", None, None)
+                .unwrap();
+        assert!(!args.iter().any(|arg| arg.ends_with(":/tmp")), "{args:?}");
+    }
+
     #[test]
     fn custom_workdir_is_the_workspace_mount_point() {
         let teamwork_dir = Path::new("/tw/123");
         let args =
-            build_docker_volume_args(Path::new("/host/ws"), "/app/", Some(teamwork_dir)).unwrap();
+            build_docker_volume_args(Path::new("/host/ws"), "/app/", Some(teamwork_dir), None)
+                .unwrap();
         assert_eq!(
             args,
             vec![
@@ -259,6 +299,7 @@ mod tests {
             Path::new(r"\\?\C:\Temp\Rumi-E2E\O2-docker"),
             "/workspace",
             Some(Path::new(r"\\?\C:\Users\dev\.libragent\teamwork")),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -275,9 +316,13 @@ mod tests {
     #[test]
     fn volume_args_keep_spaces_in_windows_bind_sources() {
         // Volume arguments go to docker as separate argv entries, so spaces stay literal.
-        let args =
-            build_docker_volume_args(Path::new(r"\\?\C:\Temp\My Workspace"), "/workspace", None)
-                .unwrap();
+        let args = build_docker_volume_args(
+            Path::new(r"\\?\C:\Temp\My Workspace"),
+            "/workspace",
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(args[1], r"C:\Temp\My Workspace:/workspace");
     }
 

@@ -10,14 +10,13 @@
 /// - Separate stdout/stderr streams
 /// - Exit code capture for error handling
 use anyhow::Result;
-#[cfg(windows)]
 use base64::engine::general_purpose;
-#[cfg(windows)]
 use base64::Engine;
 
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 
 use super::secrets::SecretMap;
 use crate::session_isolation::{PathMappingLayer, ShellType, SpawnedShell};
@@ -54,11 +53,63 @@ async fn read_line_lossy<R: tokio::io::AsyncBufRead + Unpin>(
 }
 
 /// Generate unique sentinel marker for command completion detection
+/// Builds the PowerShell text sent for one command: the command itself, then the
+/// sentinel, the working directory, and the exit code lines `read_until_sentinel`
+/// parses.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn powershell_framed_script(command: &str, sentinel: &str) -> String {
+    // Base64 keeps non-ASCII text (for example Korean) intact regardless of the
+    // console code page. Invoke-Expression runs the decoded string.
+    let encoded = general_purpose::STANDARD.encode(command);
+    let mut script = String::new();
+
+    // `$LASTEXITCODE` is set only by native programs and keeps its value across
+    // commands. Without this reset, one `python ...; exit 2` made every later
+    // cmdlet-only command (even `echo hello`) report exit 2 (#2706).
+    script.push_str("$global:LASTEXITCODE = 0\n");
+    script.push_str(crate::utils::powershell_exit::ERROR_COUNT_BEFORE);
+    script.push('\n');
+    script.push_str(&format!(
+        "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{encoded}')))\n"
+    ));
+    // Capture before any Write-Output so `$Error` / `$LASTEXITCODE` are not clobbered (#2805).
+    script.push_str(crate::utils::powershell_exit::CAPTURE_AND_ASSIGN_EXIT);
+    script.push('\n');
+    script.push_str(&format!("Write-Output '{sentinel}'\n"));
+    script.push_str("Write-Output \"__CWD__$((Get-Location).Path)\"\n");
+    script.push_str("Write-Output \"EXIT_CODE_$__libr_exit\"\n");
+    // Written straight to the process stderr handle via [Console]::Error (not
+    // the PowerShell error stream), so redirections inside the command cannot
+    // take the marker away; a rebound [Console]::Error is caught by the
+    // bounded drain grace. The sentinel suffix matches it to this command
+    // only (#2881).
+    script.push_str(&format!(
+        "[Console]::Error.WriteLine(\"{STDERR_EOF_MARKER}{sentinel}\")\n"
+    ));
+    script
+}
+
 fn generate_sentinel() -> String {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("STDIO_SENTINEL_{id}")
 }
+
+/// Prefix of the per-command end marker written to stderr, followed by the
+/// command's own sentinel. The reader drains stderr up to this marker so
+/// stderr still in the pipe when a fast command exits is never dropped
+/// (#2880). The marker travels on fd 3 — a dup of the original stderr made at
+/// shell setup — so user redirections of fd 2 (`exec 2>/dev/null`) cannot take
+/// it out of the reader's pipe, and the sentinel suffix keeps a stale marker
+/// from closing a later command's drain (#2881).
+const STDERR_EOF_MARKER: &str = "__STDERR_EOF__";
+
+/// Upper bound for the stderr marker wait once stdout has completed. The
+/// marker follows the exit-code line immediately, so this only elapses when
+/// the marker is genuinely lost (fd 3 redirected or closed by the user, or
+/// `[Console]::Error` rebound); then stderr is treated as drained instead of
+/// hanging the session forever (#2881).
+const STDERR_DRAIN_GRACE: Duration = Duration::from_secs(2);
 
 /// Persistent shell session with state preservation
 ///
@@ -269,6 +320,8 @@ impl PersistentShell {
                 .await?;
         }
 
+        shell.open_stderr_marker_fd().await?;
+
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
             shell.apply_runtime_bootstrap().await;
         }
@@ -314,6 +367,8 @@ impl PersistentShell {
             path_mapper: Some(spawned_shell.path_mapper),
             last_known_cwd: spawned_shell.initial_cwd,
         };
+
+        shell.open_stderr_marker_fd().await?;
 
         if crate::mcp::builtin::workspace::utils::get_shell_runtime_bootstrap_enabled().await {
             shell.apply_runtime_bootstrap().await;
@@ -364,6 +419,21 @@ impl PersistentShell {
         }
     }
 
+    /// Dup the shell's original stderr onto a private fd 3, before any command
+    /// runs. Each command emits its stderr end marker there (see
+    /// [`STDERR_EOF_MARKER`]), so commands that redirect fd 2
+    /// (`exec 2>/dev/null`, `exec 2>&1`) cannot take the marker out of the
+    /// reader's pipe (#2881). Host PowerShell needs no fd: its marker goes to
+    /// the process stderr handle via `[Console]::Error`.
+    async fn open_stderr_marker_fd(&mut self) -> Result<()> {
+        if self.uses_host_powershell_protocol() {
+            return Ok(());
+        }
+        self.stdin.write_all(b"exec 3>&2\n").await?;
+        self.stdin.flush().await?;
+        Ok(())
+    }
+
     /// Execute a command in the persistent shell
     ///
     /// # Arguments
@@ -379,8 +449,8 @@ impl PersistentShell {
     /// 1. Send command + newline
     /// 2. Send unique sentinel marker
     /// 3. Send CWD capture command
-    /// 4. Send exit code capture command
-    /// 5. Read stdout/stderr until sentinel found
+    /// 4. Send exit code capture command + stderr end marker
+    /// 5. Read stdout to the sentinel/exit code and stderr to its end marker
     /// 6. Parse exit code and CWD
     /// 7. Return collected output
     pub async fn execute(&mut self, command: &str) -> Result<(String, String, i32, String)> {
@@ -405,11 +475,13 @@ impl PersistentShell {
             self.stdin.write_all(command.as_bytes()).await?;
             self.stdin.write_all(b"\n} < /dev/null\n").await?;
 
-            // Capture exit code BEFORE echoing sentinel (which would reset $?)
+            // Capture exit code BEFORE echoing sentinel (which would reset $?).
+            // The stderr end marker goes to fd 3 (open_stderr_marker_fd), out
+            // of reach of fd 2 redirections inside the command (#2881).
             self.stdin
                 .write_all(
                     format!(
-                        "__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n"
+                        "__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"; echo '{STDERR_EOF_MARKER}{sentinel}' >&3\n"
                     )
                     .as_bytes(),
                 )
@@ -427,34 +499,8 @@ impl PersistentShell {
         command: &str,
         sentinel: &str,
     ) -> Result<()> {
-        // Encode command to Base64 to avoid encoding issues in the pipe
-        // This ensures that characters like Korean are transmitted correctly
-        // regardless of the current console code page.
-        let encoded = general_purpose::STANDARD.encode(command);
-        // We use Invoke-Expression to execute the decoded string
-        let wrapper = format!(
-            "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
-            encoded
-        );
-        self.stdin.write_all(wrapper.as_bytes()).await?;
-
         self.stdin
-            .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-            .await?;
-
-        // Capture CWD
-        self.stdin
-            .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-            .await?;
-
-        // Robust exit code capture for PowerShell (PS 5.1 compatible):
-        // If $LASTEXITCODE is non-zero OR $? is false:
-        //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
-        //   Else return $LASTEXITCODE.
-        // Else return 0.
-        // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
-        self.stdin
-            .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
+            .write_all(powershell_framed_script(command, sentinel).as_bytes())
             .await?;
         Ok(())
     }
@@ -468,27 +514,56 @@ impl PersistentShell {
         anyhow::bail!("PowerShell framing is not available on Unix hosts")
     }
 
+    /// Read one stderr line. Once stdout has completed, the read is bounded by
+    /// [`STDERR_DRAIN_GRACE`] so a lost end marker can never hang the session
+    /// (#2881); before that the command may still be running and the read
+    /// waits unbounded. `Ok(Err(_))` carries a stream error; `Err(_)` means the
+    /// grace elapsed without any line arriving.
+    async fn read_stderr_line(
+        stderr: &mut BufReader<ChildStderr>,
+        line: &mut String,
+        raw_buf: &mut Vec<u8>,
+        bounded: bool,
+    ) -> std::result::Result<Result<usize>, tokio::time::error::Elapsed> {
+        if bounded {
+            tokio::time::timeout(STDERR_DRAIN_GRACE, read_line_lossy(stderr, line, raw_buf)).await
+        } else {
+            Ok(read_line_lossy(stderr, line, raw_buf).await)
+        }
+    }
+
     async fn read_until_sentinel(
         &mut self,
         sentinel: &str,
     ) -> Result<(String, String, i32, String)> {
-        // Read output until sentinel found
+        // Read output until BOTH streams signal command end: stdout has yielded
+        // the sentinel + exit code, and stderr has yielded this command's end
+        // marker. Previously this loop broke as soon as stdout's exit code
+        // arrived, which dropped stderr lines still in the pipe for commands
+        // that exit in milliseconds (#2880).
+        let stderr_marker = format!("{STDERR_EOF_MARKER}{sentinel}");
         let mut stdout_lines = Vec::new();
         let mut stderr_lines = Vec::new();
         let mut found_sentinel = false;
         let mut exit_code = 0;
         let mut cwd = String::new();
+        let mut stdout_done = false;
+        let mut stderr_done = false;
 
         // Raw buffers for cancellation safety
         let mut stdout_raw_buf = Vec::new();
         let mut stderr_raw_buf = Vec::new();
 
         loop {
+            if stdout_done && stderr_done {
+                break;
+            }
+
             let mut stdout_line = String::new();
             let mut stderr_line = String::new();
 
             tokio::select! {
-                result = read_line_lossy(&mut self.stdout, &mut stdout_line, &mut stdout_raw_buf) => {
+                result = read_line_lossy(&mut self.stdout, &mut stdout_line, &mut stdout_raw_buf), if !stdout_done => {
                     let n = result?;
                     if n == 0 && stdout_line.is_empty() { break; } // EOF
 
@@ -517,7 +592,11 @@ impl PersistentShell {
                         loop {
                             metadata_line.clear();
                             // We reuse stdout_raw_buf here, it should be empty after previous read_line_lossy
-                            read_line_lossy(&mut self.stdout, &mut metadata_line, &mut stdout_raw_buf).await?;
+                            let n = read_line_lossy(&mut self.stdout, &mut metadata_line, &mut stdout_raw_buf).await?;
+
+                            // EOF before the exit code: stop reading metadata; the
+                            // stderr arm below still runs to completion.
+                            if n == 0 && metadata_line.is_empty() { break; }
 
                             // Skip prompts
                             if metadata_line.trim_start().starts_with("PS ") {
@@ -532,7 +611,8 @@ impl PersistentShell {
                             if let Some(cwd_str) = clean_line.strip_prefix("__CWD__") {
                                 cwd = cwd_str.to_string();
                             } else if let Some(code_str) = clean_line.strip_prefix("EXIT_CODE_") {
-                                exit_code = code_str.parse().unwrap_or(0);
+                                // Unreadable codes are errors, not success (#2805).
+                                exit_code = code_str.parse().unwrap_or(-1);
                                 captured_code = true;
                             }
 
@@ -542,7 +622,8 @@ impl PersistentShell {
                             }
                         }
 
-                        break;
+                        stdout_done = true;
+                        continue;
                     }
 
                     // Skip leaked metadata if they appear in wrong order (defensive)
@@ -553,9 +634,46 @@ impl PersistentShell {
                     stdout_lines.push(stdout_line);
                 }
 
-                result = read_line_lossy(&mut self.stderr, &mut stderr_line, &mut stderr_raw_buf) => {
-                    let n = result?;
-                    if n == 0 && stderr_line.is_empty() { continue; }
+                res = Self::read_stderr_line(&mut self.stderr, &mut stderr_line, &mut stderr_raw_buf, stdout_done), if !stderr_done => {
+                    let n = match res {
+                        Ok(inner) => inner?,
+                        Err(_elapsed) => {
+                            // The marker follows the exit-code line immediately,
+                            // so the grace only elapses when it is genuinely
+                            // lost (fd 3 redirected/closed, [Console]::Error
+                            // rebound). Return with what we have rather than
+                            // hanging the session forever (#2881).
+                            warn!(
+                                "Stderr end marker not seen for session {} within the drain grace; treating stderr as drained",
+                                self.session_id
+                            );
+                            stderr_done = true;
+                            continue;
+                        }
+                    };
+                    if n == 0 && stderr_line.is_empty() {
+                        // Stderr closed without the marker (e.g. container
+                        // attach streams): treat stderr as drained and keep
+                        // reading stdout; do not busy-spin on the EOF arm.
+                        stderr_done = true;
+                        continue;
+                    }
+
+                    // The shell echoes the marker to its private fd 3 (a dup of
+                    // the original stderr) after the command's own stderr has
+                    // been written, so reaching it means stderr is fully
+                    // drained for this command (#2880).
+                    let trimmed_line = stderr_line.trim_end();
+                    if trimmed_line.ends_with(&stderr_marker) {
+                        let content_len = trimmed_line.len() - stderr_marker.len();
+                        if content_len > 0 {
+                            let content = &trimmed_line[..content_len];
+                            stderr_lines.push(content.to_string());
+                        }
+                        stderr_done = true;
+                        continue;
+                    }
+
                     stderr_lines.push(stderr_line);
                 }
             }
@@ -633,6 +751,33 @@ fn apply_shell_env(cmd: &mut Command, secrets: &SecretMap, app_env: Vec<(String,
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+
+    /// #2706 / #2805: reset `$LASTEXITCODE`, clear `$Error`, run the command,
+    /// capture exit before any `Write-Output`, then emit sentinel / cwd / code.
+    #[test]
+    fn powershell_frame_resets_the_exit_code_before_the_command() {
+        let script = powershell_framed_script("Write-Output hello", "SENTINEL_1");
+        let lines: Vec<&str> = script.lines().collect();
+
+        assert_eq!(lines.len(), 8, "{script}");
+        assert_eq!(lines[0], "$global:LASTEXITCODE = 0");
+        assert_eq!(lines[1], "$Error.Clear()");
+        assert!(lines[2].starts_with("Invoke-Expression "), "{script}");
+        assert!(lines[3].contains("NativeCommandError"), "{script}");
+        assert!(lines[3].contains("$__libr_lec = $LASTEXITCODE"), "{script}");
+        assert_eq!(lines[4], "Write-Output 'SENTINEL_1'");
+        assert!(lines[5].contains("__CWD__"), "{script}");
+        assert_eq!(lines[6], "Write-Output \"EXIT_CODE_$__libr_exit\"");
+        // #2880: the stderr end marker closes the stderr drain after the command.
+        // The end marker carries this command's sentinel (#2881).
+        assert_eq!(
+            lines[7],
+            "[Console]::Error.WriteLine(\"__STDERR_EOF__SENTINEL_1\")"
+        );
+        // The command travels Base64-encoded, never as raw text.
+        assert!(!script.contains("Write-Output hello"), "{script}");
+        assert!(script.ends_with('\n'));
+    }
 
     #[test]
     fn app_variables_win_over_secrets_with_the_same_name() {

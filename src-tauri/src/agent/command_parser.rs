@@ -1,10 +1,40 @@
 use crate::agent::ExecutionMode;
 
+/// `/plugin` subcommands (#2825). Plugins installed this way are scoped to
+/// the current session only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginCommand {
+    /// Needs an interactive hook-approval step, so it is handled by the
+    /// desktop input (preview → approval modal → install IPC), never here.
+    Install {
+        source: String,
+    },
+    /// Re-downloads an installed plugin (#2927). Needs the D6 update notice
+    /// and the install-time approvals again, so like `Install` it is handled
+    /// by the desktop input, never here.
+    Update {
+        target: String,
+    },
+    Uninstall {
+        target: String,
+    },
+    /// Turn a session or global plugin on/off (#2927). No approval needed:
+    /// the files stay, so this is a state flag, not an install.
+    Enable {
+        target: String,
+    },
+    Disable {
+        target: String,
+    },
+    List,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Clear,
     Reload,
     Permission { mode: ExecutionMode },
+    Plugin(PluginCommand),
 }
 
 impl Command {
@@ -40,6 +70,30 @@ impl Command {
                     _ => None,
                 }
             }
+            "/plugin" => {
+                let action = parts.get(1)?.to_lowercase();
+                // Keep the original casing/spacing of the argument (URLs).
+                let arg = parts.get(2..)?.join(" ");
+                match action.as_str() {
+                    "list" if arg.is_empty() => Some(Command::Plugin(PluginCommand::List)),
+                    "install" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Install { source: arg }))
+                    }
+                    "uninstall" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Uninstall { target: arg }))
+                    }
+                    "update" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Update { target: arg }))
+                    }
+                    "enable" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Enable { target: arg }))
+                    }
+                    "disable" if !arg.is_empty() => {
+                        Some(Command::Plugin(PluginCommand::Disable { target: arg }))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -53,6 +107,12 @@ impl Command {
                 ExecutionMode::Unsafe => "/permission unsafe".to_string(),
                 ExecutionMode::Normal => "/permission normal".to_string(),
             },
+            Command::Plugin(PluginCommand::Install { .. }) => "/plugin install".to_string(),
+            Command::Plugin(PluginCommand::Update { .. }) => "/plugin update".to_string(),
+            Command::Plugin(PluginCommand::Uninstall { .. }) => "/plugin uninstall".to_string(),
+            Command::Plugin(PluginCommand::Enable { .. }) => "/plugin enable".to_string(),
+            Command::Plugin(PluginCommand::Disable { .. }) => "/plugin disable".to_string(),
+            Command::Plugin(PluginCommand::List) => "/plugin list".to_string(),
         }
     }
 
@@ -75,6 +135,24 @@ impl Command {
                     "Require standard approval for tool executions".to_string()
                 }
             },
+            Command::Plugin(PluginCommand::Install { .. }) => {
+                "Install a plugin (git URL) for this session only".to_string()
+            }
+            Command::Plugin(PluginCommand::Update { .. }) => {
+                "Re-download an installed plugin by name or git URL".to_string()
+            }
+            Command::Plugin(PluginCommand::Uninstall { .. }) => {
+                "Remove a session plugin by git URL or name".to_string()
+            }
+            Command::Plugin(PluginCommand::Enable { .. }) => {
+                "Turn an installed plugin back on without downloading it again".to_string()
+            }
+            Command::Plugin(PluginCommand::Disable { .. }) => {
+                "Turn an installed plugin off but keep its files".to_string()
+            }
+            Command::Plugin(PluginCommand::List) => {
+                "List plugins active in this session (global or session)".to_string()
+            }
         }
     }
 }
@@ -122,5 +200,103 @@ mod tests {
         );
         assert_eq!(Command::parse("/permission invalid"), None);
         assert_eq!(Command::parse("/permission"), None);
+    }
+
+    #[test]
+    fn test_parse_plugin() {
+        assert_eq!(
+            Command::parse("/plugin list"),
+            Some(Command::Plugin(PluginCommand::List))
+        );
+        assert_eq!(
+            Command::parse("  /plugin install https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Install {
+                source: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("/plugin UNINSTALL superpowers"),
+            Some(Command::Plugin(PluginCommand::Uninstall {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(Command::parse("/plugin"), None);
+        assert_eq!(Command::parse("/plugin install"), None);
+        assert_eq!(Command::parse("/plugin uninstall"), None);
+        assert_eq!(Command::parse("/plugin list extra"), None);
+        assert_eq!(Command::parse("/plugin bogus x"), None);
+    }
+
+    // #2927 gatekeeper G1.2: `/plugin enable|disable` parse, keep the
+    // argument as typed, and reject a missing one.
+    #[test]
+    fn test_parse_plugin_enable_and_disable() {
+        assert_eq!(
+            Command::parse("/plugin enable superpowers"),
+            Some(Command::Plugin(PluginCommand::Enable {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("  /plugin DISABLE https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Disable {
+                target: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Enable {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin enable"
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Disable {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin disable"
+        );
+
+        // No plugin named: nothing to enable, so the command is not parsed and
+        // the user is not told a plugin was switched.
+        assert_eq!(Command::parse("/plugin enable"), None);
+        assert_eq!(Command::parse("/plugin disable"), None);
+        assert_eq!(Command::parse("/plugin enable   "), None);
+    }
+
+    // #2927 item 4: `/plugin update <name|url>` parses like enable/disable;
+    // the argument keeps its casing (URLs) and a missing one is rejected.
+    #[test]
+    fn test_parse_plugin_update() {
+        assert_eq!(
+            Command::parse("/plugin update superpowers"),
+            Some(Command::Plugin(PluginCommand::Update {
+                target: "superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::parse("  /plugin UPDATE https://github.com/Obra/Superpowers  "),
+            Some(Command::Plugin(PluginCommand::Update {
+                target: "https://github.com/Obra/Superpowers".to_string()
+            }))
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Update {
+                target: "x".to_string()
+            })
+            .display_name(),
+            "/plugin update"
+        );
+        assert_eq!(
+            Command::Plugin(PluginCommand::Update {
+                target: "x".to_string()
+            })
+            .description(),
+            "Re-download an installed plugin by name or git URL"
+        );
+
+        assert_eq!(Command::parse("/plugin update"), None);
+        assert_eq!(Command::parse("/plugin update   "), None);
     }
 }

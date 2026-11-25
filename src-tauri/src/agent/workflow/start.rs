@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
@@ -17,6 +19,7 @@ pub async fn reset_session_execution_state(session: &mut AgentSession) {
     *session.repeated_text_loop_retry_count.write().await = 0;
     *session.reasoning_budget_retry_count.write().await = 0;
     *session.malformed_tool_markup_retry_count.write().await = 0;
+    *session.invalid_tool_args_retry_count.write().await = 0;
     // Drop any in-flight tool batch marker so a restarted turn cannot treat a
     // prior PendingToolExecution (and its deferred history) as still open.
     if let Some(pending) = session.pending_execution.take() {
@@ -137,6 +140,33 @@ pub async fn start_workflow(
 
     // --- STANDARD START WORKFLOW (Idle/Paused) ---
 
+    // UserPromptSubmit hook (#2925): runs before queueing/sending the prompt.
+    // A `block` decision stops the prompt and returns the reason; `additionalContext`
+    // is queued into per-turn volatile hook context for this turn's LLM request.
+    crate::services::hooks::reset_stop_hook_continuations(&session_id);
+    let prompt_text = user_message
+        .content
+        .iter()
+        .find_map(|c| match c {
+            crate::mcp::types::MCPContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let mut prompt_submit_params = crate::services::hooks::HookEnvelopeParams::new(
+        &session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::UserPromptSubmit,
+    );
+    prompt_submit_params.prompt = Some(prompt_text);
+    let prompt_hook_outcome = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::UserPromptSubmit,
+        "",
+        &prompt_submit_params,
+        &session_id,
+    )
+    .await;
+    evaluate_user_prompt_hook_outcome(&session_id, prompt_hook_outcome)?;
+
     // Update status to Queued immediately
     crate::agent::lifecycle::update_session_status(
         session_repo,
@@ -152,7 +182,7 @@ pub async fn start_workflow(
         session_id: session_id.clone(),
     };
     log::info!("Emitting WorkflowStarted event for session: {}", session_id);
-    if let Err(e) = crate::agent::tauri_events::emit_agent_event(app_handle, event) {
+    if let Err(e) = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event) {
         log::error!("Failed to emit WorkflowStarted event: {}", e);
         return Err(format!("Failed to emit event: {}", e));
     }
@@ -198,7 +228,8 @@ pub async fn start_workflow(
                     )
                     .with_code("BACKGROUND_WORKFLOW_FAILED"),
                 };
-                let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+                let _ =
+                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
                 return;
             }
         };
@@ -263,7 +294,7 @@ pub async fn start_workflow(
                 )
                 .with_code("BACKGROUND_WORKFLOW_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             return;
         }
 
@@ -320,7 +351,7 @@ pub async fn start_workflow(
                 )
                 .with_code("BACKGROUND_WORKFLOW_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             return;
         }
 
@@ -355,7 +386,7 @@ pub async fn start_workflow(
                 )
                 .with_code("BACKGROUND_WORKFLOW_FAILED"),
             };
-            let _ = crate::agent::tauri_events::emit_agent_event(&app_handle, error_event);
+            let _ = TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
         }
     });
 
@@ -424,4 +455,61 @@ pub(crate) async fn ensure_proxy_ready(
     proxy_manager
         .wait_until_proxy_ready(session_id, timeout_secs)
         .await
+}
+
+/// Apply `UserPromptSubmit` hook outcome before queueing the prompt (#2925 G1.2).
+pub(crate) fn evaluate_user_prompt_hook_outcome(
+    session_id: &str,
+    outcome: crate::services::hooks::HookDispatchResult,
+) -> Result<(), String> {
+    if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+        let reason = outcome
+            .reason
+            .filter(|r| !r.trim().is_empty())
+            .unwrap_or_else(|| "Prompt blocked by UserPromptSubmit hook.".to_string());
+        return Err(reason);
+    }
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod user_prompt_hook_tests {
+    use super::evaluate_user_prompt_hook_outcome;
+    use crate::services::hooks::{
+        clear_hook_context, take_turn_hook_context, HookDecision, HookDispatchResult,
+    };
+
+    #[test]
+    fn block_returns_reason_without_queueing_turn_context() {
+        let sid = "start-hook-block-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["should not be queued".to_string()],
+            decision: Some(HookDecision::Block),
+            reason: Some("prompt rejected by policy".to_string()),
+        };
+        let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
+        assert_eq!(err, "prompt rejected by policy");
+        assert!(take_turn_hook_context(sid).is_none());
+    }
+
+    #[test]
+    fn non_blocking_outcome_queues_turn_context() {
+        let sid = "start-hook-ctx-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["inject for this turn".to_string()],
+            decision: None,
+            reason: None,
+        };
+        evaluate_user_prompt_hook_outcome(sid, outcome).unwrap();
+        assert_eq!(
+            take_turn_hook_context(sid).as_deref(),
+            Some("inject for this turn")
+        );
+        clear_hook_context(sid);
+    }
 }

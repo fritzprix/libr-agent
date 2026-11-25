@@ -9,6 +9,7 @@ use crate::mcp::types::{MCPTool, ServiceContext};
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionMetadata;
+use crate::server::session_ownership;
 use crate::services::agent_service::remove_lineage;
 use crate::services::AgentService;
 use crate::state::get_session_repository;
@@ -61,7 +62,11 @@ pub async fn agent_create_session(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionRequest,
 ) -> Result<SessionMetadata, String> {
-    AgentService::create_session(&manager, request).await
+    let created = AgentService::create_session(&manager, request).await?;
+    // Host path: creating a session is opening it, so this process owns it
+    // for its run (#2856). The id is brand new, so the claim cannot fail.
+    let _ = session_ownership::claim(&created.id).await;
+    Ok(created)
 }
 
 /// Resume an existing agent session
@@ -77,6 +82,9 @@ pub async fn agent_resume_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
 ) -> Result<SessionMetadata, String> {
+    // Resuming is opening: refused while another live process owns it (#2856).
+    // Checked before the fence lift so a refusal changes nothing.
+    session_ownership::claim(&session_id).await?;
     manager
         .allow_explicit_message_after_terminate(&session_id)
         .await;
@@ -94,14 +102,15 @@ pub async fn agent_open_session(
 ) -> Result<AgentOpenSessionResponse, String> {
     let message_limit = initial_message_limit.unwrap_or(DEFAULT_INITIAL_MESSAGE_LIMIT);
 
-    // Warm reopen when the route already carries the storage id.
-    if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
-        return Ok(warm);
-    }
-
-    // Legacy short / session- prefixed routes → storage key.
+    // Legacy short / session- prefixed routes → storage key. Resolve before
+    // claiming so ownership is only ever keyed by the storage id.
     let session_id = resolve_tauri_session_ref(&session_id).await?;
 
+    // Host path: opening claims the session for this process's run
+    // (#2856); refused while another live process owns it.
+    session_ownership::claim(&session_id).await?;
+
+    // Warm reopen when the session is already active.
     if let Some(warm) = try_open_warm_session(&manager, &session_id, message_limit).await? {
         return Ok(warm);
     }
@@ -246,7 +255,15 @@ pub async fn agent_create_session_with_initial_message(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionWithMessageRequest,
 ) -> Result<AgentResponse, String> {
-    AgentService::create_session_with_initial_message(&manager, request).await
+    // Host path: this process opens the new session (#2856).
+    let session_id = request.session_id.clone();
+    session_ownership::claim(&session_id).await?;
+    let result = AgentService::create_session_with_initial_message(&manager, request).await;
+    if result.is_err() {
+        // No session was created, so no ownership row may outlive the call.
+        session_ownership::release_session(&session_id).await;
+    }
+    result
 }
 
 /// Update session model/provider/assistant binding for a session
@@ -322,7 +339,7 @@ pub async fn agent_list_sessions(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
-    manager
+    let mut response: AgentSessionListResponse = manager
         .list_sessions(
             request.cursor.map(Into::into),
             limit,
@@ -331,7 +348,20 @@ pub async fn agent_list_sessions(
             status,
         )
         .await
-        .map(Into::into)
+        .map(Into::into)?;
+    // Host path: report sessions owned by *other* processes so the GUI list
+    // can show them and refuse entry (#2856). One batched liveness read for
+    // the whole page instead of a probe per row (#2856 G1.2).
+    let ids: Vec<String> = response
+        .items
+        .iter()
+        .map(|item| item.session.id.clone())
+        .collect();
+    let elsewhere = session_ownership::open_elsewhere_ids(&ids).await;
+    for item in &mut response.items {
+        item.open_elsewhere = elsewhere.contains(&item.session.id);
+    }
+    Ok(response)
 }
 
 /// List sessions with unread attention for the notifications UI.
@@ -535,9 +565,22 @@ pub async fn agent_factory_reset(
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommandResult {
     pub success: bool,
     pub message: String,
+    /// Set when the command was a plugin slash command (#2922): the expanded
+    /// Markdown body, ready to send as an ordinary chat message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expanded_prompt: Option<String>,
+}
+
+/// List the plugin slash commands available to a session (#2922).
+#[command]
+pub async fn agent_list_plugin_commands(
+    session_id: String,
+) -> Result<Vec<crate::services::skill_service::PluginCommandInfo>, String> {
+    crate::services::skill_service::list_plugin_commands(&session_id)
 }
 
 /// Execute a CLI command like /clear or /permission yolo for a session
@@ -548,10 +591,27 @@ pub async fn agent_execute_command(
     session_id: String,
     command_text: String,
 ) -> Result<CommandResult, String> {
-    use crate::agent::command_parser::Command;
+    use crate::agent::command_parser::{Command, PluginCommand};
+    use crate::services::skill_service::{self, PluginScope};
 
-    let command = Command::parse(&command_text)
-        .ok_or_else(|| format!("Invalid or unrecognized command: {}", command_text))?;
+    let command = Command::parse(&command_text);
+    let command = match command {
+        Some(command) => command,
+        None => {
+            // Plugin slash commands (#2922) expand into the prompt only after
+            // built-in parsing fails, so a plugin can never shadow a built-in.
+            if let Some(expanded) =
+                crate::services::skill_service::expand_plugin_command(&session_id, &command_text)?
+            {
+                return Ok(CommandResult {
+                    success: true,
+                    message: String::new(),
+                    expanded_prompt: Some(expanded),
+                });
+            }
+            return Err(format!("Invalid or unrecognized command: {}", command_text));
+        }
+    };
 
     match command {
         Command::Clear => {
@@ -559,6 +619,7 @@ pub async fn agent_execute_command(
 
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message:
                     "Session history, planning data, and browser session cleared successfully."
                         .to_string(),
@@ -569,6 +630,7 @@ pub async fn agent_execute_command(
 
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message: "Session tools and workspace context reloaded. Conversation history kept."
                     .to_string(),
             })
@@ -587,9 +649,108 @@ pub async fn agent_execute_command(
 
             Ok(CommandResult {
                 success: true,
+                expanded_prompt: None,
                 message: format!("Permission mode updated to {}.", mode_str),
             })
         }
+        Command::Plugin(PluginCommand::Install { .. }) => Err(
+            "/plugin install needs hook approval; run it from the chat input of the desktop app."
+                .to_string(),
+        ),
+        // #2927 item 4: the desktop input intercepts `/plugin update` the
+        // same way (D6 notice -> preview -> install), so it never executes
+        // through this generic command path.
+        Command::Plugin(PluginCommand::Update { .. }) => Err(
+            "/plugin update needs update approval; run it from the chat input of the desktop app."
+                .to_string(),
+        ),
+        Command::Plugin(PluginCommand::Uninstall { target }) => {
+            let removed = skill_service::uninstall_session_plugin(&session_id, &target).await?;
+            Ok(CommandResult {
+                success: true,
+                expanded_prompt: None,
+                message: format!("Removed session plugin {}.", removed.source_url),
+            })
+        }
+        Command::Plugin(PluginCommand::Enable { target }) => {
+            let entry = skill_service::set_plugin_enabled_by_target(&session_id, &target, true)?;
+            Ok(CommandResult {
+                success: true,
+                expanded_prompt: None,
+                message: format!(
+                    "Enabled {}. What the plugin provides applies when the session opens again; \
+                     type /reload to apply it now.",
+                    describe_plugin_entry(&entry)
+                ),
+            })
+        }
+        Command::Plugin(PluginCommand::Disable { target }) => {
+            let entry = skill_service::set_plugin_enabled_by_target(&session_id, &target, false)?;
+            Ok(CommandResult {
+                success: true,
+                expanded_prompt: None,
+                message: format!(
+                    "Disabled {}. It stays installed; its hooks and skills stop when the session \
+                     opens again. Type /reload to apply it now.",
+                    describe_plugin_entry(&entry)
+                ),
+            })
+        }
+        Command::Plugin(PluginCommand::List) => {
+            let overview = skill_service::list_session_plugins(&session_id)?;
+            let message = if overview.active.is_empty() {
+                "No plugins active in this session.".to_string()
+            } else {
+                overview
+                    .active
+                    .iter()
+                    .map(|plugin| {
+                        let scope = match plugin.scope {
+                            PluginScope::Global => "global",
+                            PluginScope::Session => "session",
+                        };
+                        let state = if plugin.enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        };
+                        format!(
+                            "[{scope}] {} ({state}, {})",
+                            plugin.source_url,
+                            describe_plugin_version(plugin)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            Ok(CommandResult {
+                success: true,
+                expanded_prompt: None,
+                message,
+            })
+        }
+    }
+}
+
+/// Name shown for one plugin in a command message (#2927).
+fn describe_plugin_entry(entry: &crate::services::skill_service::SessionPluginEntry) -> String {
+    format!(
+        "plugin {} ({})",
+        entry.source_url,
+        describe_plugin_version(entry)
+    )
+}
+
+/// Installed version, else the short source commit, else "version unknown"
+/// (#2927 acceptance: `/plugin list` shows version or commit).
+fn describe_plugin_version(entry: &crate::services::skill_service::SessionPluginEntry) -> String {
+    if let Some(version) = entry.version.as_deref() {
+        return format!("v{version}");
+    }
+    match entry.commit.as_deref() {
+        Some(commit) if commit.len() >= 7 => format!("commit {}", &commit[..7]),
+        Some(commit) => format!("commit {commit}"),
+        None => "version unknown".to_string(),
     }
 }
 
@@ -635,6 +796,9 @@ pub async fn agent_submit_user_prompt(
     manager: State<'_, AgentSessionManager>,
     request: SubmitUserPromptRequest,
 ) -> Result<AgentResponse, String> {
+    // Answering a waiting prompt drives the session, so it is refused while
+    // another live process owns it (#2856).
+    session_ownership::claim(&request.session_id).await?;
     let pending =
         crate::agent::session_manager::pending_user_prompt_in(manager.inner(), &request.session_id)
             .await

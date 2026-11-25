@@ -32,7 +32,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 | 传统方式                         | LibrAgent 解决方案                                                                                                         |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | 手动编写复杂的 MCP JSON 配置文件 | **一键式扩展工具** — 预置 GitHub、Brave Search、本地文件系统等常用工具，支持一键导入 Cursor、VS Code、Claude Code 配置     |
-| 必须用代码自行组装多智能体系统   | **内置成熟协同模式** — 开箱即用的 `pipeline`、`hub-spoke`、`divide-conquer`、`consensus-delegation` 等原生技能             |
+| 必须用代码自行组装多智能体系统   | **内置成熟协同模式** — 开箱即用的 `teamwork`（pipeline、hub-and-spoke）、`divide-conquer`、`consensus-delegation` 等原生技能             |
 | 被特定云厂商的模型和工具绑定     | **自由的技术栈选择** — 支持接入主流云端 API 或本地部署的 [Ollama](https://ollama.com)，基于 MIT 协议保障本地优先与隐私安全 |
 
 [下载最新发行版](https://github.com/fritzprix/libr-agent/releases/latest) · [5 分钟上手路径](#5-分钟上手路径)
@@ -56,7 +56,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 ### 3. 无需编码即可运用协同模式
 
 - 无需编写编排代码，直接在对话中指定多智能体协作方式：
-  - _"@skill:pipeline — 按照'调研、草拟、复审'步骤推进，最后输出一份完整报告"_
+  - _"@skill:teamwork pipeline — 按照'调研、草拟、复审'步骤推进，最后输出一份完整报告"_
   - _"@skill:divide-conquer — 将此任务拆分为独立的子任务并行处理，最后合并结果"_
 - 经过实践验证的协同模式已封装为技能。详情参见 [子智能体与编排指南](docs/user/guides/sub-agents.md)。
 
@@ -73,11 +73,11 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 | 技能名称                             | 协同模式       | 适用场景                                               |
 | ------------------------------------ | -------------- | ------------------------------------------------------ |
-| `pipeline`                           | 顺序流转流水线 | 前一阶段的产出作为下一阶段的输入（调研 → 起草 → 复核） |
-| `hub-spoke`                          | 核心辐射协调   | 由一个主协调智能体统筹调度多个专业工作智能体           |
+| `teamwork` (pipeline)                           | 顺序流转流水线 | 前一阶段的产出作为下一阶段的输入（调研 → 起草 → 复核） |
+| `teamwork` (hub-and-spoke)                          | 核心辐射协调   | 由一个主协调智能体统筹调度多个专业工作智能体           |
 | `divide-conquer`                     | 任务并行分治   | 将任务拆解为相互独立的子模块并行执行，最后汇总结算     |
 | `consensus-delegation`               | 多角度综合研判 | 就同一议题向多个专业智能体征询意见并调和差异           |
-| `gatekeeper` / `pair-programming`    | 审查与配对回路 | 实施严格的代码审查机制，或开展两智能体结对协作         |
+| `delegation-eval-loop` (gatekeeper) / `teamwork` (pair programming)    | 审查与配对回路 | 实施严格的代码审查机制，或开展两智能体结对协作         |
 | `delegate`                           | 轻量单项委托   | 分派单次子会话处理具体任务并追踪完整执行链条           |
 | `teamwork` → `org`                   | 长期持久化团队 | 建立具有共同守则与组织架构 UI 的专业协作团队           |
 | `schedule` / `loop` / `call-me-back` | 时间与事件驱动 | 实现 Cron 周期定时、会话内延时触发或基于外部事件唤醒   |
@@ -125,7 +125,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 ### 高级业务用户 — 基于成熟模板委派工作
 
-1. 在输入栏键入 `@skill:pipeline`（或 `hub-spoke`、`divide-conquer`）声明任务拓扑结构。
+1. 在输入栏键入 `@skill:teamwork pipeline`（或 `teamwork` (hub-and-spoke)、`divide-conquer`）声明任务拓扑结构。
 2. 智能体集群严格按照既定模式协同推进任务。
 3. 直接在工作区获取最终合并的单一交付成果，免去手动维护编排框架的成本。
 
@@ -152,10 +152,10 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 <!-- RELEASE_DOWNLOADS_START -->
 
-- **Windows：** [`LibrAgent_0.9.31_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64-setup.exe) · [`LibrAgent_0.9.31_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64_en-US.msi)
-- **macOS（Apple Silicon）：** [`LibrAgent_0.9.31_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_aarch64.dmg)
-- **Linux：** [`LibrAgent_0.9.31_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.AppImage) · [`LibrAgent_0.9.31_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.deb) · [`LibrAgent-0.9.31-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent-0.9.31-1.x86_64.rpm)
-- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.31)
+- **Windows：** [`LibrAgent_0.9.32_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64-setup.exe) · [`LibrAgent_0.9.32_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64_en-US.msi)
+- **macOS（Apple Silicon）：** [`LibrAgent_0.9.32_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_aarch64.dmg)
+- **Linux：** [`LibrAgent_0.9.32_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.AppImage) · [`LibrAgent_0.9.32_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.deb) · [`LibrAgent-0.9.32-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent-0.9.32-1.x86_64.rpm)
+- **完整发布资源：** [发布页面](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.32)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### 5 分钟上手路径
@@ -177,7 +177,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 
 **后续操作 — 进阶协同与自动化**
 
-- _"@skill:pipeline — 调研该主题，整理摘要初稿并进行审核，输出最终归档报告"_
+- _"@skill:teamwork pipeline — 调研该主题，整理摘要初稿并进行审核，输出最终归档报告"_
 - _"为当前代码仓库配置专属的 teamwork 工作区"_
 - _"建立每日早间 7 点自动运行的竞品监控任务"_（或直接运行 Morning Briefing 配方）
 
@@ -186,7 +186,7 @@ LibrAgent 为解决上述问题提供了 **开箱即用的完整桌面端产品*
 - _"导入我在 Cursor 中使用的 MCP 服务器配置，并告知我新增了哪些工具。"_
 - _"安装 GitHub MCP 预设，并将其挂载至代码审查智能体。"_
 - _"审查当前工作区中的代码实现，将改进建议保存至 `DELIVERABLE.md`。"_
-- _"@skill:pipeline — 深入调研此技术方案，撰写分析初稿并完成交叉复审，最后形成归档报告。"_
+- _"@skill:teamwork pipeline — 深入调研此技术方案，撰写分析初稿并完成交叉复审，最后形成归档报告。"_
 - _"配置一个定时任务，使其在每天清晨 7 点自动生成行业动态简报。"_
 
 ### 开发者环境搭建

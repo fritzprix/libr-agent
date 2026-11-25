@@ -1,0 +1,40 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-settings-persist-restart"
+description = "2565 O-1 (restart half): writing a sentinel setting via PUT /api/settings/complexityModelMapping survives an in-place isolated instance restart"
+keywords = ["libragent", "session-e2e", "settings", "restart"]
+
+[metadata]
+difficulty = "easy"
+category = "session-api-e2e"
+tags = ["matrix", "O-1", "settings", "restart"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "O-1"
+auto_answer_interactive = true
+approve_standard_tools = true
+reject_hard_approvals = false
+restart_after_completion = true
+pre_restart_http_puts = [
+  { name = "write_complexity_mapping", path = "/settings/complexityModelMapping", body = { low = { model = "e2e-o1-restart-sentinel", provider = "openai" } } },
+]
+post_restart_http_probes = [
+  { name = "health", path = "/health" },
+  { name = "complexity_mapping", path = "/settings/complexityModelMapping" },
+]
+post_restart_sql_probes = [
+  { name = "complexity_row", query = "SELECT key, value FROM settings WHERE key = 'complexityModelMapping'" },
+]
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 360.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

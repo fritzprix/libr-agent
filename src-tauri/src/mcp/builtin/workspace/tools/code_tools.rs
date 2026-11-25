@@ -293,18 +293,21 @@ pub fn create_run_powershell_tool() -> MCPTool {
     MCPTool {
         name: "runPowerShell".to_string(),
         title: Some("Run PowerShell Command (Isolated)".to_string()),
-        description: "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.\n\
-                       Guidelines:\n\
-                       - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.\n\
-                       - Access environment variables using '$env:VARNAME'.\n\
-                       - Each call starts fresh at the workspace root (or at optional cwd). `cd`/`Set-Location` does NOT persist across tool calls.\n\
-                       - Prefer cwd='subdir' when the next commands need a different directory, or use workspace__runInPersistentPowerShell for sticky state.\n\
-                       - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME for this session (later calls see it too), then the command runs.\n\
-                       Two outcomes:\n\
-                       1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
-                       2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
-                       - For explicitly non-blocking tasks: spawnProcess."
-            .to_string(),
+        description: format!(
+            "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.\n\
+             Guidelines:\n\
+             - Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.\n\
+             - Access environment variables using '$env:VARNAME'.\n\
+             - Each call starts fresh at the workspace root (or at optional cwd). `cd`/`Set-Location` does NOT persist across tool calls.\n\
+             - Prefer cwd='subdir' when the next commands need a different directory, or use workspace__runInPersistentPowerShell for sticky state.\n\
+             - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME for this session (later calls see it too), then the command runs.\n\
+             - {}\n\
+             Two outcomes:\n\
+             1) Finished within timeout (exit success or failure): this response already has stdout/stderr and exit code. No processId — do not call workspace__waitForProcess/workspace__readProcessOutput for this run.\n\
+             2) Still running after the sync timeout: response includes processId; only then use workspace__waitForProcess/workspace__readProcessOutput/workspace__stopProcess.\n\
+             - For explicitly non-blocking tasks: spawnProcess.",
+            crate::utils::powershell_exit::TOOL_DESCRIPTION_EXIT_RULE
+        ),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,
@@ -343,13 +346,16 @@ pub fn create_run_persistent_powershell_tool() -> MCPTool {
     MCPTool {
         name: "runInPersistentPowerShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
-        description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
-                       - Use ';' to chain commands.\n\
-                       - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME, then the command runs.\n\
-                       - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
-                       - For longer work: spawnProcess.\n\
-                       - For simple stateless commands: runPowerShell."
-            .to_string(),
+        description: format!(
+            "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
+             - Use ';' to chain commands.\n\
+             - The shell never sends input to a command. For a password or token, set requireUserInput=true with storeAs=NAME: the UI asks once, the value is kept as $env:NAME, then the command runs.\n\
+             - File tools accept relative paths from the workspace or absolute paths, but they do not follow the shell's current location automatically.\n\
+             - {}\n\
+             - For longer work: spawnProcess.\n\
+             - For simple stateless commands: runPowerShell.",
+            crate::utils::powershell_exit::TOOL_DESCRIPTION_EXIT_RULE
+        ),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
         annotations: None,

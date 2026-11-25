@@ -1,4 +1,4 @@
-use crate::agent::events::AgentEvent;
+use crate::agent::events::{AgentEvent, AgentEventDispatcher};
 use crate::agent::state::AgentSession;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
@@ -6,7 +6,6 @@ use crate::repositories::pending_queue_repository::PendingQueueRepository;
 use crate::state::{get_message_repository, get_pending_queue_repository};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::restore::{
@@ -15,7 +14,7 @@ use super::restore::{
 
 pub async fn emit_pending_queue_updated(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
 ) -> Result<(), String> {
     let messages = list_pending_messages(active_sessions, session_id).await?;
@@ -23,12 +22,13 @@ pub async fn emit_pending_queue_updated(
         session_id: session_id.to_string(),
         messages,
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    dispatcher
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit PendingQueueUpdated: {e}"))
 }
 
 pub(crate) async fn emit_message_added(
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     message: &Message,
 ) -> Result<(), String> {
@@ -36,7 +36,8 @@ pub(crate) async fn emit_message_added(
         session_id: session_id.to_string(),
         message: Box::new(message.clone()),
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, event)
+    dispatcher
+        .emit_agent_event(event)
         .map_err(|e| format!("Failed to emit MessageAdded: {e}"))
 }
 
@@ -87,7 +88,7 @@ pub async fn list_pending_messages(
 /// Persist a waiting user prompt without touching the active LLM context cache.
 pub async fn enqueue_pending_user_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     user_message: &Message,
 ) -> Result<(), String> {
@@ -155,7 +156,7 @@ pub async fn enqueue_pending_user_message(
         return Err(format!("Failed to persist pending queue index: {e}"));
     }
 
-    emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
     Ok(())
 }
 
@@ -166,7 +167,7 @@ pub async fn enqueue_pending_user_message(
 /// (TOCTOU). Durable delete runs in a transaction; on failure memory is restored.
 pub async fn cancel_pending_message(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     message_id: &str,
 ) -> Result<bool, String> {
@@ -206,7 +207,7 @@ pub async fn cancel_pending_message(
         }
     }
 
-    emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
     Ok(true)
 }
 
@@ -305,7 +306,7 @@ pub async fn take_all_pending_message_ids(
 /// Drop all waiting prompts (terminate / hard clear). Soft cancel preserves them.
 pub async fn discard_all_pending_messages(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    app_handle: Option<&AppHandle>,
+    dispatcher: Option<&dyn AgentEventDispatcher>,
     session_id: &str,
 ) -> Result<(), String> {
     let (message_ids, protected_ids) = {
@@ -352,8 +353,8 @@ pub async fn discard_all_pending_messages(
         }
     }
 
-    if let Some(app_handle) = app_handle {
-        emit_pending_queue_updated(active_sessions, app_handle, session_id).await?;
+    if let Some(dispatcher) = dispatcher {
+        emit_pending_queue_updated(active_sessions, dispatcher, session_id).await?;
     }
 
     Ok(())

@@ -219,6 +219,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         docker_container_name,
         docker_host_workspace_path,
         status_reason: None,
+        forked_from: None,
     };
 
     // Persist to database using injected repository
@@ -226,6 +227,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         .upsert_session(&session)
         .await
         .map_err(|e| format!("Failed to create session: {}", e))?;
+
+    let spawn_session_start_hooks = session.status != SessionStatus::Provisioning;
 
     if session.workspace_isolation == WorkspaceIsolationMode::Docker {
         crate::services::docker_provisioning::spawn_docker_provisioning(
@@ -282,6 +285,15 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     .await;
 
     log::info!("Created agent session: {}", session_id);
+
+    if spawn_session_start_hooks {
+        // #2812 G3.1: the marker is registered here, synchronously, before
+        // the spawn — the first prompt of this session waits on it.
+        crate::services::hooks::spawn_session_start(
+            &session_id,
+            crate::services::hooks::SessionStartSource::Startup,
+        );
+    }
 
     // Emit resource updated event for frontend cache revalidation
     crate::agent::tauri_events::emit_resource_updated(

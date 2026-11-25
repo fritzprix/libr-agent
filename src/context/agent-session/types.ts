@@ -1,5 +1,6 @@
 import type { Message, MessageError, RustMessage } from '@/models/chat';
 import type { AgentSession } from '@/models/agent';
+import type { ParsedStreamChunk } from '@/lib/ai-service/stream-events';
 import type {
   AgentRuntimeError,
   PendingApprovalKind,
@@ -116,7 +117,33 @@ export type AgentEventPayload =
       type: 'pendingQueueUpdated';
       sessionId: string;
       messages: RustMessage[];
-    };
+    }
+  | {
+      /** The primary model failed; the fallback model is being tried (#2961). */
+      type: 'llmFallbackNotice';
+      sessionId: string;
+      /** HTTP status of the rejected primary request; absent for non-HTTP failures. */
+      statusCode?: number;
+      fallbackProvider: string;
+      fallbackModel: string;
+      /** Raw server error, shown in the notice's expandable detail. */
+      errorMessage: string;
+    }
+  | LlmStreamDeltaPayload;
+
+/**
+ * One piece of a Rust-routed LLM turn. `delta` has the same shape as a parsed
+ * WebView stream chunk, so it feeds `StreamAccumulator` directly.
+ */
+export interface LlmStreamDeltaPayload {
+  type: 'llmStreamDelta';
+  sessionId: string;
+  responseMessageId: string;
+  provider: string;
+  /** Output cap the request was sent with; absent when the provider default applies. */
+  maxTokens?: number | null;
+  delta: ParsedStreamChunk & { finishReason?: string };
+}
 
 export type WorkflowPhase =
   | 'idle'

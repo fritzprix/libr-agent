@@ -15,6 +15,44 @@ LibrAgent provides a robust HTTP API for remote management of AI agents, session
   - Keys can be injected via `LIBRAGENT_SESSION_API_KEY` or `LIBRAGENT_SESSION_API_KEY_FILE`, or issued dynamically via the interactive agent pairing flow (`POST /api/pairings`).
   - Authentication is required only when an API key is set.
 - **CORS**: Cross-origin browser access is not enabled (no `Access-Control-Allow-Origin`).
+- **Finding the running backend**: after it binds, the process that hosts this API writes its own record `<database file>.backend.<pid>.json` next to its SQLite database, for example `libragent_v2.db.backend.12345.json`:
+
+  ```json
+  { "pid": 12345, "port": 3030, "startedAtMs": 1739000000000 }
+  ```
+
+  Every running backend publishes a record of its own, so a second runtime never hides the first. Another process on the same profile scans these records and picks the newest one that is live: `pid` is a running process and the port accepts a connection. Records whose pid is definitively dead are deleted on scan. The records are not a lock: a second app is never refused because of them. Multiple backends may run on one profile — the second binds the next free port instead of being turned away (#2855). Only the first live backend on a profile runs startup session recovery; a later process skips recovery (`recovery: "skipped"`) so it never resets the first backend's busy or queued sessions (temporary until #2856 ownership). Script probes that walk `http_port.*` may land on any healthy port (glob/pid order), not necessarily the newest live record — set `LIBRAGENT_HTTP_PORT` / `BASE` explicitly when targeting a specific backend.
+
+- **Finding the port from a script**: each backend also writes its bound port to `~/.libragent/http_port.<pid>` (one file per process, so several backends never overwrite each other). A crashed process can leave its file behind, so probe each candidate until one answers:
+
+  ```bash
+  PORT=""
+  for f in "$HOME"/.libragent/http_port.*; do
+    p=$(cat "$f" 2>/dev/null) || continue
+    curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+  done
+  : "${PORT:=3030}"
+  ```
+
+- **Per-process resources (#2858)**: when several backends run on one profile, each process also isolates:
+
+  | Resource                | Artifact                                                                                                                                                                                        |
+  | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | File log                | `libragent.<pid>.log` under the app log dir; a dead process's log is archived to `libragent_<timestamp>_<pid>.log` at the next start so retention applies                                       |
+  | Extension bridge        | binds `3847` then the next free port; writes `~/.libragent/extension_bridge_port.<pid>`                                                                                                         |
+  | Sticky Chromium profile | the first backend keeps `browser_agent_profile`; only a second live backend takes `browser_agent_profile.<pid>`, and it is removed once that pid is dead                                        |
+  | WebView cache           | Windows: the first backend keeps the default profile, a second live backend takes `<data_dir>/webview/<pid>` via `WEBVIEW2_USER_DATA_FOLDER`. Linux and macOS: shared — a documented limitation |
+  | MCP host                | each backend owns its own stdio server children; the shared pending keychain-delete file is replaced with a per-write temp name (concurrent updates are last-writer-wins)                       |
+
+  Point the Chrome extension Options port at the backend you intend to control (Settings → System → Chrome extension bridge shows the bound port). Set `LIBRAGENT_EXTENSION_BRIDGE_PORT` to pin a preferred start port.
+
+  The first backend on a profile always keeps the shared resource, so a single GUI keeps its WebView storage (localStorage, IndexedDB, cookies) and agent logins across restarts. Isolation switches on only when a second live backend is detected.
+
+- **OAuth / deep links with multiple GUIs**: each GUI registers the `libr-agent://` deep-link handler and MCP OAuth may bind a fixed loopback callback port. With more than one GUI on the same profile, the OS may deliver a custom-scheme callback to any instance, and two concurrent loopback OAuth flows can collide on the callback port. Prefer a single GUI for custom-scheme or loopback OAuth, or run concurrent flows only after ensuring distinct callback ports.
+
+### Headless `liblet` (not this HTTP server)
+
+One-shot `liblet -p` / `libragent -p` runs use an **ephemeral** SQLite copy of the profile (session tables cleared, then `VACUUM`), not this per-process HTTP API. Output is stdout (`text`, `json`, or `stream-json`). That path is **exempt** from [Session Ownership](#session-ownership) and starts no scheduler. **Merge-or-fork write-back** into the profile DB with secret redaction and no JSONL history — insert a new session, or merge into `--session <id>` when its version is unchanged and no live GUI owns it, else insert a fork with `forked_from` — is planned (#2859 / #2860) and is **not** implemented yet.
 
 ---
 
@@ -38,6 +76,7 @@ LibrAgent uses standard HTTP status codes to indicate the success or failure of 
 | `201` | **Created**: The resource (e.g., Session) was successfully created.                                   |
 | `400` | **Bad Request**: The request body is malformed or contains invalid values (e.g., non-absolute paths). |
 | `404` | **Not Found**: The requested resource (Assistant, Session) does not exist.                            |
+| `409` | **Conflict**: A GUI open was refused because the session is open in another process (see [Session Ownership](#session-ownership)). |
 | `500` | **Internal Error**: An unexpected server-side error occurred (e.g., DB failure, config corruption).   |
 
 ---
@@ -98,11 +137,11 @@ Creates a new isolated agent session and starts an initial workflow.
 
 #### Execution Mode & Tool Approval Matrix
 
-| Execution Mode | Standard Approval Tools | Hard Approval Tools |
-| :--- | :--- | :--- |
+| Execution Mode     | Standard Approval Tools                                                                                                                                                                                                                                                                                                                                                                                                                               | Hard Approval Tools                                                                                                                                                                                                                                |
+| :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `normal` (default) | **Requires approval** (`workspace__writeFile`, `workspace__strReplace`, `workspace__editFile`, `workspace__editObject`, `workspace__runShell`, `workspace__runInPersistentShell`, `workspace__spawnProcess`, `workspace__runPowerShell`, `workspace__runInPersistentPowerShell`, `workspace__runCmd`, `workspace__runInPersistentCmd`, `workspace__stopProcess`, `scheduled_task__*` write tools, `media__captureScreen`, `desktop__computerControl`) | **Requires hard approval** (`tool__registerServer` except unauthenticated curated catalog presets, `tool__updateServer`, `media__deployAssistPlugin`, and dynamic shell evaluation: `$(...)`, backticks, `<(...)`, `>(...)`, `eval`, and `source`) |
-| `yolo` | **Auto-approved** | **Requires hard approval** (waits for explicit approval or a raise to `unsafe`) |
-| `unsafe` | **Auto-approved** | **Auto-approved** |
+| `yolo`             | **Auto-approved**                                                                                                                                                                                                                                                                                                                                                                                                                                     | **Requires hard approval** (waits for explicit approval or a raise to `unsafe`)                                                                                                                                                                    |
+| `unsafe`           | **Auto-approved**                                                                                                                                                                                                                                                                                                                                                                                                                                     | **Auto-approved**                                                                                                                                                                                                                                  |
 
 > [!NOTE]
 > Destructive commands and sensitive or protected paths (such as `~/.ssh`, `~/.aws`, application database, and restricted system directories) are **blocked** in every execution mode, not routed to hard approval.
@@ -274,6 +313,60 @@ Retrieves a list of child sessions spawned by a parent session.
 
 ---
 
+### List Sessions
+
+Lists sessions, most recent activity first.
+
+- **Method**: `GET`
+- **Path**: `/api/sessions`
+- **Query Parameters** (all optional):
+  - `limit`: `number` (default: 50, max: 200)
+  - `cursorUpdatedAt`, `cursorId`: the `nextCursor` of the previous page; give both or neither
+  - `search`: case-insensitive match on session name/id or assistant name
+  - `status`: `idle | busy | paused | error | queued | provisioning`
+  - `bookmarked`: `true` for bookmarked sessions only
+
+#### Response Body
+
+```json
+{
+  "sessions": [
+    {
+      "id": "a1b2c3d4e5",
+      "name": "string",
+      "status": "idle",
+      "workspaceOverride": "string (nullable)",
+      "updatedAt": 1739000000000,
+      "lastMessageAt": 1739000000000,
+      "openElsewhere": false
+    }
+  ],
+  "nextCursor": { "updatedAt": 1739000000000, "id": "a1b2c3d4e5" }
+}
+```
+
+Each entry has the session fields of [Get Session Status](#get-session-status), without `pendingApprovals`, plus `openElsewhere`: `true` when the session is held by a live process — for an external HTTP caller that includes the host's own sessions (see [Session Ownership](#session-ownership)). `nextCursor` is `null` on the last page.
+
+---
+
+### Session Events (stream)
+
+Follows one session as [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events), so a frontend does not have to poll.
+
+- **Method**: `GET`
+- **Path**: `/api/sessions/:id/events`
+- **Response**: `text/event-stream`
+
+| Event     | Data                                                                                                     | Sent when                                                                                         |
+| :-------- | :------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------ |
+| `status`  | The [Get Session Status](#get-session-status) body, including `pendingApprovals` and `pendingUserPrompt` | First, then whenever any field changes                                                            |
+| `message` | One [Message Object](#message-object)                                                                    | A message is stored, or a stored message changes. Replace any message you hold with the same `id` |
+| `end`     | `{}`                                                                                                     | The session no longer exists. The stream then closes                                              |
+
+Messages that existed when the stream opened are not replayed; read them with [Get Messages](#get-messages). The stream carries what the backend stores. Token-by-token model output is produced by the frontend that runs the LLM call and is not part of this stream.
+
+---
+
 ### Resume Session
 
 Loads a paused/crashed session into active memory and resumes the workflow.
@@ -288,6 +381,29 @@ Loads a paused/crashed session into active memory and resumes the workflow.
   "status": "resumed"
 }
 ```
+
+---
+
+### Session Ownership
+
+Each `libragent` GUI process hosts its own Session API backend (#2855). A profile may run several backends at once (each with its own `http_port.<pid>` and `.backend.<pid>.json` record). They share the profile SQLite file for persisted data, but session **execution** and ownership are scoped to **one backend process**.
+
+Ownership lives in the profile database and belongs to the backend **process**, not to a window: a GUI refuses to open a session a live sibling backend holds (`409` on its own open path) and lists it as `openElsewhere` until the owner's process is proven dead or its ownership row goes stale (#2856). A process that runs no HTTP server (headless `liblet` / `libragent -p`) never participates in ownership.
+
+- **Header**: do not send `x-frontend-attachment`. Any value returns `400`; the attachment registry, its heartbeats, and `POST /api/frontends` were removed (#2854).
+- **Claiming routes** (`POST /api/sessions/:id/open`, `POST /api/sessions/:id/resume`, `POST /api/sessions/:id/messages`, and `POST /api/sessions`): an HTTP caller neither claims a session nor is refused for ownership. Process ownership applies to the GUI that opened the session.
+- **Read-only routes** never claim and are never refused for ownership: `GET /api/sessions/:id`, `GET /api/sessions/:id/messages`, and the event stream. `GET /api/sessions` sets `openElsewhere: true` on sessions held by any live process — for an external (headerless) caller that includes the host's own sessions.
+- **Liveness**: the owner's heartbeat runs every 5 s; an ownership row is stale after 15 s without one, and a foreign row is released only when its process is proven dead — a probe that cannot prove death keeps it live.
+
+| Status | Body `error`                                                          | Cause                                                                                                                                    |
+| :----- | :-------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| `409`  | `Session <id> is open in another process`                             | The GUI/IPC open path only: a live sibling process owns the session. HTTP claiming routes never return it; ownership shows as `openElsewhere` on the list reply. |
+| `400`  | `x-frontend-attachment is not supported; attachment registry removed` | Any `x-frontend-attachment` header is rejected (#2854).                                                                                  |
+
+**Exempt (no ownership checks on claiming routes):**
+
+- **Headless `liblet` / `libragent -p`**: ephemeral runtime only; it never participates in the ownership guard and runs no scheduler (see `docs/specs/liblet-cli-interface.md` §3.1).
+- **External scripts** without `x-frontend-attachment`: they neither claim a session nor receive `409` for ownership (pre-#2759 automation behavior).
 
 ---
 
@@ -449,6 +565,27 @@ Provide either `toolCallId` (from `GET /api/sessions/:id` `pendingApprovals`) or
 
 ---
 
+### Answer a User Prompt
+
+Answers or cancels the question a session is waiting on (`ui__askUser`, or a secret request). The waiting prompt is `pendingUserPrompt` in [Get Session Status](#get-session-status); it carries the `requestId` to send back and never carries a secret value.
+
+- **Method**: `POST`
+- **Path**: `/api/sessions/:id/channel/prompt`
+
+#### Request Body
+
+```json
+{
+  "requestId": "prompt-request-uuid",
+  "action": "answer | cancel",
+  "value": "the answer (required when action is answer)"
+}
+```
+
+A `requestId` that does not match the waiting prompt returns `404`.
+
+---
+
 ## 🤖 Assistants
 
 ### List Assistants
@@ -500,7 +637,7 @@ Retrieves details for a specific assistant.
 
 ### Health Check
 
-Checks if the server is running and reachable.
+Checks if the server is running, and whether it is ready to run a session.
 
 - **Method**: `GET`
 - **Path**: `/api/health`
@@ -510,9 +647,16 @@ Checks if the server is running and reachable.
 ```json
 {
   "status": "ok",
-  "service": "libr-agent-session-api"
+  "service": "libr-agent-session-api",
+  "version": "0.9.31",
+  "ready": true,
+  "recovery": "pending | ok | failed | skipped"
 }
 ```
+
+- `status: "ok"` only means the HTTP server answered. Wait for `ready: true` before sending work.
+- `ready` becomes `true` when startup session recovery has ended.
+- `recovery` says how it ended: `ok`; `failed` (sessions from a previous run may still be marked busy); or `skipped` (another live backend owns the sessions, so this process left them alone). `pending` goes with `ready: false`.
 
 ---
 

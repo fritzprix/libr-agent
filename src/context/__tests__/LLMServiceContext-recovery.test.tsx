@@ -1,7 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
@@ -15,6 +15,7 @@ import { sleep } from '@/lib/retry-utils';
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
+  emit: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -36,6 +37,17 @@ vi.mock('@/lib/ai-service/factory', () => ({
 }));
 
 // Mock logger
+const toastMessage = vi.hoisted(() => vi.fn());
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), {
+    message: toastMessage,
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  }),
+}));
+
 vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
     info: vi.fn(),
@@ -256,6 +268,18 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
     const getServiceCalls = (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mock.calls;
     expect(getServiceCalls[getServiceCalls.length - 1][0]).toBe('anthropic');
     expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+
+    // The chat got the same fallback notice the Rust executor emits (#2961).
+    expect(emit).toHaveBeenCalledWith(
+      'agent:event',
+      expect.objectContaining({
+        type: 'llmFallbackNotice',
+        sessionId: 'sp4-session',
+        fallbackProvider: 'anthropic',
+        fallbackModel: 'claude-3-5-sonnet-20241022',
+        errorMessage: 'api err',
+      }),
+    );
   });
 
   it('SP4: unmarked abort error is not retried and is reported to Rust', async () => {
@@ -283,6 +307,59 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
 
     // Only 1 attempt — no retries on abort
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
+  });
+
+  describe('recovery cancel toast', () => {
+    const registerCancelHandler = async () => {
+      // More than one hook listens on this channel; keep every handler.
+      const cancelHandlers: Array<(event: unknown) => void> = [];
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-cancel') {
+            cancelHandlers.push(handler as (event: unknown) => void);
+          }
+          return mockUnlisten;
+        },
+      );
+      renderHook(() => useLLMService(), { wrapper: TestWrapper });
+      await waitFor(() => expect(cancelHandlers.length).toBeGreaterThan(0));
+      return (willRetry: boolean) => {
+        for (const handler of cancelHandlers) {
+          handler({
+            payload: {
+              sessionId: 'sp4-session',
+              responseMessageId: 'resp-1',
+              reason: 'reasoning-budget-exceeded',
+              willRetry,
+            },
+          });
+        }
+      };
+    };
+
+    beforeEach(() => {
+      toastMessage.mockClear();
+    });
+
+    it('shows the "Retrying" toast when Rust starts a fresh turn', async () => {
+      const cancel = await registerCancelHandler();
+
+      act(() => {
+        cancel(true);
+      });
+
+      expect(toastMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows no "Retrying" toast when the turn ends in failure', async () => {
+      const cancel = await registerCancelHandler();
+
+      act(() => {
+        cancel(false);
+      });
+
+      expect(toastMessage).not.toHaveBeenCalled();
+    });
   });
 
   describe('cancel between attempts', () => {
@@ -330,14 +407,14 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
       );
 
     it('Rust cancel during the retry wait stops retries and the fallback', async () => {
-      let cancelHandler: ((event: unknown) => void) | undefined;
+      const cancelHandlers: Array<(event: unknown) => void> = [];
       (listen as ReturnType<typeof vi.fn>).mockImplementation(
         async (eventName, handler) => {
           if (eventName === 'llm:completion-request') {
             eventHandler = handler as (event: unknown) => Promise<void>;
           }
           if (eventName === 'llm:completion-cancel') {
-            cancelHandler = handler as (event: unknown) => void;
+            cancelHandlers.push(handler as (event: unknown) => void);
           }
           return mockUnlisten;
         },
@@ -347,19 +424,21 @@ describe('LLMServiceContext – SP4 Retry & Fallback Recovery', () => {
         throw new Error('api err');
       });
       vi.mocked(sleep).mockImplementationOnce(async () => {
-        cancelHandler?.({
-          payload: {
-            sessionId: 'sp4-session',
-            responseMessageId: 'resp-1',
-            reason: 'user',
-          },
-        });
+        for (const handler of cancelHandlers) {
+          handler({
+            payload: {
+              sessionId: 'sp4-session',
+              responseMessageId: 'resp-1',
+              reason: 'user',
+            },
+          });
+        }
       });
 
       renderHook(() => useLLMService(), { wrapper: WrapperWithFallback });
       await waitFor(() => {
         expect(eventHandler).toBeDefined();
-        expect(cancelHandler).toBeDefined();
+        expect(cancelHandlers.length).toBeGreaterThan(0);
       });
 
       await act(async () => {

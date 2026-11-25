@@ -86,7 +86,9 @@
       "description": "描述",
       "fullConfiguration": "完整配置",
       "expand": "展开配置",
-      "collapse": "折叠配置"
+      "collapse": "折叠配置",
+      "pluginOwned": "插件：{{name}}",
+      "pluginOwnedHint": "由插件安装。编辑已禁用；卸载插件即可将其移除。"
     }
   },
   "status": {
@@ -274,7 +276,10 @@
       "subagentsCount_one": "+{{count}} 个子代理",
       "subagentsCount_other": "+{{count}} 个子代理",
       "subagentsKept": "保留子代理",
-      "bookmarkedBadge": "已收藏"
+      "bookmarkedBadge": "已收藏",
+      "openElsewhere": "已在其他地方打开",
+      "forked": "已分叉",
+      "forkedFrom": "从会话 {{id}} 分叉而来"
     },
     "actions": {
       "view": "查看",
@@ -302,7 +307,8 @@
       "confirmDelete": "确认删除",
       "confirmDeleteAria": "确认删除",
       "cancel": "取消",
-      "cancelDeletionAria": "取消删除"
+      "cancelDeletionAria": "取消删除",
+      "openElsewhereAria": "会话 {{name}} 正在另一个进程中打开"
     },
     "emptyState": {
       "title": "暂无会话",
@@ -532,7 +538,7 @@
       "circuitBreaker": "工具循环限制",
       "circuitBreakerDescription": "在停止任务前允许的重复错误或工具调用次数。",
       "maxOutputTokens": "最大输出 Token (默认)",
-      "maxOutputTokensDescription": "如果助手中未指定，则为新会话使用的默认最大输出 token 数。",
+      "maxOutputTokensDescription": "助手未自行指定时使用的默认最大输出 token 数。每次请求都会重新读取。",
       "defaultSessionMaxDepth": "会话分支限制 (高级)",
       "defaultSessionMaxDepthDescription": "控制默认允许的子会话层级数。设置为 0 为无限制。大多数用户可以保持原样。",
       "defaultSessionMaxDepthPlaceholder": "例如：3",
@@ -894,7 +900,31 @@
       "importSuccessWithOverwriteAndSkipped_one": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
       "importSuccessWithOverwriteAndSkipped_other": "已导入 {{count}} 个技能（已覆盖 {{overwrittenCount}} 个，已跳过 {{skippedCount}} 个）",
       "importSkippedOnly_one": "已跳过 {{count}} 个冲突技能",
-      "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能"
+      "importSkippedOnly_other": "已跳过 {{count}} 个冲突技能",
+      "commandsToInstall": "要安装的斜杠命令",
+      "agentsToInstall": "要安装的子代理",
+      "agentUnmappedTools": "没有映射的工具不会被授予（如 Bash(git:*) 等受限条目视为无映射）：{{tools}}",
+      "agentGrantedServices": "授予的服务：{{services}}",
+      "agentGrantsAllServices": "没有 tools 行：将授予所有 LibrAgent 服务。",
+      "agentGrantsNoServices": "未授予任何服务（没有可映射的工具）。",
+      "agentWorkspaceGrantNote": "workspace 服务包含文件写入和 shell 执行。",
+      "userConfigTitle": "此插件请求的配置",
+      "userConfigHint": "这些值会在插件运行时提供给插件。敏感值保存在此计算机的安全存储中，不会再次显示。",
+      "userConfigMissing": "必填：{{names}}",
+      "pluginDisabledBadge": "已停用",
+      "pluginUpdateAria": "更新插件",
+      "pluginOwnedBadge": "插件",
+      "pluginOwnedTooltip": "由插件安装。删除该插件才能将其删除。",
+      "disablePlugin": "停用插件",
+      "enablePlugin": "启用插件",
+      "pluginDetails": "详情",
+      "pluginSourceEnabled": "插件已启用。",
+      "pluginSourceDisabled": "插件已停用。它仍保持安装；重新打开会话或输入 /reload 后生效。",
+      "pluginUpdateNoticeTitle": "要更新这个插件吗？",
+      "pluginUpdateNoticeBody": "更新会重新下载插件。它可能改变插件的 MCP 服务器和钩子，它们可以在你的电脑上运行代码。同意即批准整个更新，包括任何变更的 MCP 服务器和钩子。",
+      "pluginUpdateAgree": "同意并更新",
+      "pluginUpdateAvailable": "有可用更新",
+      "pluginUpdatedReload": "插件已更新。将在下次打开会话时生效；输入 /reload 立即应用。"
     },
     "dev": {
       "devOnly": "仅限开发",
@@ -1550,7 +1580,22 @@
       "badgeBuiltin": "内置",
       "badgeMcp": "mcp",
       "viewDescription": "查看说明",
-      "viewSchema": "查看输入模式"
+      "viewSchema": "查看输入模式",
+      "plugins": {
+        "title": "插件",
+        "empty": "此会话中没有启用的插件。使用 /plugin install <git-url> 添加。",
+        "scopeGlobal": "全局",
+        "scopeSession": "会话",
+        "installedAt": "安装时间：{{time}}",
+        "skills": "技能",
+        "hooks": "钩子",
+        "hooksNotApproved": "未批准",
+        "history": "安装记录",
+        "actionInstall": "已安装",
+        "actionUninstall": "已卸载",
+        "disabled": "已停用",
+        "version": "版本"
+      }
     },
     "panels": {
       "shellTitle": "智能体面板",
@@ -1636,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "工具执行错误",
+      "fallbackNoticeLabel": "模型回退",
+      "fallbackNotice": "服务器拒绝了请求（HTTP {{status}}）。正在使用回退模型 {{model}} 重试。",
+      "fallbackNoticeNoStatus": "主模型失败。正在使用回退模型 {{model}} 重试。",
+      "fallbackNoticeDetails": "显示服务器错误",
       "notification": "通知",
       "channel": "频道",
       "assistant": "助手",
@@ -1886,7 +1935,26 @@
     "tryAgain": "重试",
     "goToSettings": "在设置中配置 API 密钥",
     "invalidContextState": "此会话需要更大的上下文上限。请在设置中提高最大输入上下文，然后重试。",
-    "openContextSettings": "打开上下文设置"
+    "openContextSettings": "打开上下文设置",
+    "reasoningStop": {
+      "budgetReason": "模型把输出预算都用在了推理上，没有给出回答，也没有调用工具，因此本轮已停止。",
+      "budgetNumbers": "已使用约 {{used}} 个 token。截止值为 {{budget}} 个 token，即最大输出 Token 的 90%。",
+      "sourceAssistant": "最大输出 Token 为 {{max}}，由此助手设置。更改设置中的默认值不会影响此会话。",
+      "sourceSettings": "最大输出 Token 为 {{max}}，来自 设置 → 聊天界面 → 最大输出 Token (默认)。",
+      "sourceFallback": "最大输出 Token 为 {{max}}，这是内置默认值，因为设置中没有指定。",
+      "budgetNextSteps": "下一步：在设置中调高最大输出 Token (默认)，然后重试。新值从下一次请求开始生效。不做任何更改就重试，通常会以同样的方式停止。",
+      "budgetNextStepsAssistant": "下一步：重试，或缩小请求范围以减少所需的推理。不做任何更改就重试，通常会以同样的方式停止。",
+      "thinkingOnlyReason": "模型只输出了内部推理就结束了：没有回答，也没有调用工具。",
+      "thinkingOnlyNextSteps": "下一步：重试，或要求直接给出回答。如果模型可能触及了输出上限，请先在设置中调高最大输出 Token (默认)。",
+      "thinkingLoopReason": "模型不断重复相同的推理，因此本轮已停止。",
+      "textLoopReason": "模型不断重复相同的文本，因此本轮已停止。",
+      "loopNumbers": "检测到长度为 {{patternLength}} 个字符的模式重复了 {{repetitionCount}} 次。",
+      "thinkingLoopNextSteps": "下一步：重试，或改写、缩小请求。如果这是误报，请在 设置 → 高级 中调高思考循环最小模式长度或思考循环最小重复次数。",
+      "textLoopNextSteps": "下一步：重试，或改写、缩小请求。",
+      "autoRetries": "已使用的自动重试次数：{{retries}}。",
+      "openOutputTokenSettings": "打开最大输出 Token 设置",
+      "openLoopSettings": "打开高级设置"
+    }
   },
   "knowledge": {
     "untitledEntry": "未命名知识条目",
@@ -2068,6 +2136,11 @@
       "docsExport": {
         "title": "以 PDF、Word 或 PowerPoint 获取回答",
         "body": "输入 @skill:docs 并请求报告、提案或会议纪要，助手会保存可直接分享的 PDF、DOCX 或 PPTX 文件。",
+        "cta": "在聊天中试试"
+      },
+      "plugins": {
+        "title": "使用 /plugin install 安装插件",
+        "body": "在聊天或 Skills 中安装 Claude Code 插件，即可解锁新的斜杠命令、子智能体、钩子和 MCP 工具。",
         "cta": "在聊天中试试"
       }
     }

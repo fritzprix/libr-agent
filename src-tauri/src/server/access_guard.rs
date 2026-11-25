@@ -82,8 +82,20 @@ pub fn access_guard(expose: bool) -> impl Filter<Extract = (), Error = Rejection
 }
 
 /// Warp filter: reject with 403 when the remote peer address is None or not a loopback address.
+///
+/// Two sources of the peer address, tried in order:
+/// 1. warp's route-level `remote_addr` — set by warp's own bind path and by `warp::test`.
+/// 2. The `SocketAddr` request extension that `server::init`'s hyper serving path
+///    inserts from the accepted socket. warp's `serve_incoming` reports no peer
+///    address for its sockets (#2956), so the real server relies on this one.
 pub fn loopback_peer_guard() -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::addr::remote()
+        .and(warp::filters::ext::optional::<std::net::SocketAddr>())
+        .map(
+            |route_addr: Option<std::net::SocketAddr>, ext_addr: Option<std::net::SocketAddr>| {
+                route_addr.or(ext_addr)
+            },
+        )
         .and_then(|addr: Option<std::net::SocketAddr>| async move {
             match addr {
                 Some(a) if a.ip().is_loopback() => Ok(()),
@@ -161,6 +173,36 @@ mod tests {
         assert!(
             String::from_utf8_lossy(res.body()).contains("pairing is only permitted from loopback")
         );
+    }
+
+    #[tokio::test]
+    async fn loopback_peer_guard_reads_socket_addr_request_extension() {
+        // The real `server::init` path carries the peer through the request
+        // extension, not warp's route-level remote_addr (#2956).
+        let filter = loopback_peer_guard().map(|| "ok").recover(handle_rejection);
+
+        let res = warp::test::request()
+            .extension(std::net::SocketAddr::from(([127, 0, 0, 1], 54321)))
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), 200);
+
+        let res = warp::test::request()
+            .extension(std::net::SocketAddr::from(([192, 168, 1, 100], 54321)))
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), 403);
+        assert!(
+            String::from_utf8_lossy(res.body()).contains("pairing is only permitted from loopback")
+        );
+
+        // Route-level remote_addr still wins when both are present.
+        let res = warp::test::request()
+            .remote_addr("127.0.0.1:54321".parse().unwrap())
+            .extension(std::net::SocketAddr::from(([10, 0, 0, 1], 54321)))
+            .reply(&filter)
+            .await;
+        assert_eq!(res.status(), 200);
     }
 
     #[tokio::test]

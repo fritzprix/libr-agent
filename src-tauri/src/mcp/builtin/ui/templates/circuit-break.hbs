@@ -112,8 +112,12 @@
       <div class='warning-icon' aria-hidden='true'>⚠️</div>
       <div class='title'>Circuit Breaker Triggered</div>
       <div class='message'>
+        {{#if reason}}
+        {{reason}}
+        {{else}}
         The AI agent has repeatedly called the same tool with identical
         parameters. This usually indicates the agent is stuck in a loop.
+        {{/if}}
       </div>
       <div class='tool-info'>
         <strong>Tool:</strong> {{toolName}}<br />
@@ -168,6 +172,8 @@
               params: {
                 toolName: contextData.toolName,
                 repetitionCount: contextData.repetitionCount,
+                // #2957: the resume guidance must match the break cause.
+                kind: contextData.kind || '',
               },
             },
           },

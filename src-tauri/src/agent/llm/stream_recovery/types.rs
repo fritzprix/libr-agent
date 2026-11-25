@@ -54,6 +54,9 @@ pub enum NonProductiveCompletionReason {
         /// floor(max_tokens * 0.9) from the frontend report.
         reasoning_budget_tokens: usize,
         estimated_thinking_tokens: usize,
+        /// Max output tokens in effect, and where the frontend resolved it from.
+        max_output_tokens: Option<usize>,
+        max_output_tokens_source: Option<String>,
     },
     MalformedToolMarkup {
         assistant_message_id: String,

@@ -36,6 +36,34 @@ fn verify_config_timeout() -> Duration {
     ))
 }
 
+/// Log-mask guard for the verification probe (#2969). While alive, the logger masks the
+/// filled secret values, so lines written during the probe — the failed-connect line of
+/// `start_http_server` and the rmcp transport worker's line carrying the full URL —
+/// cannot leak them. Its registry slot `probe#{server_id}` can never equal a session's
+/// key (session ids contain no `#`), so it cannot clobber a session's shell or MCP
+/// values. Dropping the guard forgets them, covering every exit path of the probe.
+struct ProbeLogMask(String);
+
+impl ProbeLogMask {
+    fn register(server_id: &str, values: &[String]) -> Self {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            register_log_secret_values, MCP_SECRET_MASK_SOURCE,
+        };
+        let slot = format!("probe#{server_id}");
+        register_log_secret_values(&slot, MCP_SECRET_MASK_SOURCE, values);
+        Self(slot)
+    }
+}
+
+impl Drop for ProbeLogMask {
+    fn drop(&mut self) {
+        use crate::mcp::builtin::workspace::persistent_shell::secrets::{
+            forget_log_secret_values, MCP_SECRET_MASK_SOURCE,
+        };
+        forget_log_secret_values(&self.0, MCP_SECRET_MASK_SOURCE);
+    }
+}
+
 pub(crate) fn summarize_tool_names(tools: &[MCPTool]) -> String {
     const MAX_NAMES: usize = 5;
 
@@ -148,12 +176,17 @@ impl McpServerService {
         server_id: &str,
     ) -> Result<Vec<MCPTool>, String> {
         let filled = fill_secrets(secret_store(), server_id, &config).await?;
+        // #2969: the connect below writes log lines while the filled values exist
+        // (start_http_server logs the failed connection, and the rmcp transport can
+        // log the full URL). Keep them in the global log mask for the probe only.
+        let log_mask = ProbeLogMask::register(server_id, filled.log_mask_values());
         let result = match (target.container_session(), &filled.config.transport) {
             (Some(session), TransportConfig::Stdio { .. }) => {
                 Self::verify_stdio_in_container(filled.config.clone(), session).await
             }
             _ => Self::verify_config(filled.config.clone()).await,
         };
+        drop(log_mask);
         result.map_err(|error| filled.mask(&error))
     }
 
@@ -401,6 +434,15 @@ impl McpServerService {
             .map_err(|e| format!("DB error: {}", e))?
             .ok_or_else(|| format!("MCP server '{}' not found", id))?;
 
+        // #2924 (D2): plugin-owned servers are read-only here. They change
+        // only with the plugin that installed them (re-install / uninstall).
+        if let Some(owner) = crate::mcp::types::plugin_source_of(&existing.config) {
+            return Err(format!(
+                "MCP server '{}' is owned by plugin '{}' and cannot be edited. Manage it through the plugin (uninstall the plugin to remove it).",
+                existing.name, owner
+            ));
+        }
+
         let existing_config_val: Value = serde_json::from_str(&existing.config)
             .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
         let final_config_val = match config.as_ref() {
@@ -479,9 +521,46 @@ impl McpServerService {
         Self::delete_server_config_with_store(repo, secret_store(), id).await
     }
 
+    /// Delete a plugin-owned MCP server row (plugin uninstall path only).
+    /// Refuses rows that are not plugin-owned — normal removals keep going
+    /// through [`Self::delete_server_config`], which rejects plugin-owned
+    /// rows (#2924 D2).
+    pub(crate) async fn delete_plugin_owned_server(id: &str) -> Result<(), String> {
+        let repo = crate::state::get_mcp_server_repository();
+        let model = repo
+            .get(id)
+            .await
+            .map_err(|e| format!("DB error: {}", e))?
+            .ok_or_else(|| format!("MCP server '{}' not found", id))?;
+        if crate::mcp::types::plugin_source_of(&model.config).is_none() {
+            return Err(format!(
+                "MCP server '{}' is not plugin-owned; delete it through the normal flow",
+                model.name
+            ));
+        }
+        Self::delete_server_config_inner(repo, secret_store(), id).await
+    }
+
     /// [`Self::delete_server_config`] with the secret store passed in. Deleting the row
     /// also drops its `encrypted_secrets`.
     pub(crate) async fn delete_server_config_with_store(
+        repo: &dyn MCPServerRepository,
+        store: &dyn SecretStore,
+        id: &str,
+    ) -> Result<(), String> {
+        // #2924 (D2): plugin-owned servers are removed only with their plugin.
+        if let Ok(Some(model)) = repo.get(id).await {
+            if let Some(owner) = crate::mcp::types::plugin_source_of(&model.config) {
+                return Err(format!(
+                    "MCP server '{}' is owned by plugin '{}' and cannot be deleted. Uninstall the plugin to remove it.",
+                    model.name, owner
+                ));
+            }
+        }
+        Self::delete_server_config_inner(repo, store, id).await
+    }
+
+    async fn delete_server_config_inner(
         repo: &dyn MCPServerRepository,
         store: &dyn SecretStore,
         id: &str,
@@ -593,5 +672,112 @@ mod verify_tests {
 
         assert_eq!(std::fs::read_to_string(&seen).unwrap(), "the-secret-value");
         assert!(!error.contains("the-secret-value"), "{error}");
+    }
+}
+
+// #2924 (D2, gatekeeper G1.4): plugin-owned MCP server rows are read-only —
+// they change only through the plugin lifecycle (install/update/uninstall).
+#[cfg(test)]
+mod plugin_guard_tests {
+    use super::*;
+    use crate::repositories::mcp_server_repository::SqliteMCPServerRepository;
+
+    async fn memory_db() -> sea_orm::DatabaseConnection {
+        use sea_orm_migration::MigratorTrait;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        db
+    }
+
+    fn plugin_config(name: &str, owner: &str) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "transport": { "type": "http", "url": format!("https://{name}.example/mcp") },
+            "pluginSource": format!("plugin:{owner}")
+        })
+    }
+
+    fn plain_config(name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "name": name,
+            "transport": { "type": "http", "url": format!("https://{name}.example/mcp") }
+        })
+    }
+
+    #[tokio::test]
+    async fn update_refuses_plugin_owned_servers_only() {
+        let db = memory_db().await;
+        let repo = SqliteMCPServerRepository::new(db);
+        let owned = repo
+            .create("owned", plugin_config("owned", "plugin-ee00000000000001"))
+            .await
+            .unwrap();
+        let error = McpServerService::update_server_config(
+            &repo,
+            owned.id.clone(),
+            None,
+            Some(plugin_config("owned", "plugin-ee00000000000001")),
+            SaveVerification::Pending,
+        )
+        .await
+        .expect_err("plugin-owned rows must not be editable");
+        assert!(error.contains("owned by plugin"), "{error}");
+        assert!(error.contains("plugin-ee00000000000001"), "{error}");
+
+        // Non-plugin rows keep working through the normal edit path.
+        let normal = repo.create("normal", plain_config("normal")).await.unwrap();
+        let updated = McpServerService::update_server_config(
+            &repo,
+            normal.id.clone(),
+            Some("renamed".to_string()),
+            None,
+            SaveVerification::Pending,
+        )
+        .await
+        .expect("name-only update of a normal row");
+        assert_eq!(updated.name, "renamed");
+    }
+
+    #[tokio::test]
+    async fn normal_delete_refuses_plugin_owned_but_uninstall_path_removes_it() {
+        let _guard = crate::state::lock_test_global_state().await;
+        let db = memory_db().await;
+        let repo = SqliteMCPServerRepository::new(db.clone());
+        crate::state::set_mcp_server_repository(SqliteMCPServerRepository::new(db));
+
+        let owned = repo
+            .create(
+                "owned-del",
+                plugin_config("owned-del", "plugin-ee00000000000002"),
+            )
+            .await
+            .unwrap();
+        let error = McpServerService::delete_server_config_with_store(
+            &repo,
+            &crate::mcp::secret_templates::MemorySecretStore::default(),
+            &owned.id,
+        )
+        .await
+        .expect_err("plugin-owned rows must not be deletable from the UI path");
+        assert!(error.contains("cannot be deleted"), "{error}");
+        assert!(error.contains("Uninstall the plugin"), "{error}");
+
+        // The plugin-uninstall path removes the row it owns.
+        McpServerService::delete_plugin_owned_server(&owned.id)
+            .await
+            .expect("uninstall path may delete owned rows");
+        assert!(repo.get(&owned.id).await.unwrap().is_none());
+
+        // …and refuses rows it does not own.
+        let normal = repo.create("plain", plain_config("plain")).await.unwrap();
+        let error = McpServerService::delete_plugin_owned_server(&normal.id)
+            .await
+            .expect_err("only plugin-owned rows go through this path");
+        assert!(error.contains("not plugin-owned"), "{error}");
     }
 }

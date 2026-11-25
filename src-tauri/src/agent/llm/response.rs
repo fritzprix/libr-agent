@@ -1,4 +1,6 @@
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{enforce_cached_message_limit, AgentSession};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::types::ToolCall;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -201,6 +203,7 @@ async fn reset_streaming_recovery_retry_counts(
         *session.repeated_text_loop_retry_count.write().await = 0;
         *session.reasoning_budget_retry_count.write().await = 0;
         *session.malformed_tool_markup_retry_count.write().await = 0;
+        *session.invalid_tool_args_retry_count.write().await = 0;
     }
 }
 
@@ -243,6 +246,72 @@ pub async fn initialize_pending_execution_for_testing(
     .await;
 }
 
+/// Request a new completion after a reply with invalid tool-call arguments was
+/// discarded. The reply was not cached, emitted, or persisted.
+#[allow(clippy::too_many_arguments)]
+async fn resample_after_invalid_tool_args(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    tool_name: &str,
+    attempt: u32,
+    max_resamples: u32,
+) -> Result<(), String> {
+    {
+        let active = active_sessions.read().await;
+        let Some(session) = active.get(session_id) else {
+            return Err(format!("Session not found: {}", session_id));
+        };
+        if session.cancellation_token.is_cancelled() {
+            log::info!(
+                "Workflow was cancelled for session {}. Discarding the reply with invalid tool-call arguments without a resample.",
+                session_id
+            );
+            return Ok(());
+        }
+    }
+
+    log::warn!(
+        "Resampling session {} after invalid tool-call arguments for {} ({}/{})",
+        session_id,
+        crate::agent::llm::circuit_breaker::sanitize_circuit_breaker_log_tool_name(tool_name),
+        attempt,
+        max_resamples
+    );
+
+    crate::agent::llm::request_llm_completion_with_recovery(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id.to_string(),
+    )
+    .await
+    .map_err(|error| {
+        format!(
+            "Failed to request LLM completion after invalid tool-call arguments: {}",
+            error
+        )
+    })
+}
+
+/// True when a reply that duplicates the last cached message must still be
+/// processed (#2967): the session is Busy and no tool execution is pending, so
+/// this reply is the only thing that can settle the turn. The resample case
+/// lands here — the discarded invalid reply cached nothing — and dropping the
+/// matching reply would leave the session busy forever.
+async fn busy_session_awaits_reply(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> bool {
+    let sessions = active_sessions.read().await;
+    sessions.get(session_id).is_some_and(|session| {
+        session.metadata.status == SessionStatus::Busy && session.pending_execution.is_none()
+    })
+}
+
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
     session_repo: &Arc<dyn SessionRepository>,
@@ -275,6 +344,18 @@ pub async fn handle_llm_response(
             false
         }
     };
+
+    // #2967: a duplicate is only safe to drop when something else will settle
+    // the turn (the previous turn already finished, or a tool execution is
+    // pending). A matching reply on a Busy session with nothing pending is the
+    // resample case and must be processed; the expected-response-id guard
+    // still rejects a genuine double delivery of an already-consumed reply.
+    // Note the changed outcome for that genuine double delivery on a Busy
+    // session: it no longer returns Ok(()) silently here — it falls through
+    // to the expected-response-id guard, which returns an error the executor
+    // logs at error level. No state is damaged by the rejection.
+    let is_duplicate =
+        is_duplicate && !busy_session_awaits_reply(active_sessions, &session_id).await;
 
     if is_duplicate {
         log::info!(
@@ -316,7 +397,8 @@ pub async fn handle_llm_response(
         let event = crate::agent::events::AgentEvent::WorkflowStarted {
             session_id: session_id.clone(),
         };
-        crate::agent::tauri_events::emit_agent_event(app_handle, event)
+        TauriEventDispatcher::from_handle(app_handle)
+            .emit_agent_event(event)
             .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
@@ -331,11 +413,32 @@ pub async fn handle_llm_response(
         .await?;
     }
 
-    // [Truncated/Malformed tool-args] Keep the tool call in history with redacted
-    // argument values and do not retry silently. Let execute_tool_calls return a
-    // guided tool-error result with budget, truncation, and split-work guidance.
-    if let Some(tool_calls) = assistant_message.tool_calls.as_mut() {
-        crate::agent::llm::tool_args_validation::redact_invalid_tool_call_args(tool_calls);
+    // [Truncated/Malformed tool-args] A reply whose tool-call arguments are not a
+    // JSON object (usually cut off at the output-token limit by degenerate
+    // generation) never goes into history. Resample it a bounded number of times;
+    // after that the policy replaces the calls with a circuit break.
+    if let response_circuit_breaker::InvalidToolArgsOutcome::Resample {
+        tool_name,
+        attempt,
+        max_resamples,
+    } = response_circuit_breaker::apply_invalid_tool_args_policy(
+        active_sessions,
+        &session_id,
+        &mut assistant_message,
+    )
+    .await
+    {
+        return resample_after_invalid_tool_args(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            &session_id,
+            &tool_name,
+            attempt,
+            max_resamples,
+        )
+        .await;
     }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
@@ -486,7 +589,8 @@ pub async fn handle_llm_response(
         session_id: session_id.clone(),
         message: Box::new(assistant_message.clone()),
     };
-    crate::agent::tauri_events::emit_agent_event(app_handle, message_added_event)
+    TauriEventDispatcher::from_handle(app_handle)
+        .emit_agent_event(message_added_event)
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
     let msg_for_db = assistant_message.clone();

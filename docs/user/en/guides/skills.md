@@ -114,7 +114,7 @@ Chat `@skill:` autocomplete is the freshest list. Common names:
 
 How to split work across child sessions: [Sub-agents & orchestration](sub-agents.md).
 
-`delegate`, `teamwork`, `org`, `org-restructure`, `divide-conquer`, `hub-spoke`, `pipeline`, `consensus-delegation`, `gatekeeper`, `pair-programming`, `recruit`, `boost`
+`delegate`, `teamwork`, `org`, `divide-conquer`, `consensus-delegation`, `recruit`, `boost`
 
 ### Scheduling and wake-ups
 
@@ -126,7 +126,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ### Research and documents
 
-`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `repo-wiki`, `soul-awakening`
+`deep-research`, `science-search`, `knowledge-distiller`, `docs`, `visualize`, `workspace-indexer`, `soul-awakening`
 
 `science-search` — Search scholarly papers, look up DOIs, similar works, and citations (free, no API key)
 
@@ -134,7 +134,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 ### Development and integrations
 
-`git-workflow`, `bench`, `fine-tune`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
+`git-workflow`, `email-integration`, `calendar-mgmt`, `telegram-cli`, `x-cli`, `ig-cli`, `skill-creator`, `skill-deployer`, `tool-creator`, `playbook-creator`
 
 ### Common combinations
 
@@ -151,6 +151,23 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 | Email                          | `@skill:email-integration`                              |
 | Assistants                     | [Assistants](assistants.md)                             |
 | Recurring work                 | [Playbooks](playbooks.md) · [Automation](automation.md) |
+
+---
+
+## Plugins (Claude Code compatible)
+
+LibrAgent supports installing Claude Code plugins globally from **Skills** or for a single session directly in chat:
+
+- **Install in chat**: Type `/plugin install <source>` to add a plugin to the current session.
+- **Update plugins**: Type `/plugin update` or use the update indicator in **Skills**.
+- **What plugins can provide**:
+  - **Skills** (automatically namespaced if a skill name collides)
+  - **Slash commands** (`commands/`)
+  - **Subagents** (`agents/`)
+  - **MCP servers** (started after install-time approval)
+  - **Lifecycle hooks** (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`)
+
+You can enable, disable, or uninstall plugins at any time from **Skills** or the session tools modal.
 
 ---
 

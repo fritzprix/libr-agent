@@ -26,11 +26,22 @@ const MAX_HOLD_MS = 6 * 60 * 60 * 1000;
 // Reading a start time spawns a process outside Linux, and waiters poll every second.
 const IDENTITY_RECHECK_MS = 30000;
 const GUARD_STALE_MS = 30000;
-// PowerShell cold-start on Windows CI can take several seconds; never hang forever.
-const PID_START_TIMEOUT_MS = 15000;
+// Waiters call pidStart from tryAcquire (reclaimIfStale) on the hot path.
+// A hung PowerShell must fail open (null) instead of stalling every cargo
+// waiter; identity then falls back to pidAlive + MAX_HOLD_MS.
+// On loaded Windows CI runners, PowerShell startup can take 4-6s; cap the
+// spawn, then remember a failed own-PID read for IDENTITY_RECHECK_MS so each
+// 1s poll does not re-spawn. After that window, retry (a later call may
+// succeed once PowerShell warms up — #2848).
+const PID_START_TIMEOUT_MS = 8000;
 
 const identityCheckedAt = new Map();
+/** @type {string | null | undefined} undefined = unset; null = recent failure */
 let ownPidStart;
+/** When ownPidStart was last set to null (failed read). */
+let ownPidStartFailedAt = 0;
+/** Production reader; tests may replace it to count spawns. */
+let readStartTime;
 
 function slotDir(env = process.env) {
   if (env.LIBRAGENT_RUST_SLOT_DIR) {
@@ -72,6 +83,11 @@ function readHolder(file) {
 
 /** A value that changes when `pid` is reused; null where it cannot be read. */
 function pidStart(pid) {
+  // Dead PIDs have no start time. Skip PowerShell/`ps` so tests and waiters
+  // do not stall on Get-Process for a process that already exited.
+  if (!pidAlive(pid)) {
+    return null;
+  }
   if (process.platform === 'linux') {
     try {
       const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
@@ -102,15 +118,56 @@ function pidStart(pid) {
   return result.status === 0 ? result.stdout.trim() || null : null;
 }
 
-/** Cache this process's start time so Windows does not spawn PowerShell twice. */
+readStartTime = pidStart;
+
+/**
+ * Cache this process's start time so Windows does not spawn PowerShell twice
+ * on the waiter hot path. A successful read is permanent. A failed read is
+ * remembered for IDENTITY_RECHECK_MS, then retried — a later call may succeed
+ * after PowerShell warms up (#2848). Inventing an identity would not match
+ * pidStart() in other processes, so they would reclaim a live slot.
+ */
 function startTimeFor(pid) {
   if (pid === process.pid) {
-    if (ownPidStart === undefined) {
-      ownPidStart = pidStart(pid);
+    if (ownPidStart !== undefined) {
+      if (ownPidStart !== null) {
+        return ownPidStart;
+      }
+      if (Date.now() - ownPidStartFailedAt < IDENTITY_RECHECK_MS) {
+        return null;
+      }
+      // Failure window elapsed: fall through and re-read.
     }
-    return ownPidStart;
+    const value = readStartTime(pid);
+    if (value !== null) {
+      ownPidStart = value;
+    } else {
+      ownPidStart = null;
+      ownPidStartFailedAt = Date.now();
+    }
+    return value;
   }
-  return pidStart(pid);
+  return readStartTime(pid);
+}
+
+/** Test helper: drop cached identity so the next acquire re-reads start time. */
+function resetIdentityCacheForTests() {
+  ownPidStart = undefined;
+  ownPidStartFailedAt = 0;
+  identityCheckedAt.clear();
+  readStartTime = pidStart;
+}
+
+/** Test helper: replace the start-time reader (count spawns / force failures). */
+function setStartTimeReaderForTests(reader) {
+  readStartTime = reader;
+}
+
+/** Test helper: age a cached failed own-PID read past IDENTITY_RECHECK_MS. */
+function ageFailedOwnStartForTests() {
+  if (ownPidStart === null) {
+    ownPidStartFailedAt = Date.now() - IDENTITY_RECHECK_MS - 1;
+  }
 }
 
 function pidWasReused(holder) {
@@ -240,9 +297,15 @@ function releaseBuildSlot(slot) {
 }
 
 module.exports = {
+  IDENTITY_RECHECK_MS,
   acquireBuildSlot,
+  ageFailedOwnStartForTests,
   maxConcurrent,
+  pidStart,
   releaseBuildSlot,
+  resetIdentityCacheForTests,
+  setStartTimeReaderForTests,
   slotDir,
+  startTimeFor,
   tryAcquire,
 };

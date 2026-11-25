@@ -162,6 +162,47 @@ mod tests {
         );
     }
 
+    // #2946: the temp-directory variables the shell tool injects really reach
+    // the spawned command, overriding the platform's own OS temp defaults.
+    #[tokio::test]
+    async fn a_host_command_carries_the_session_scratch_temp_dir() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let scratch = "/data/workspaces/s1/.libragent/tmp";
+        let mut env_vars = std::collections::HashMap::new();
+        crate::mcp::builtin::workspace::utils::set_session_temp_env(&mut env_vars, scratch);
+        let config = IsolatedProcessConfig {
+            session_id: "isolation-scratch-host-session".to_string(),
+            workspace_path: workspace.path().to_path_buf(),
+            working_directory: None,
+            command: "echo ok".to_string(),
+            args: vec![],
+            env_vars,
+            secrets: Default::default(),
+            isolation_level: IsolationLevel::Basic,
+            shell_type: None,
+            run_as_root: false,
+        };
+
+        let cmd = SessionIsolationManager::new()
+            .create_isolated_command(config)
+            .await
+            .expect("host command");
+        let env_value = |name: &str| {
+            cmd.as_std()
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        for key in crate::mcp::builtin::workspace::utils::SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                env_value(key).as_deref(),
+                Some(scratch),
+                "{key} must reach the spawned command"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn a_host_command_gets_session_secrets_and_call_env_wins() {
         let workspace = tempfile::tempdir().expect("workspace");

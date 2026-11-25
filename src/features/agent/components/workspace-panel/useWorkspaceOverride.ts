@@ -5,7 +5,7 @@ import {
   setWorkspaceOverride,
   cancelWorkspaceOverride,
 } from '@/lib/backend';
-import { open } from '@tauri-apps/plugin-dialog';
+import { openDialog as open } from '@/lib/backend/dialog';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';

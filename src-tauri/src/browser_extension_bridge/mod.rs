@@ -15,7 +15,10 @@ pub use messages::{
 
 use std::path::PathBuf;
 
-/// Start the bridge server if it is not already running.
+/// Start this process's extension bridge (idempotent).
+///
+/// Each backend binds its own loopback port, falling back from
+/// [`DEFAULT_BRIDGE_PORT`] when the preferred port is taken (#2858).
 pub fn ensure_started() {
     ExtensionBridge::global().ensure_started();
 }

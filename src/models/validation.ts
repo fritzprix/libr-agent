@@ -15,6 +15,9 @@ const AssistantConfigSchema = z
     allowedBuiltInServiceAliases: z.array(z.string()).optional(),
     disabledSkills: z.array(z.string()).optional(),
     deletionProtected: z.boolean().default(false),
+    pluginSource: z.string().optional(),
+    pluginSourceName: z.string().optional(),
+    pluginScope: z.string().optional(),
   })
   .passthrough();
 
@@ -67,6 +70,9 @@ export const parseAssistant = (data: unknown): Assistant => {
     allowedBuiltInServiceAliases: config.allowedBuiltInServiceAliases,
     disabledSkills: config.disabledSkills,
     deletionProtected: config.deletionProtected ?? false,
+    pluginSource: config.pluginSource,
+    pluginSourceName: config.pluginSourceName,
+    pluginScope: config.pluginScope,
   };
 };
 

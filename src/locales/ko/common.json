@@ -86,7 +86,9 @@
       "description": "설명",
       "fullConfiguration": "전체 설정",
       "expand": "설정 펼치기",
-      "collapse": "설정 접기"
+      "collapse": "설정 접기",
+      "pluginOwned": "플러그인: {{name}}",
+      "pluginOwnedHint": "플러그인이 설치한 에이전트입니다. 수정은 비활성화되며, 플러그인을 제거하면 함께 삭제됩니다."
     }
   },
   "status": {
@@ -274,7 +276,10 @@
       "subagentsCount_one": "+{{count}}개의 하위 에이전트",
       "subagentsCount_other": "+{{count}}개의 하위 에이전트",
       "subagentsKept": "하위 에이전트 유지됨",
-      "bookmarkedBadge": "북마크됨"
+      "bookmarkedBadge": "북마크됨",
+      "openElsewhere": "다른 곳에서 열림",
+      "forked": "포크됨",
+      "forkedFrom": "세션 {{id}}에서 포크됨"
     },
     "actions": {
       "view": "보기",
@@ -302,7 +307,8 @@
       "confirmDelete": "삭제 확인",
       "confirmDeleteAria": "삭제 확인",
       "cancel": "취소",
-      "cancelDeletionAria": "삭제 취소"
+      "cancelDeletionAria": "삭제 취소",
+      "openElsewhereAria": "세션 {{name}}이(가) 다른 프로세스에서 열려 있습니다"
     },
     "emptyState": {
       "title": "아직 세션이 없습니다",
@@ -532,7 +538,7 @@
       "circuitBreaker": "도구 루프 제한",
       "circuitBreakerDescription": "작업을 중단하기 전까지 허용되는 반복 오류 또는 도구 실행 횟수입니다.",
       "maxOutputTokens": "최대 출력 토큰 (기본값)",
-      "maxOutputTokensDescription": "어시스턴트가 지정하지 않은 경우 새 세션에 대한 기본 최대 출력 토큰 수입니다.",
+      "maxOutputTokensDescription": "어시스턴트가 따로 지정하지 않았을 때 쓰는 기본 최대 출력 토큰 수입니다. 요청마다 다시 읽습니다.",
       "defaultSessionMaxDepth": "세션 분기 제한 (고급)",
       "defaultSessionMaxDepthDescription": "기본적으로 허용되는 하위 세션 레벨 수를 제어합니다. 제한 없음을 위해 0으로 설정하세요. 대부분의 사용자는 그대로 두셔도 됩니다.",
       "defaultSessionMaxDepthPlaceholder": "예: 3",
@@ -894,7 +900,55 @@
       "importSuccessWithOverwriteAndSkipped_one": "스킬 {{count}}개를 가져왔습니다 ({{overwrittenCount}}개 덮어씀, {{skippedCount}}개 건너뜀)",
       "importSuccessWithOverwriteAndSkipped_other": "스킬 {{count}}개를 가져왔습니다 ({{overwrittenCount}}개 덮어씀, {{skippedCount}}개 건너뜀)",
       "importSkippedOnly_one": "충돌하는 스킬 {{count}}개를 건너뛰었습니다",
-      "importSkippedOnly_other": "충돌하는 스킬 {{count}}개를 건너뛰었습니다"
+      "importSkippedOnly_other": "충돌하는 스킬 {{count}}개를 건너뛰었습니다",
+      "installConfirmTitle": "스킬 및 훅 검토",
+      "installConfirmDescription": "설치할 스킬과 세션 중 승인된 플러그인 훅 실행 여부를 확인하세요.",
+      "skillsToInstall": "설치할 스킬",
+      "hooksToInstall": "플러그인 훅",
+      "hookStatusExecuted": "실행됨",
+      "hookStatusStubbed": "지원되지 않음",
+      "approveHooksLabel": "훅 실행 허용",
+      "approveHooksHint": "지원되는 훅 이벤트는 승인 후 세션 중 자동으로 실행됩니다. 지원되지 않는 이벤트는 건너뜁니다.",
+      "mcpServersToInstall": "플러그인 MCP 서버",
+      "approveHooksMcpLabel": "훅 실행 및 MCP 서버 시작 허용",
+      "approveMcpLabel": "MCP 서버 시작 허용",
+      "approveMcpHint": "승인된 MCP 서버는 세션이 열릴 때 자동으로 시작됩니다. 승인된 훅 이벤트도 자동으로 실행되며, 지원되지 않는 이벤트는 건너뜁니다.",
+      "mcpEnvNames": "env: {{names}}",
+      "mcpHeaderNames": "headers: {{names}}",
+      "installWithMcp": "설치하고 서버 승인",
+      "approveHooksToolApprovalHint": "이 플러그인에는 도구 호출을 허용, 확인 요청 또는 차단할 수 있는 PreToolUse 훅이 포함되어 있습니다.",
+      "installWithoutHooks": "훅 미승인으로 설치",
+      "installWithHooks": "훅 승인 후 설치",
+      "pluginSourcesTitle": "설치된 플러그인 소스",
+      "hooksApproved": "훅이 승인되어 실행될 수 있습니다",
+      "hooksNotApproved": "훅이 설치되었으나 실행 승인되지 않았습니다",
+      "hookEvents": "훅 이벤트",
+      "pluginSourceUpdated": "플러그인을 업데이트했습니다.",
+      "pluginSourceRemoved": "플러그인 소스를 제거했습니다.",
+      "commandsToInstall": "설치할 슬래시 명령",
+      "agentsToInstall": "설치될 서브에이전트",
+      "agentUnmappedTools": "매핑이 없는 도구는 허용되지 않습니다 (Bash(git:*) 같은 제한 항목은 매핑 없는 것으로 처리): {{tools}}",
+      "agentGrantedServices": "허용되는 서비스: {{services}}",
+      "agentGrantsAllServices": "tools 줄이 없음: 모든 LibrAgent 서비스가 허용됩니다.",
+      "agentGrantsNoServices": "허용되는 서비스 없음 (매핑된 도구 없음).",
+      "agentWorkspaceGrantNote": "workspace 서비스는 파일 쓰기 및 셸 실행을 포함합니다.",
+      "userConfigTitle": "이 플러그인이 요청하는 설정",
+      "userConfigHint": "이 값은 플러그인이 실행될 때 전달됩니다. 민감한 값은 이 컴퓨터의 보안 저장소에 보관되며 다시 표시되지 않습니다.",
+      "userConfigMissing": "필수: {{names}}",
+      "pluginDisabledBadge": "비활성",
+      "pluginUpdateAria": "플러그인 업데이트",
+      "pluginOwnedBadge": "플러그인",
+      "pluginOwnedTooltip": "플러그인이 설치한 스킬입니다. 삭제하려면 플러그인을 제거하세요.",
+      "disablePlugin": "플러그인 끄기",
+      "enablePlugin": "플러그인 켜기",
+      "pluginDetails": "자세히",
+      "pluginSourceEnabled": "플러그인을 켰습니다.",
+      "pluginSourceDisabled": "플러그인을 껐습니다. 설치된 상태로 남으며, 세션을 다시 열거나 /reload를 입력하면 적용됩니다.",
+      "pluginUpdateNoticeTitle": "이 플러그인을 업데이트할까요?",
+      "pluginUpdateNoticeBody": "업데이트는 플러그인을 다시 내려받습니다. 플러그인의 MCP 서버와 훅이 바뀔 수 있고, 이들은 내 컴퓨터에서 코드를 실행할 수 있습니다. 동의하면 바뀐 MCP 서버와 훅을 포함해 이 업데이트 전체를 승인합니다.",
+      "pluginUpdateAgree": "동의하고 업데이트",
+      "pluginUpdateAvailable": "업데이트 있음",
+      "pluginUpdatedReload": "플러그인이 업데이트되었습니다. 세션을 다시 열 때 적용되며, 지금 적용하려면 /reload를 입력하세요."
     },
     "dev": {
       "devOnly": "DEV ONLY",
@@ -981,6 +1035,8 @@
     "noServers": "설치된 확장 기능이 없습니다. 하나를 추가하거나 위의 추천 확장 기능을 선택하세요.",
     "updating": "업데이트 중...",
     "unnamed": "이름 없는 서버",
+    "pluginOwned": "플러그인",
+    "pluginOwnedHint": "플러그인이 설치한 서버입니다. 수정과 삭제는 비활성화되며, 플러그인을 제거하면 함께 삭제됩니다.",
     "noDescription": "설명 없음",
     "transport": "전송 방식",
     "toolsAvailable_one": "{{count}}개 도구 사용 가능",
@@ -1540,7 +1596,22 @@
       "badgeBuiltin": "내장",
       "badgeMcp": "mcp",
       "viewDescription": "설명 보기",
-      "viewSchema": "입력 스키마 보기"
+      "viewSchema": "입력 스키마 보기",
+      "plugins": {
+        "title": "플러그인",
+        "empty": "이 세션에서 활성화된 플러그인이 없습니다. /plugin install <git-url> 명령으로 추가하세요.",
+        "scopeGlobal": "전역",
+        "scopeSession": "세션",
+        "installedAt": "설치 시각: {{time}}",
+        "skills": "스킬",
+        "hooks": "훅",
+        "hooksNotApproved": "승인되지 않음",
+        "history": "설치 기록",
+        "actionInstall": "설치됨",
+        "actionUninstall": "제거됨",
+        "disabled": "비활성",
+        "version": "버전"
+      }
     },
     "panels": {
       "shellTitle": "에이전트 패널",
@@ -1626,6 +1697,10 @@
     },
     "bubble": {
       "toolError": "도구 실행 오류",
+      "fallbackNoticeLabel": "모델 폴백",
+      "fallbackNotice": "서버가 요청을 거부했습니다(HTTP {{status}}). 대체 모델 {{model}}(으)로 다시 시도합니다.",
+      "fallbackNoticeNoStatus": "기본 모델이 실패했습니다. 대체 모델 {{model}}(으)로 다시 시도합니다.",
+      "fallbackNoticeDetails": "서버 오류 보기",
       "notification": "알림",
       "channel": "채널",
       "assistant": "어시스턴트",
@@ -1876,7 +1951,26 @@
     "tryAgain": "다시 시도",
     "goToSettings": "설정에서 API 키 확인하기",
     "invalidContextState": "이 세션에는 더 큰 문맥 한도가 필요합니다. 설정에서 최대 입력 문맥을 올린 뒤 다시 시도하세요.",
-    "openContextSettings": "문맥 설정 열기"
+    "openContextSettings": "문맥 설정 열기",
+    "reasoningStop": {
+      "budgetReason": "모델이 답변이나 도구 호출 없이 추론에 출력 예산을 다 써서 턴을 중단했습니다.",
+      "budgetNumbers": "약 {{used}} 토큰을 사용했습니다. 중단 기준은 {{budget}} 토큰이며, 최대 출력 토큰의 90%입니다.",
+      "sourceAssistant": "최대 출력 토큰은 {{max}}이며 이 어시스턴트에 설정된 값입니다. 설정의 기본값을 바꿔도 이 세션에는 적용되지 않습니다.",
+      "sourceSettings": "최대 출력 토큰은 {{max}}이며 설정 → 채팅 인터페이스 → 최대 출력 토큰 (기본값)에서 온 값입니다.",
+      "sourceFallback": "최대 출력 토큰은 {{max}}입니다. 설정에 값이 없어 내장 기본값을 사용했습니다.",
+      "budgetNextSteps": "다음 단계: 설정에서 최대 출력 토큰 (기본값)을 올린 뒤 다시 시도하세요. 새 값은 다음 요청부터 적용됩니다. 아무것도 바꾸지 않고 다시 시도하면 같은 방식으로 중단되는 경우가 많습니다.",
+      "budgetNextStepsAssistant": "다음 단계: 다시 시도하거나, 추론이 덜 필요하도록 요청 범위를 좁히세요. 아무것도 바꾸지 않고 다시 시도하면 같은 방식으로 중단되는 경우가 많습니다.",
+      "thinkingOnlyReason": "모델이 답변도 도구 호출도 없이 내부 추론만 남기고 끝났습니다.",
+      "thinkingOnlyNextSteps": "다음 단계: 다시 시도하거나 직접적인 답변을 요청하세요. 모델이 출력 한도에 걸렸을 수 있다면 먼저 설정에서 최대 출력 토큰 (기본값)을 올리세요.",
+      "thinkingLoopReason": "모델이 같은 추론을 계속 반복해서 턴을 중단했습니다.",
+      "textLoopReason": "모델이 같은 텍스트를 계속 반복해서 턴을 중단했습니다.",
+      "loopNumbers": "{{patternLength}}자 길이의 패턴이 {{repetitionCount}}회 반복된 것을 감지했습니다.",
+      "thinkingLoopNextSteps": "다음 단계: 다시 시도하거나 요청을 바꿔 쓰거나 범위를 좁히세요. 오탐이었다면 설정 → 고급에서 생각 루프 최소 패턴 길이 또는 생각 루프 최소 반복 횟수를 올리세요.",
+      "textLoopNextSteps": "다음 단계: 다시 시도하거나 요청을 바꿔 쓰거나 범위를 좁히세요.",
+      "autoRetries": "이미 사용한 자동 재시도 횟수: {{retries}}회.",
+      "openOutputTokenSettings": "최대 출력 토큰 설정 열기",
+      "openLoopSettings": "고급 설정 열기"
+    }
   },
   "knowledge": {
     "untitledEntry": "Untitled knowledge entry",
@@ -2058,6 +2152,11 @@
       "docsExport": {
         "title": "답변을 PDF·Word·PowerPoint로 받아 보세요",
         "body": "@skill:docs를 입력하고 보고서·제안서·회의록을 요청하면 바로 공유할 수 있는 PDF, DOCX, PPTX 파일로 저장해 줘요.",
+        "cta": "채팅에서 해보기"
+      },
+      "plugins": {
+        "title": "/plugin install로 플러그인을 설치해 보세요",
+        "body": "채팅이나 Skills에서 Claude Code 플러그인을 설치해 새 슬래시 명령어, 서브 에이전트, 훅, MCP 도구를 바로 쓸 수 있어요.",
         "cta": "채팅에서 해보기"
       }
     }

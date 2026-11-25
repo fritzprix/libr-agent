@@ -15,6 +15,7 @@ use tauri_mcp_agent_lib::agent::llm::{
 use tauri_mcp_agent_lib::agent::state::{AgentSession, PendingEventManager};
 use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::ExecutionMode;
+use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{SessionMetadata, SessionStatus};
@@ -112,6 +113,7 @@ fn build_session_metadata(session_id: &str) -> SessionMetadata {
         docker_container_name: None,
         docker_host_workspace_path: None,
         status_reason: None,
+        forked_from: None,
     }
 }
 
@@ -132,6 +134,7 @@ fn build_active_session(session_id: &str, messages: Vec<Message>) -> AgentSessio
         repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
         reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
         malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
+        invalid_tool_args_retry_count: Arc::new(RwLock::new(0)),
         pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
         pending_approvals: Arc::new(RwLock::new(HashMap::new())),
         pending_user_prompt: tauri_mcp_agent_lib::agent::state::new_user_prompt_slot(),
@@ -158,6 +161,24 @@ fn ensure_active_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
     let sessions = Arc::new(RwLock::new(HashMap::new()));
     init_active_sessions(sessions.clone());
     sessions
+}
+
+/// The resume guidance a resume call with these arguments would produce —
+/// the exact tool path the GUI button and the E2E control resume drive
+/// (#2957 G1.2).
+fn resume_circuit_break_text(args: &serde_json::Value) -> String {
+    let result = UiServer::new()
+        .resume_circuit_break(args.clone())
+        .expect("resume result");
+    result
+        .content
+        .expect("resume content")
+        .into_iter()
+        .find_map(|item| match item {
+            MCPContent::Text { text } => Some(text),
+            _ => None,
+        })
+        .expect("resume text content")
 }
 
 async fn run_preprocess(
@@ -593,7 +614,7 @@ async fn default_resample_budget_exhaustion_promotes_to_hard_break() {
     ];
 
     let active_sessions = ensure_active_sessions();
-    let (preprocess_result, _) = run_preprocess(
+    let (preprocess_result, assistant_message) = run_preprocess(
         &active_sessions,
         session_id,
         history_with_4,
@@ -606,6 +627,30 @@ async fn default_resample_budget_exhaustion_promotes_to_hard_break() {
         "expected hard break once resample budget is exhausted"
     );
     assert!(preprocess_result.tool_loop_resample.is_none());
+    // #2957 G1.2 (contrast): the identical-call loop break carries no kind.
+    // The real injected call's arguments, fed through the resume tool, must
+    // keep the identical-parameters loop text.
+    let break_call = assistant_message
+        .tool_calls
+        .as_ref()
+        .and_then(|calls: &Vec<ToolCall>| calls.first())
+        .expect("hard break injects a ui__circuitBreak call");
+    assert_eq!(break_call.function.name, "ui__circuitBreak");
+    let args: serde_json::Value = serde_json::from_str(&break_call.function.arguments)
+        .expect("break arguments are valid JSON");
+    assert!(
+        args.get("kind").is_none() || args["kind"] == serde_json::json!(""),
+        "the loop break must not claim the invalidToolArgs kind: {args}"
+    );
+    let resume_text = resume_circuit_break_text(&args);
+    assert!(
+        resume_text.contains("times with the same parameters"),
+        "a loop break keeps the loop text: {resume_text}"
+    );
+    assert!(
+        !resume_text.contains("cut off or not valid JSON"),
+        "the invalid-args guidance must not appear for a loop break: {resume_text}"
+    );
 }
 
 #[tokio::test]

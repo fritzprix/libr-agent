@@ -6,6 +6,16 @@ import type { Spotlight } from './types';
  */
 export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
   {
+    id: 'plugins',
+    sinceVersion: '0.9.32',
+    titleKey: 'spotlight.items.plugins.title',
+    bodyKey: 'spotlight.items.plugins.body',
+    ctaLabelKey: 'spotlight.items.plugins.cta',
+    href: { type: 'route', path: '/agent' },
+    surfaces: ['release', 'hub'],
+    priority: 1,
+  },
+  {
     id: 'docs-export',
     sinceVersion: '0.9.30',
     titleKey: 'spotlight.items.docsExport.title',
@@ -13,7 +23,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.docsExport.cta',
     href: { type: 'route', path: '/agent' },
     surfaces: ['release', 'hub'],
-    priority: 1,
+    priority: 2,
   },
   {
     id: 'ui-size',
@@ -23,7 +33,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.uiSize.cta',
     href: { type: 'settings', tab: 'general' },
     surfaces: ['release', 'hub'],
-    priority: 2,
+    priority: 3,
   },
   {
     id: 'everyday-chrome',
@@ -33,7 +43,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.everydayChrome.cta',
     href: { type: 'settings', tab: 'system' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 3,
+    priority: 4,
   },
   {
     id: 'org-portable-bundle',
@@ -43,7 +53,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.orgPortableBundle.cta',
     href: { type: 'route', path: '/org' },
     surfaces: ['release', 'hub'],
-    priority: 4,
+    priority: 5,
   },
   {
     id: 'regenerate-last-turn',
@@ -53,7 +63,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.regenerateLastTurn.cta',
     href: { type: 'route', path: '/agent' },
     surfaces: ['release', 'hub'],
-    priority: 5,
+    priority: 6,
   },
   {
     id: 'knowledge-distill-schedule',
@@ -66,7 +76,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
       action: 'setup-knowledge-distill-schedule',
     },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 6,
+    priority: 7,
   },
   {
     id: 'starter-tasks',
@@ -76,7 +86,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.starterTasks.cta',
     href: { type: 'route', path: '/scheduled-tasks' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 7,
+    priority: 8,
   },
   {
     id: 'visualize-csv',
@@ -86,7 +96,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.visualize.cta',
     href: { type: 'route', path: '/agent' },
     surfaces: ['release', 'hub'],
-    priority: 8,
+    priority: 9,
   },
   {
     id: 'thinking-effort',
@@ -96,7 +106,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.thinkingEffort.cta',
     href: { type: 'settings', tab: 'ai-models' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 9,
+    priority: 10,
   },
   {
     id: 'knowledge-graph',
@@ -106,7 +116,7 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.knowledgeGraph.cta',
     href: { type: 'route', path: '/knowledge' },
     surfaces: ['release', 'hub', 'wait'],
-    priority: 10,
+    priority: 11,
   },
   {
     id: 'themes',
@@ -116,6 +126,6 @@ export const FEATURE_SPOTLIGHTS: readonly Spotlight[] = [
     ctaLabelKey: 'spotlight.items.themes.cta',
     href: { type: 'settings', tab: 'general' },
     surfaces: ['hub'],
-    priority: 11,
+    priority: 12,
   },
 ];

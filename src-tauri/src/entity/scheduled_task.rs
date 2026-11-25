@@ -41,6 +41,13 @@ pub struct Model {
     pub last_run_at: Option<i64>,
     /// Epoch milliseconds of next scheduled trigger (computed on save/run)
     pub next_run_at: Option<i64>,
+    /// Run id of the backend process that claimed the current execution
+    /// (None = free). Cross-process execution claim (#2857); the runner sets
+    /// it with a conditional update before firing and clears it after.
+    pub run_claim_run: Option<String>,
+    /// Epoch milliseconds when the execution claim lapses (crashed holder);
+    /// a lapsed claim is free for the next claimer (#2857).
+    pub run_claim_expires_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }

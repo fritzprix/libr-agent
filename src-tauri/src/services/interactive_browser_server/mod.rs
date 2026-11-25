@@ -74,8 +74,8 @@ impl InteractiveBrowserServer {
             action_timeout
         );
 
+        crate::browser_extension_bridge::ensure_started();
         let extension_bridge = ExtensionBridge::global();
-        extension_bridge.ensure_started();
 
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),

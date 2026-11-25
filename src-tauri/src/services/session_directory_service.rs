@@ -33,6 +33,8 @@ impl SessionDirectoryService {
             .map_err(|e| format!("Failed to create system skills directory: {e}"))?;
         fs::create_dir_all(base_data_dir.join("user_skills"))
             .map_err(|e| format!("Failed to create user skills directory: {e}"))?;
+        fs::create_dir_all(base_data_dir.join("user_plugins"))
+            .map_err(|e| format!("Failed to create user plugins directory: {e}"))?;
 
         // Create default workspace
         let default_workspace = base_data_dir.join("workspaces").join("default");
@@ -113,6 +115,12 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
             .await
             .map_err(|e| format!("Failed to create session directory '{session_id}': {e}"))?;
 
+        // #2946: the scratch directory exists from the moment the session does,
+        // so a shell or file tool never has to create it first.
+        tokio::fs::create_dir_all(self.get_scratch_dir_unverified(session_id))
+            .await
+            .map_err(|e| format!("Failed to create session scratch directory: {e}"))?;
+
         // Copy from template if available (async)
         let template_path_option = {
             if let Ok(template_lock) = self.template_workspace.read() {
@@ -174,17 +182,60 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     pub fn get_workspace_dir(&self, session_id: &str) -> PathBuf {
         let workspace_dir = self.get_workspace_dir_unverified(session_id);
 
-        // Ensure directory exists if we are calculating it
+        // Ensure directory exists if we are calculating it. Lenient by
+        // contract: callers still get the path and a creation failure is
+        // logged; use `ensure_workspace_dir` where the failure must be
+        // reported (#2942 G5.1).
         if !workspace_dir.exists() {
-            let _ = fs::create_dir_all(&workspace_dir);
+            if let Err(error) = self.ensure_workspace_dir(session_id) {
+                log::warn!("{error}");
+            }
         }
 
         workspace_dir
     }
 
+    /// Ensure the session's default workspace directory exists, reporting
+    /// any creation failure (#2942 G5.1). Reporting variant of
+    /// [`get_workspace_dir`](Self::get_workspace_dir): this directory is the
+    /// SSOT parent of the session plugin store (D1 revised), so session
+    /// creation must be able to observe a failure instead of losing it.
+    /// The session scratch directory (#2946) is created with it.
+    pub fn ensure_workspace_dir(&self, session_id: &str) -> Result<PathBuf, String> {
+        let workspace_dir = self.get_workspace_dir_unverified(session_id);
+        fs::create_dir_all(&workspace_dir).map_err(|error| {
+            format!(
+                "Failed to create session workspace directory {}: {error}",
+                workspace_dir.display()
+            )
+        })?;
+        let scratch_dir = self.get_scratch_dir_unverified(session_id);
+        fs::create_dir_all(&scratch_dir).map_err(|error| {
+            format!(
+                "Failed to create session scratch directory {}: {error}",
+                scratch_dir.display()
+            )
+        })?;
+        Ok(workspace_dir)
+    }
+
     /// Get session workspace directory path without ensuring it exists or performing any I/O.
     pub fn get_workspace_dir_unverified(&self, session_id: &str) -> PathBuf {
         self.base_data_dir.join("workspaces").join(session_id)
+    }
+
+    /// The session scratch directory
+    /// (`{data_dir}/workspaces/<session_id>/.libragent/tmp`, #2946): where the
+    /// agent and its shell should put temporary files.
+    ///
+    /// It sits under the **default** session workspace directory, so it never
+    /// follows a workspace override and it is removed with the session (see
+    /// [`remove_workspace`](Self::remove_workspace), which deletes the whole
+    /// default directory tree).
+    pub fn get_scratch_dir_unverified(&self, session_id: &str) -> PathBuf {
+        self.get_workspace_dir_unverified(session_id)
+            .join(".libragent")
+            .join("tmp")
     }
 
     /// Get the app-local teamwork artifact directory for a governing/root session.
@@ -225,6 +276,49 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
                 .await
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
+
+        // Legacy session-scoped plugin store (#2825, moved by #2942). The
+        // current store lives under the default session workspace directory
+        // (`workspaces/<session_id>/.libragent/plugins`) and is removed with
+        // it; this only cleans up leftovers from old versions.
+        let plugins_dir = self
+            .base_data_dir
+            .join(crate::services::hooks::registry::LEGACY_SESSION_PLUGINS_DIR_NAME)
+            .join(session_id);
+        if plugins_dir.exists() {
+            // #2942 S1.2: log the legacy-directory removal so operators can
+            // tell a deleted leftover from "never existed".
+            log::info!(
+                "[session_plugins] removing legacy session plugin store {} during workspace removal",
+                plugins_dir.display()
+            );
+            tokio::fs::remove_dir_all(&plugins_dir)
+                .await
+                .map_err(|e| format!("Failed to remove session plugins directory: {e}"))?;
+        }
+
+        // #2926 gatekeeper G1.3: session plugin runtime state lives beside
+        // the data dir, not in the workspace — the `CLAUDE_ENV_FILE`
+        // directory, session-scope plugin data dirs, session-scoped secure
+        // option values, and their option cache. Purge them before the
+        // trust directory is deleted (the sweep reads the sidecars there),
+        // so a deleted session leaves nothing behind.
+        crate::services::skill_service::purge_session_plugin_state(&self.base_data_dir, session_id)
+            .await?;
+
+        // #2942 S2.3: hook approval records live outside the workspace
+        // (`session_plugin_trust/<session_id>`), so they do not go away with
+        // the workspace — delete them here, or a recycled session id would
+        // inherit another session's approvals.
+        let trust_dir = self
+            .base_data_dir
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join(session_id);
+        if trust_dir.exists() {
+            tokio::fs::remove_dir_all(&trust_dir)
+                .await
+                .map_err(|e| format!("Failed to remove session plugin trust directory: {e}"))?;
+        }
         Ok(())
     }
 
@@ -233,24 +327,176 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_logs_dir(&self) -> PathBuf {
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(local_data) = dirs::data_local_dir() {
-                return local_data.join("com.fritzprix.libragent").join("logs");
-            }
-        }
+        logs_dir_for(
+            std::env::var_os("LIBRAGENT_DATA_DIR").is_some_and(|value| !value.is_empty()),
+            &self.base_data_dir,
+        )
+    }
+}
 
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(home) = dirs::home_dir() {
-                return home
-                    .join("Library")
-                    .join("Logs")
-                    .join("com.fritzprix.libragent");
-            }
-        }
+/// Resolve the logs directory.
+///
+/// With an explicit `LIBRAGENT_DATA_DIR` override, logs live inside the
+/// overridden dir on **every** platform, so an isolated instance's logs stay
+/// isolated. The platform-specific defaults below are fixed per-app
+/// (Windows AppData\Local, macOS ~/Library/Logs) and would otherwise mix the
+/// isolated instance's logs into the primary instance's.
+fn logs_dir_for(data_dir_override_set: bool, base_data_dir: &Path) -> PathBuf {
+    if data_dir_override_set {
+        return base_data_dir.join("logs");
+    }
 
-        // Fallback for Linux or if platform specific dirs fail
-        self.base_data_dir.join("logs")
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local_data) = dirs::data_local_dir() {
+            return local_data.join("com.fritzprix.libragent").join("logs");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home
+                .join("Library")
+                .join("Logs")
+                .join("com.fritzprix.libragent");
+        }
+    }
+
+    // Fallback for Linux or if platform specific dirs fail
+    base_data_dir.join("logs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::logs_dir_for;
+    use std::path::Path;
+
+    #[test]
+    fn data_dir_override_isolates_logs_on_every_platform() {
+        let base = Path::new("/tmp/isolated-instance");
+        assert_eq!(
+            logs_dir_for(true, base),
+            base.join("logs"),
+            "LIBRAGENT_DATA_DIR must keep logs inside the overridden data dir"
+        );
+    }
+
+    #[test]
+    fn default_data_dir_uses_platform_logs_location() {
+        let base = Path::new("/tmp/default-instance");
+        let resolved = logs_dir_for(false, base);
+        #[cfg(target_os = "linux")]
+        assert_eq!(resolved, base.join("logs"));
+        #[cfg(not(target_os = "linux"))]
+        assert!(
+            !resolved.starts_with(base),
+            "platform default should not be the data dir"
+        );
+    }
+
+    // #2946: the scratch directory is where the shell's TMPDIR points, so it
+    // must exist from session creation and go away with the session.
+    #[tokio::test]
+    async fn scratch_dir_is_created_with_the_session_and_removed_with_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let service = super::SessionDirectoryService::new(temp.path().to_path_buf()).unwrap();
+
+        service.create_session_workspace("s1").await.unwrap();
+        let scratch = service.get_scratch_dir_unverified("s1");
+        assert_eq!(
+            scratch,
+            temp.path()
+                .join("workspaces")
+                .join("s1")
+                .join(".libragent")
+                .join("tmp")
+        );
+        assert!(scratch.is_dir(), "created with the session workspace");
+
+        // The sync path (session registration) creates it too, even when the
+        // workspace directory already existed without it.
+        std::fs::remove_dir_all(&scratch).unwrap();
+        service.ensure_workspace_dir("s1").unwrap();
+        assert!(
+            scratch.is_dir(),
+            "ensure_workspace_dir creates the scratch dir"
+        );
+
+        service.remove_workspace("s1").await.unwrap();
+        assert!(!scratch.exists(), "the scratch dir dies with the session");
+    }
+
+    #[tokio::test]
+    async fn remove_workspace_also_removes_session_plugin_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let service = super::SessionDirectoryService::new(temp.path().to_path_buf()).unwrap();
+        let workspace = temp.path().join("workspaces").join("s1");
+        let plugins = temp.path().join("session_plugins").join("s1");
+        // #2942 S2.3: out-of-workspace trust records must die with the session.
+        let trust = temp
+            .path()
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join("s1");
+        // #2926 gatekeeper G1.3: so must the `CLAUDE_ENV_FILE` directory and
+        // the session-scope plugin data tree.
+        let env_dir = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_ENV_DIR_NAME)
+            .join("s1");
+        let plugin_data = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_DATA_DIR_NAME)
+            .join("sessions")
+            .join("s1");
+        let other = temp.path().join("session_plugins").join("s2");
+        let other_trust = temp
+            .path()
+            .join(crate::services::hooks::registry::SESSION_PLUGIN_TRUST_DIR_NAME)
+            .join("s2");
+        let other_env = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_ENV_DIR_NAME)
+            .join("s2");
+        let other_data = temp
+            .path()
+            .join(crate::services::hooks::registry::PLUGIN_DATA_DIR_NAME)
+            .join("sessions")
+            .join("s2");
+        for dir in [
+            &workspace,
+            &plugins,
+            &trust,
+            &env_dir,
+            &plugin_data,
+            &other,
+            &other_trust,
+            &other_env,
+            &other_data,
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(env_dir.join("session-start.env"), "A=1\n").unwrap();
+
+        service.remove_workspace("s1").await.unwrap();
+
+        assert!(!workspace.exists());
+        assert!(!plugins.exists(), "session plugin store must be cleaned up");
+        assert!(!trust.exists(), "session plugin trust must be cleaned up");
+        assert!(
+            !env_dir.exists(),
+            "session CLAUDE_ENV_FILE dir must be cleaned up"
+        );
+        assert!(
+            !plugin_data.exists(),
+            "session-scope plugin data dirs must be cleaned up"
+        );
+        assert!(other.exists(), "other sessions' stores must be untouched");
+        assert!(
+            other_trust.exists(),
+            "other sessions' trust must be untouched"
+        );
+        assert!(other_env.exists(), "other sessions' env dir untouched");
+        assert!(other_data.exists(), "other sessions' data untouched");
     }
 }

@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-two-session-prompts"
+description = "2565 X-2: parent and child sessions hold overlapping waiting storeAs prompts; harness answers child first and primary second; verifier proves simultaneous pending state, order, and per-session answer isolation via SHA-256 without leaking literals"
+keywords = ["libragent", "session-e2e", "storeas", "multi-session"]
+
+[metadata]
+difficulty = "medium"
+category = "session-api-e2e"
+tags = ["matrix", "X-2", "storeas", "multi-session"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "X-2"
+auto_answer_interactive = true
+approve_standard_tools = true
+resolve_child_interactions = true
+wait_for_overlapping_child_prompt = true
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

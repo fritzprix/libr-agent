@@ -617,3 +617,62 @@ async fn startup_sweep_keeps_entries_when_keychain_still_unavailable() {
 
     assert!(dir.path().join(PENDING_DELETES_FILE_NAME).exists());
 }
+
+/// Two backends on one profile share this file. A fixed temporary name let one
+/// process rename the other's half-written file and then lose its own rename
+/// (`ENOENT`), so a pending delete could silently disappear (#2858 S6).
+#[test]
+fn concurrent_writers_never_share_a_temporary_file() {
+    use super::pending_deletes::{write_pending_deletes, PendingDeletes};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(PENDING_DELETES_FILE_NAME);
+    let writer_count = 8;
+    let rounds = 25;
+    let start = std::sync::Arc::new(std::sync::Barrier::new(writer_count));
+    let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+
+    let mut handles = Vec::new();
+    for writer in 0..writer_count {
+        let path = path.clone();
+        let start = start.clone();
+        let errors = errors.clone();
+        handles.push(std::thread::spawn(move || {
+            start.wait();
+            for round in 0..rounds {
+                let mut pending = PendingDeletes::new();
+                pending.insert((format!("server-{writer}"), format!("KEY_{round}")));
+                if let Err(error) = write_pending_deletes(&path, &pending) {
+                    errors.lock().unwrap().push(error);
+                }
+            }
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("writer thread");
+    }
+
+    let errors = errors.lock().unwrap();
+    assert!(
+        errors.is_empty(),
+        "concurrent writers collided on the temporary file: {:?}",
+        &errors[..errors.len().min(3)]
+    );
+    drop(errors);
+
+    // The file is always one writer's complete list, never a mix or a truncation.
+    let pending = read_pending_deletes(&path).expect("final pending list is readable");
+    assert_eq!(pending.len(), 1, "got {pending:?}");
+
+    // No temporary file outlives the rename.
+    let leftovers: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .filter(|name| name != PENDING_DELETES_FILE_NAME)
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "temporary files were left behind: {leftovers:?}"
+    );
+}

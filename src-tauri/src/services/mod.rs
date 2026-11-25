@@ -7,6 +7,7 @@ pub mod container_attach_fs;
 pub mod docker_provisioning;
 pub mod dropped_file_service;
 pub mod file_export_service;
+pub mod hooks;
 pub mod interactive_browser_server;
 pub mod log_service;
 pub mod mcp_server_service;

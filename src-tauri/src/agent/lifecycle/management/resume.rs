@@ -74,7 +74,7 @@ pub async fn resume_session(
             // Store this failure: an older reason may name a different cause.
             let reason =
                 crate::services::docker_provisioning::failure_reason(&session, &error.to_string());
-            let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+            let dispatcher = TauriEventDispatcher::new(app_handle);
             if let Err(record_error) = record_session_error_with_dispatcher(
                 session_repo,
                 active_sessions,
@@ -149,5 +149,11 @@ pub async fn resume_session(
     .await;
 
     log::info!("Resumed agent session: {}", session_id);
+
+    crate::services::hooks::spawn_session_start(
+        session_id,
+        crate::services::hooks::SessionStartSource::Resume,
+    );
+
     Ok(session)
 }

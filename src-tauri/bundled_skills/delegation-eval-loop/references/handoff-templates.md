@@ -8,7 +8,7 @@ Mechanics (spawn, isolation, tool names): **`delegate`**. This file is for **gen
 
 ## 0. Sprint Contract Checklist (before spawn)
 
-Fill these before `agent__spawnSession` / assignment message:
+Fill these before `agent__spawnSession(..., complexity="...")` or `agent__messageToSession(..., complexity="...")`:
 
 - [ ] Objective is one concrete deliverable (not "improve X")
 - [ ] Authorized paths listed; forbidden paths listed

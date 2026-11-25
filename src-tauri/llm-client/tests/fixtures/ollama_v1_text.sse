@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl-412","object":"chat.completion.chunk","created":1763100200,"model":"llama3.1:8b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-412","object":"chat.completion.chunk","created":1763100200,"model":"llama3.1:8b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":"! How can"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-412","object":"chat.completion.chunk","created":1763100200,"model":"llama3.1:8b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":" I help?"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-412","object":"chat.completion.chunk","created":1763100200,"model":"llama3.1:8b","system_fingerprint":"fp_ollama","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-412","object":"chat.completion.chunk","created":1763100200,"model":"llama3.1:8b","system_fingerprint":"fp_ollama","choices":[],"usage":{"prompt_tokens":23,"completion_tokens":7,"total_tokens":30}}
+
+data: [DONE]
+

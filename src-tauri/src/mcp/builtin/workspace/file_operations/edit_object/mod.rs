@@ -9,7 +9,6 @@ mod ops;
 mod pointer;
 mod toml_ops;
 
-use super::super::workspace_server::path_validation_failure_guidance;
 use super::super::WorkspaceServer;
 use super::utils::format_file_diff;
 use crate::mcp::builtin::error_guidance::{
@@ -48,7 +47,7 @@ impl WorkspaceServer {
             None => return Ok(missing_param_error("path", ToolGroup::Workspace)),
         };
 
-        if path_str.contains("..") {
+        if crate::mcp::builtin::utils::has_parent_traversal(path_str) {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Path traversal patterns (..) are not allowed",
@@ -127,7 +126,7 @@ impl WorkspaceServer {
             .unwrap_or_else(|| self.session_id.clone());
 
         let safe_path = match self
-            .validate_write_path_with_teamwork_access(path_str, Some(target_session_id))
+            .validate_write_path_with_teamwork_access(path_str, Some(target_session_id.clone()))
             .await
         {
             Ok(path) => path,
@@ -137,13 +136,18 @@ impl WorkspaceServer {
                     format!("Path validation failed: {error}"),
                     ToolGroup::Workspace,
                 )
-                .guidance(path_validation_failure_guidance(
-                    &error,
-                    vec![
-                        "Verify the target path is not a protected location".to_string(),
-                        "Use workspace__listDirectory to see available paths".to_string(),
-                    ],
-                ))
+                .guidance(
+                    self.path_failure_guidance(
+                        &error,
+                        path_str,
+                        &target_session_id,
+                        vec![
+                            "Verify the target path is not a protected location".to_string(),
+                            "Use workspace__listDirectory to see available paths".to_string(),
+                        ],
+                    )
+                    .await,
+                )
                 .to_mcp_result());
             }
         };

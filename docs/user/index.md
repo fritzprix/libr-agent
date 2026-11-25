@@ -15,7 +15,7 @@ description: '로컬 에이전트 운영 환경 LibrAgent (libr-agent) — 모�
 ## 왜 LibrAgent인가요?
 
 - **수동 설정 없는 직관적 UI**: JSON 편집이나 터미널 없이 **Extensions**에서 원클릭으로 MCP 프리셋(GitHub, Brave Search 등)을 설치하고 Cursor/VS Code 설정을 가져옵니다.
-- **내장된 멀티 에이전트 오케스트레이션**: `@skill:pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`, `teamwork` 등 검증된 협업 패턴을 채팅에서 바로 실행합니다.
+- **내장된 멀티 에이전트 오케스트레이션**: `@skill:teamwork pipeline`, `teamwork` (hub-and-spoke), `divide-conquer`, `consensus-delegation`, `teamwork` 등 검증된 협업 패턴을 채팅에서 바로 실행합니다.
 - **모델 및 스택 자유도 (Local-First, MIT)**: OpenAI, Anthropic, Gemini, Groq API 키는 물론 로컬 **Ollama** 모델을 동일한 데스크톱 환경에서 연결합니다.
 
 ---

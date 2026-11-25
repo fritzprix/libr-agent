@@ -1,0 +1,6 @@
+data: {"candidates": [{"content": {"parts": [{"text": "The user wants 2+2. That is 4.","thought": true}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 31,"totalTokenCount": 31,"promptTokensDetails": [{"modality": "TEXT","tokenCount": 31}]},"modelVersion": "gemini-2.5-flash","responseId": "kX0waLmKBYnJz7IP8tWKmAU"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "2 + 2"}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 31,"totalTokenCount": 31},"modelVersion": "gemini-2.5-flash","responseId": "kX0waLmKBYnJz7IP8tWKmAU"}
+
+data: {"candidates": [{"content": {"parts": [{"text": " = 4.","thoughtSignature": "CiQBVKhc7xQ2mO0rB9mCxWJ5c2dGDUaTI3T0dHjqf0F7sJjXm1c"}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 31,"candidatesTokenCount": 7,"totalTokenCount": 66,"cachedContentTokenCount": 16,"thoughtsTokenCount": 28},"modelVersion": "gemini-2.5-flash","responseId": "kX0waLmKBYnJz7IP8tWKmAU"}
+

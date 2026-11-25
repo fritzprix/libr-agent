@@ -30,6 +30,9 @@ impl AssistantService {
         name: String,
         config: Value,
     ) -> Result<AssistantModel, String> {
+        // #2923 D2: `plugin:` ids and the pluginSource marker are reserved
+        // for plugin install flows; user creation is rejected.
+        crate::services::skill_service::reject_plugin_agent_mutation(&id, Some(&config))?;
         let name = normalize_assistant_name(&name)?;
         let config_str = config.to_string();
 
@@ -44,6 +47,8 @@ impl AssistantService {
         name: Option<String>,
         config: Option<Value>,
     ) -> Result<AssistantModel, String> {
+        // #2923 D2: plugin-owned assistants are read-only for users.
+        crate::services::skill_service::reject_plugin_agent_mutation(id, config.as_ref())?;
         let name = normalize_optional_assistant_name(name)?;
         let config_str = config.map(|c| c.to_string());
 
@@ -53,6 +58,8 @@ impl AssistantService {
     }
 
     pub async fn delete_assistant(repo: &dyn AssistantRepository, id: &str) -> Result<(), String> {
+        // #2923 D2: removed only together with the owning plugin.
+        crate::services::skill_service::reject_plugin_agent_mutation(id, None)?;
         repo.delete_assistant(id)
             .await
             .map_err(|e| format!("Failed to delete assistant: {}", e))
@@ -125,6 +132,12 @@ impl AssistantService {
         let mut results = Vec::new();
 
         for payload in assistants {
+            // #2923 D2: an import/batch upsert may not create or overwrite
+            // plugin-owned assistants, and may not spoof the marker.
+            crate::services::skill_service::reject_plugin_agent_mutation(
+                &payload.id,
+                Some(&payload.config),
+            )?;
             let normalized_name = normalize_assistant_name(&payload.name)?;
             let config_str = payload.config.to_string();
 
@@ -274,5 +287,170 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
+    }
+}
+
+// #2923 (D2, gatekeeper G1.3): every AssistantService mutation path runs
+// the plugin guard BEFORE touching the store. The recording repository
+// proves the store is never reached for plugin-owned ids.
+#[cfg(test)]
+mod plugin_guard_tests {
+    use super::*;
+    use crate::repositories::DbError;
+    use async_trait::async_trait;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingRepository {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl RecordingRepository {
+        fn record(&self, call: &str) {
+            self.calls.lock().unwrap().push(call.to_string());
+        }
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    fn dummy_model(id: &str) -> AssistantModel {
+        AssistantModel {
+            id: id.to_string(),
+            name: "stored".to_string(),
+            config: "{}".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[async_trait]
+    impl AssistantRepository for RecordingRepository {
+        async fn create_assistant(
+            &self,
+            id: String,
+            _name: String,
+            _config: String,
+        ) -> Result<AssistantModel, DbError> {
+            self.record(&format!("create:{id}"));
+            Ok(dummy_model(&id))
+        }
+        async fn get_assistant(&self, id: &str) -> Result<Option<AssistantModel>, DbError> {
+            self.record(&format!("get:{id}"));
+            Ok(Some(dummy_model(id)))
+        }
+        async fn update_assistant(
+            &self,
+            id: &str,
+            _name: Option<String>,
+            _config: Option<String>,
+        ) -> Result<AssistantModel, DbError> {
+            self.record(&format!("update:{id}"));
+            Ok(dummy_model(id))
+        }
+        async fn delete_assistant(&self, id: &str) -> Result<(), DbError> {
+            self.record(&format!("delete:{id}"));
+            Ok(())
+        }
+        async fn list_assistants(&self) -> Result<Vec<AssistantModel>, DbError> {
+            self.record("list");
+            Ok(Vec::new())
+        }
+        async fn list_assistants_paginated(
+            &self,
+            _limit: u64,
+            _offset: u64,
+        ) -> Result<Vec<AssistantModel>, DbError> {
+            Ok(Vec::new())
+        }
+        async fn search_assistants(&self, _query: &str) -> Result<Vec<AssistantModel>, DbError> {
+            Ok(Vec::new())
+        }
+        async fn check_assistant_exists(&self, _name: &str) -> Result<bool, DbError> {
+            Ok(false)
+        }
+        async fn count_assistants(&self) -> Result<u64, DbError> {
+            Ok(0)
+        }
+    }
+
+    fn plugin_id() -> String {
+        crate::services::skill_service::plugin_agent_id("plugin-aa", "reviewer")
+    }
+
+    #[tokio::test]
+    async fn all_mutations_reject_plugin_owned_ids_before_touching_the_store() {
+        let repo = RecordingRepository::default();
+        let owned = plugin_id();
+        let empty = serde_json::json!({});
+
+        assert!(AssistantService::create_assistant(
+            &repo,
+            owned.clone(),
+            "n".into(),
+            empty.clone()
+        )
+        .await
+        .is_err());
+        assert!(
+            AssistantService::update_assistant(&repo, &owned, None, None)
+                .await
+                .is_err()
+        );
+        assert!(AssistantService::delete_assistant(&repo, &owned)
+            .await
+            .is_err());
+        assert!(AssistantService::batch_upsert_assistants(
+            &repo,
+            vec![AssistantUpsertPayload {
+                id: owned.clone(),
+                name: "n".into(),
+                config: empty.clone(),
+            }]
+        )
+        .await
+        .is_err());
+        assert!(
+            repo.calls().is_empty(),
+            "store must never be reached: {:?}",
+            repo.calls()
+        );
+
+        // Spoofing the ownership marker on a user id is rejected the same way.
+        let spoofed = serde_json::json!({ "pluginSource": "plugin:plugin-aa" });
+        assert!(
+            AssistantService::update_assistant(&repo, "user-row", None, Some(spoofed.clone()))
+                .await
+                .is_err()
+        );
+        assert!(
+            AssistantService::create_assistant(&repo, "user-row".into(), "n".into(), spoofed)
+                .await
+                .is_err()
+        );
+        assert!(AssistantService::batch_upsert_assistants(
+            &repo,
+            vec![AssistantUpsertPayload {
+                id: "user-row".into(),
+                name: "n".into(),
+                config: serde_json::json!({ "pluginSource": "plugin:plugin-aa" }),
+            }]
+        )
+        .await
+        .is_err());
+        assert!(
+            repo.calls().is_empty(),
+            "store must never be reached: {:?}",
+            repo.calls()
+        );
+    }
+
+    #[tokio::test]
+    async fn normal_mutations_still_reach_the_store() {
+        let repo = RecordingRepository::default();
+        AssistantService::delete_assistant(&repo, "user-row")
+            .await
+            .unwrap();
+        assert_eq!(repo.calls(), vec!["delete:user-row".to_string()]);
     }
 }

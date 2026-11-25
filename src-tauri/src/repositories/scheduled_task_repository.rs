@@ -6,6 +6,7 @@
 use crate::entity::scheduled_task::{self, Entity as ScheduledTaskEntity};
 use crate::execution_mode::ExecutionMode;
 use crate::scheduled::TASK_CATEGORY_SESSION;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder, Set,
@@ -80,6 +81,32 @@ pub trait ScheduledTaskRepository: Send + Sync {
         next_run_at: Option<i64>,
     ) -> Result<(), DbErr>;
 
+    /// Atomically claim this task's next execution for `run_id` (#2857).
+    ///
+    /// One conditional `UPDATE` carries the whole "due" decision: it grants
+    /// the claim only while the row is enabled, still due (`next_run_at`
+    /// <= `now_ms`), and carries no live claim — free (`run_claim_run` NULL),
+    /// lapsed (`run_claim_expires_at` <= `now_ms`), or already held by
+    /// `run_id` (re-entrant refresh). Two backends on one profile therefore
+    /// never both fire the same due task: the loser reads
+    /// `rows_affected == 0` and skips. The due re-check also closes the
+    /// stale-list window — a scheduler whose `list_due_tasks` predates the
+    /// winner's `record_run` (which advanced `next_run_at`) claims nothing
+    /// even after the winner released. `updated_at` is left untouched:
+    /// one-shot pause semantics read it as the pause timestamp.
+    async fn try_claim_run(
+        &self,
+        id: &str,
+        run_id: &str,
+        now_ms: i64,
+        expires_at: i64,
+    ) -> Result<bool, DbErr>;
+
+    /// Release the execution claim if `run_id` still holds it (#2857). A
+    /// holder that dies before releasing loses the claim once its expiry
+    /// lapses, so the next due tick can fire the task from another process.
+    async fn release_run_claim(&self, id: &str, run_id: &str) -> Result<(), DbErr>;
+
     /// Delete a scheduled task
     async fn delete_scheduled_task(&self, id: &str) -> Result<(), DbErr>;
 
@@ -142,6 +169,8 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             enabled: Set(true),
             last_run_at: Set(None),
             next_run_at: Set(params.next_run_at),
+            run_claim_run: Set(None),
+            run_claim_expires_at: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -242,6 +271,57 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         active.updated_at = Set(now);
 
         active.update(&self.db).await?;
+        Ok(())
+    }
+
+    async fn try_claim_run(
+        &self,
+        id: &str,
+        run_id: &str,
+        now_ms: i64,
+        expires_at: i64,
+    ) -> Result<bool, DbErr> {
+        let result = ScheduledTaskEntity::update_many()
+            .col_expr(scheduled_task::Column::RunClaimRun, Expr::value(run_id))
+            .col_expr(
+                scheduled_task::Column::RunClaimExpiresAt,
+                Expr::value(expires_at),
+            )
+            .filter(scheduled_task::Column::Id.eq(id))
+            // The claim carries the whole due decision (#2857 G1.1): a row
+            // that `record_run` already advanced, or that was disabled in
+            // the meantime, claims nothing even after the holder released.
+            .filter(scheduled_task::Column::Enabled.eq(true))
+            .filter(scheduled_task::Column::NextRunAt.lte(now_ms))
+            .filter(
+                Condition::any()
+                    .add(scheduled_task::Column::RunClaimRun.is_null())
+                    // The holder may refresh its own live claim (re-entrant).
+                    .add(scheduled_task::Column::RunClaimRun.eq(run_id))
+                    // A row with a holder but no expiry is unreadable state:
+                    // treat it as free so a corrupt claim self-heals.
+                    .add(scheduled_task::Column::RunClaimExpiresAt.is_null())
+                    .add(scheduled_task::Column::RunClaimExpiresAt.lte(now_ms)),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(result.rows_affected == 1)
+    }
+
+    async fn release_run_claim(&self, id: &str, run_id: &str) -> Result<(), DbErr> {
+        ScheduledTaskEntity::update_many()
+            .col_expr(
+                scheduled_task::Column::RunClaimRun,
+                Expr::value(None::<String>),
+            )
+            .col_expr(
+                scheduled_task::Column::RunClaimExpiresAt,
+                Expr::value(None::<i64>),
+            )
+            .filter(scheduled_task::Column::Id.eq(id))
+            .filter(scheduled_task::Column::RunClaimRun.eq(run_id))
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 

@@ -29,7 +29,7 @@ libragent --demo --mcp --app-control
 Desktop UI must be open (AppHandle emits `libragent:app-control` to the React bridge).
 
 Endpoint: `http://127.0.0.1:<http_port>/mcp/control`  
-Port: Settings HTTP port, or `~/.libragent/http_port`.
+Port: Settings HTTP port. Each backend writes its bound port to `~/.libragent/http_port.<pid>`; with several backends running, pick the one that answers `GET /api/health`.
 
 ## Tools (v1)
 
@@ -41,7 +41,7 @@ Port: Settings HTTP port, or `~/.libragent/http_port`.
 | `app__focus_session`  | `sessionId`                                             | Navigate to `/agent/{sessionId}`                                    |
 | `app__wait_ui`        | optional `ms` (default 500), optional `ready.path` hint | Sleep for pacing between steps                                      |
 
-There is **no** composite scenario tool. Demo shot lists live in the bundled [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md) and operator scripts that call these primitives.
+There is **no** composite scenario tool. Demo shot lists live in operator scripts that call these primitives.
 
 ## Cursor MCP config example
 
@@ -60,8 +60,12 @@ There is **no** composite scenario tool. Demo shot lists live in the bundled [de
 ## Example JSON-RPC
 
 ```bash
-PORT=$(cat ~/.libragent/http_port 2>/dev/null || echo 3030)
-curl -sS -X POST "http://127.0.0.1:${PORT}/mcp/control" \
+PORT=""
+for f in "$HOME"/.libragent/http_port.*; do
+  p=$(cat "$f" 2>/dev/null) || continue
+  curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && PORT=$p && break
+done
+curl -sS -X POST "http://127.0.0.1:${PORT:-3030}/mcp/control" \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"app__highlight","arguments":{"target":"preset","name":"hn","ms":2500}}}'
 ```
@@ -72,7 +76,7 @@ Presets with keys/OAuth (e.g. `github`) are rejected by the UI bridge.
 
 ## Demo composition (script, not a tool)
 
-Use primitives in order — see [demo-play shot list](../../src-tauri/bundled_skills/demo-play/references/hero-shot-list.md):
+Use primitives in order:
 
 1. `app__navigate` → `/mcp-servers` (or `app__highlight` a zero-config preset)
 2. `app__wait_ui` `{ "ms": 800 }`
@@ -80,7 +84,5 @@ Use primitives in order — see [demo-play shot list](../../src-tauri/bundled_sk
 4. `app__wait_ui` `{ "ms": 1500 }`
 5. Create session via `POST /api/sessions` + `app__focus_session`
 6. Send the deliverable prompt via session message API / UI
-
-Operator skill: bundled `@skill:demo-play` (`src-tauri/bundled_skills/demo-play/`).
 
 Security: opt-in only; localhost by default unless HTTP expose is enabled. Do not enable app-control on exposed hosts without a network policy.

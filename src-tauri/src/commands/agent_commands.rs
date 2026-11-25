@@ -27,16 +27,17 @@ pub use session_commands::{
     agent_execute_command, agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
     agent_get_child_session_ids, agent_get_child_sessions, agent_get_descendant_session_ids,
     agent_get_service_contexts, agent_get_session, agent_get_tools, agent_get_user_prompt,
-    agent_init_session_with_messages, agent_list_attention_sessions, agent_list_sessions,
-    agent_mark_session_viewed, agent_open_session, agent_resume_session, agent_set_execution_mode,
-    agent_submit_user_prompt, agent_toggle_session_bookmark, agent_update_session_config,
-    agent_update_session_name,
+    agent_init_session_with_messages, agent_list_attention_sessions, agent_list_plugin_commands,
+    agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_resume_session,
+    agent_set_execution_mode, agent_submit_user_prompt, agent_toggle_session_bookmark,
+    agent_update_session_config, agent_update_session_name,
 };
 pub use ui_actions::agent_execute_ui_tauri_action;
 pub use workflow_commands::{
     agent_append_tool_messages, agent_cancel_pending_prompt, agent_cancel_workflow,
-    agent_get_pending_queue, agent_handle_llm_error, agent_handle_llm_response,
-    agent_handle_tool_result, agent_inject_messages, agent_pause_workflow,
-    agent_regenerate_last_turn, agent_report_llm_streaming_issue, agent_respond_tool_approval,
-    agent_resume_workflow, agent_send_message, agent_terminate_workflow,
+    agent_get_pending_approval_counts, agent_get_pending_queue, agent_handle_llm_error,
+    agent_handle_llm_response, agent_handle_tool_result, agent_inject_messages,
+    agent_pause_workflow, agent_regenerate_last_turn, agent_report_llm_streaming_issue,
+    agent_respond_tool_approval, agent_resume_workflow, agent_send_message,
+    agent_terminate_workflow,
 };

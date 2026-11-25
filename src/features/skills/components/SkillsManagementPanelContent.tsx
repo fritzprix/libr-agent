@@ -20,6 +20,8 @@ import {
 } from '@/components/ui';
 import { formatSkillDisplayPath } from '@/features/settings/components/SkillsListModal';
 import { cn } from '@/lib/utils';
+import type { PluginSourceOverview } from '@/types/skills';
+import { PluginSourcesList } from './PluginSourcesList';
 import type {
   SkillsDirectoryScope,
   SkillsManagementDirectories,
@@ -38,6 +40,16 @@ interface SkillsManagementPanelContentProps
   isInstallingGithub: boolean;
   isInstallingLocal: boolean;
   isResettingUserSkills: boolean;
+  pluginSources: PluginSourceOverview[];
+  removingPluginSourceId: string | null;
+  /** Source ids with a newer commit on GitHub (#2927 D6 badge). */
+  updatesAvailable?: Record<string, boolean>;
+  onUpdatePluginSource: (sourceUrl: string) => void | Promise<void>;
+  onTogglePluginSourceEnabled: (
+    sourceId: string,
+    enabled: boolean,
+  ) => void | Promise<void>;
+  onRemovePluginSource: (sourceId: string) => void | Promise<void>;
   onRepoUrlChange: (value: string) => void;
   onRefresh: () => void;
   onViewInstalled: () => void;
@@ -75,6 +87,12 @@ export function SkillsManagementPanelContent({
   isInstallingGithub,
   isInstallingLocal,
   isResettingUserSkills,
+  pluginSources,
+  removingPluginSourceId,
+  updatesAvailable,
+  onUpdatePluginSource,
+  onTogglePluginSourceEnabled,
+  onRemovePluginSource,
   onRepoUrlChange,
   onRefresh,
   onViewInstalled,
@@ -253,6 +271,16 @@ export function SkillsManagementPanelContent({
           </p>
         </div>
       </div>
+
+      <PluginSourcesList
+        sources={pluginSources}
+        isBusy={isInstallingGithub || isInstallingLocal}
+        removingId={removingPluginSourceId}
+        updatesAvailable={updatesAvailable}
+        onUpdate={onUpdatePluginSource}
+        onToggleEnabled={onTogglePluginSourceEnabled}
+        onRemove={onRemovePluginSource}
+      />
 
       <div className="space-y-3">
         <div className="rounded-lg border bg-background p-3 space-y-2">

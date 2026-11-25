@@ -34,8 +34,8 @@ Define before spawning anything:
 
 Default: **reuse existing assistant configurations and suitable child sessions** and put the review lens in the handoff task. Do **not** `agent__createAgent` just to bake a perspective into the system prompt when a capable generalist already exists.
 
-- `agent__listAgents(type="configs")` to discover assistants; use returned template IDs in `agent__spawnSession` (never pass a `sessionId`)
-- `agent__listAgents(type="sessions")` to find an Idle child with the same assistant ID and compatible workspace; use `agent__messageToSession(reset=true)` for a fresh review assignment when reuse is safe
+- `agent__listAgents(type="configs", query="...")` or `verbose=true` to discover assistants and capabilities; use returned template IDs in `agent__spawnSession` (never pass a `sessionId`)
+- `agent__listAgents(type="sessions")` to find an Idle child with the same assistant ID and compatible workspace; use `agent__messageToSession(sessionId, complexity="...", message="...", reset=true)` for a fresh review assignment when reuse is safe (`complexity`: `low`|`normal`|`high`)
 - Match on **capability**, not perfect persona: any assistant that can read the repo / reason about the artifact is eligible. Coding, research, and general review configs are fine for security / correctness / coverage lenses when the task text states the lens
 - Differ perspectives via the shared handoff wrapper (`You are reviewing as: [PERSPECTIVE]`) and lens-specific bullets — see `references/workflow-templates.md`
 - Prefer distinct existing configs when available (e.g. coding + research) so sessions are not identical clones of the parent; still inject the lens in the task
@@ -60,7 +60,7 @@ When all reviewers need the same codebase, start each child with the same `works
 
 Default pattern:
 
-1. Inspect existing sessions and reuse a suitable Idle matching-role child with `agent__messageToSession`; use `agent__spawnSession(configId="...", task="...", waitForResult=false, workspaceOverride="...")` only when no suitable child exists, a different role/workspace is needed, or parallel capacity requires another session
+1. Inspect existing sessions and reuse a suitable Idle matching-role child with `agent__messageToSession(sessionId, complexity="...", message="...")`; use `agent__spawnSession(configId="...", complexity="...", task="...", waitForResult=false, workspaceOverride="...")` only when no suitable child exists, a different role/workspace is needed, or parallel capacity requires another session
 2. Use the session inventory for child IDs and status—`agent__listAgents` does not return review results
 3. Collect with `agent__checkSession(sessionId)` or `agent__checkSession(sessionId, wait=true)` for actual conclusions
 
@@ -86,7 +86,7 @@ When perspectives conflict:
 
 1. State the specific conflict (fact, tradeoff, or recommendation)
 2. `agent__compactSessionContext(sessionId)` on children with long histories before large follow-ups
-3. `agent__messageToSession` each relevant child with the opposing finding and ask for a focused re-check
+3. `agent__messageToSession(sessionId, complexity="...", message="...")` each relevant child with the opposing finding and ask for a focused re-check
 4. `agent__checkSession(..., wait=true)` again after follow-ups
 5. Stop after 1-2 reconciliation rounds unless new blocking facts appear
 
@@ -107,13 +107,13 @@ Do not present a single child's output as the final answer without comparison.
 
 | Step | Tool |
 | --- | --- |
-| Discover assistants | `agent__listAgents(type="configs")` |
+| Discover assistants | `agent__listAgents(type="configs", query="...")` or `verbose=true` |
 | Create specialist | `agent__createAgent(...)` — when no usable existing config; not one config per lens |
-| Assign reviewer | `agent__messageToSession(..., reset=true)` when a matching Idle child exists; otherwise `agent__spawnSession(..., waitForResult=false)` |
+| Assign reviewer | `agent__messageToSession(sessionId, complexity, message, reset=true)` when a matching Idle child exists; otherwise `agent__spawnSession(configId, complexity, task, waitForResult=false)` |
 | Inspect children | `agent__listAgents(type="sessions")` — IDs and status only |
 | Poll or wait | `agent__checkSession(sessionId)` / `agent__checkSession(sessionId, wait=true)` — results |
-| Reconcile | `agent__messageToSession(sessionId, message)` |
-| Stop stuck work | `agent__stopSession(sessionId)` |
+| Reconcile | `agent__messageToSession(sessionId, complexity, message)` |
+| Stop stuck work | `agent__checkSession(sessionId)` then `agent__stopSession(sessionId)` when the child is confirmed stuck |
 | Long histories | `agent__compactSessionContext(sessionId)` |
 
 ## Common Mistakes
@@ -126,7 +126,7 @@ Do not present a single child's output as the final answer without comparison.
 - **Skipping output format** — parent cannot compare unstructured prose reliably
 - **Trusting verdicts without evidence** — re-open files or traces before deciding
 - **Blocking the parent on every spawn** — use async spawn + targeted waits
-- **Ignoring paused/error sessions** — recover with `agent__messageToSession`, not another blind `agent__checkSession`
+- **Ignoring paused/error sessions** — recover with `agent__messageToSession(..., complexity=...)`, not another blind `agent__checkSession`
 
 ## References
 

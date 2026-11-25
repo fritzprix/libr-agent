@@ -88,12 +88,14 @@ For power users and prompt engineering, below is the primary built-in tools inve
 |                      | `browser__clickElement`                                             | Click DOM element                                                            | Optional                                                                 |
 | **`desktop`**        | `desktop__computerControl`                                          | Mouse clicks, movement, and keyboard typing                                  | Optional (Approval in Normal mode; runs without approval in YOLO/Unsafe) |
 | **`media`**          | `media__captureScreen`                                              | Capture desktop display or area                                              | Optional (Approval in Normal mode; runs without approval in YOLO/Unsafe) |
-|                      | `media__seeContent`                                                 | Analyze **visual** image/video content                                       | Optional                                                                 |
-|                      | `media__listenContent`                                              | Analyze **audio**/video soundtrack                                           | Optional                                                                 |
+|                      | `media__seeContent`                                                 | Analyze **visual** content in image files                                    | Optional                                                                 |
+|                      | `media__listenContent`                                              | Analyze **audio** files (speech, sound)                                      | Optional                                                                 |
 | **`planning`**       | `planning__createGoal`                                              | Create multi-step goals & todos                                              | Optional                                                                 |
 |                      | `planning__updateGoal`                                              | Update goal & step progress                                                  | Optional                                                                 |
 | **`scheduled_task`** | `scheduled_task__createScheduledTask`                               | Register recurring background task                                           | Core (Default)                                                           |
 |                      | `scheduled_task__listScheduledTasks`                                | List registered scheduled tasks                                              | Core (Default)                                                           |
+
+Neither media tool accepts video files. For a video, extract the audio track for `media__listenContent`, or pick key frames as images for `media__seeContent`.
 
 > [!NOTE]
 > These identifiers are for power users and debugging. For everyday use, turn tools on or off in the assistant **Tools** tab.

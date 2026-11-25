@@ -5,20 +5,33 @@ import { useSWRConfig } from 'swr';
 import { useDnDContext } from '@/context/DnDContext';
 import { safeInvoke } from '@/lib/backend/core';
 import {
+  checkPluginSourceUpdates,
+  deletePluginSource,
   deleteUserSkill,
   importUserSkills,
   installGitHubSkills,
   previewGitHubSkillInstall,
   previewUserSkillImport,
   resetUserSkills,
+  setPluginSourceEnabled,
 } from '@/lib/backend/skills';
 import { getLogger } from '@/lib/logger';
 import { useSkillsDirectory } from '@/features/settings/hooks/useSkillsDirectory';
 import { isScopedSkillsKey } from '@/features/agent/hooks/useScopedSkills';
 import {
+  defaultPluginOptions,
   formatImportSuccess,
   getSkillsStatusMessage,
+  notifyImportWarnings,
+  shouldPromptSkillInstall,
 } from '../skills-management-utils';
+import {
+  installPluginUpdate,
+  pendingInstallForUpdate,
+  planPluginUpdate,
+  PLUGIN_UPDATED_EVENT,
+  toastPluginUpdated,
+} from '../plugin-update-flow';
 import type {
   PendingInstall,
   SkillsDirectoryScope,
@@ -36,6 +49,7 @@ export function useSkillsManagementPanel() {
     userSkills,
     systemDirectory,
     userDirectory,
+    pluginSources,
     errorMessage,
     refresh: refreshOverview,
   } = useSkillsDirectory();
@@ -59,6 +73,12 @@ export function useSkillsManagementPanel() {
   const [openingDirectory, setOpeningDirectory] =
     useState<SkillsDirectoryScope | null>(null);
   const [repoUrl, setRepoUrl] = useState('');
+  // #2927 D6: the plugin whose update notice is open; null closes it.
+  const [pendingUpdateUrl, setPendingUpdateUrl] = useState<string | null>(null);
+  // #2927 D6: source ids with a newer commit on GitHub, from the last check.
+  const [updatesAvailable, setUpdatesAvailable] = useState<
+    Record<string, boolean>
+  >({});
 
   const pendingInstallSystemConflicts = useMemo(
     () =>
@@ -81,6 +101,8 @@ export function useSkillsManagementPanel() {
       kind: PendingInstall['kind'],
       sourceValue: string,
       overwriteNames: string[],
+      approveHooks: boolean,
+      pluginOptions: Record<string, string> = {},
       extraExcludedNames: string[] = [],
     ) => {
       const userConflictNames = new Set(
@@ -98,8 +120,19 @@ export function useSkillsManagementPanel() {
       );
 
       return kind === 'local'
-        ? importUserSkills(sourceValue, shouldOverwrite, excludedNames)
-        : installGitHubSkills(sourceValue, shouldOverwrite, excludedNames);
+        ? importUserSkills(
+            sourceValue,
+            shouldOverwrite,
+            excludedNames,
+            approveHooks,
+          )
+        : installGitHubSkills(
+            sourceValue,
+            shouldOverwrite,
+            excludedNames,
+            approveHooks,
+            pluginOptions,
+          );
     },
     [pendingInstallSystemConflicts, pendingInstallUserConflicts],
   );
@@ -143,7 +176,7 @@ export function useSkillsManagementPanel() {
           const userConflicts = preview.conflicts.filter(
             (conflict) => conflict.existingOrigin === 'user',
           );
-          if (userConflicts.length > 0) {
+          if (shouldPromptSkillInstall(preview, userConflicts.length)) {
             setPendingInstall({
               kind: 'local',
               sourceValue: filePath,
@@ -151,6 +184,8 @@ export function useSkillsManagementPanel() {
               selectedOverwriteNames: userConflicts.map(
                 (conflict) => conflict.name,
               ),
+              approveHooks: false,
+              pluginOptions: defaultPluginOptions(preview),
             });
             return;
           }
@@ -162,6 +197,7 @@ export function useSkillsManagementPanel() {
             preview.conflicts
               .filter((conflict) => conflict.existingOrigin === 'system')
               .map((conflict) => conflict.name),
+            false,
           );
           toast.success(
             formatImportSuccess(
@@ -171,6 +207,7 @@ export function useSkillsManagementPanel() {
               result.skippedNames.length,
             ),
           );
+          notifyImportWarnings(result);
           await refresh();
         } catch (error) {
           logger.error('Failed to import dropped skills', error);
@@ -223,7 +260,7 @@ export function useSkillsManagementPanel() {
       const userConflicts = preview.conflicts.filter(
         (conflict) => conflict.existingOrigin === 'user',
       );
-      if (userConflicts.length > 0) {
+      if (shouldPromptSkillInstall(preview, userConflicts.length)) {
         setPendingInstall({
           kind: 'github',
           sourceValue: trimmedRepoUrl,
@@ -231,6 +268,8 @@ export function useSkillsManagementPanel() {
           selectedOverwriteNames: userConflicts.map(
             (conflict) => conflict.name,
           ),
+          approveHooks: false,
+          pluginOptions: defaultPluginOptions(preview),
         });
         return;
       }
@@ -241,6 +280,7 @@ export function useSkillsManagementPanel() {
         preview.conflicts
           .filter((conflict) => conflict.existingOrigin === 'system')
           .map((conflict) => conflict.name),
+        false,
       );
       toast.success(
         formatImportSuccess(
@@ -250,6 +290,7 @@ export function useSkillsManagementPanel() {
           result.skippedNames.length,
         ),
       );
+      notifyImportWarnings(result);
       setRepoUrl('');
       await refresh();
     } catch (error) {
@@ -276,6 +317,8 @@ export function useSkillsManagementPanel() {
         kind,
         sourceValue,
         pendingInstall.selectedOverwriteNames,
+        pendingInstall.approveHooks,
+        pendingInstall.pluginOptions,
       );
       toast.success(
         formatImportSuccess(
@@ -285,6 +328,7 @@ export function useSkillsManagementPanel() {
           result.skippedNames.length,
         ),
       );
+      notifyImportWarnings(result);
       if (kind === 'github') {
         setRepoUrl('');
       }
@@ -315,6 +359,220 @@ export function useSkillsManagementPanel() {
       };
     });
   }, []);
+
+  const setPendingApproveHooks = useCallback((approveHooks: boolean) => {
+    setPendingInstall((current) =>
+      current ? { ...current, approveHooks } : current,
+    );
+  }, []);
+
+  /** Record one `userConfig` answer (#2926). A sensitive answer stays in this
+   *  in-memory dialog state and is sent straight to secure storage. */
+  const setPendingPluginOption = useCallback((key: string, value: string) => {
+    setPendingInstall((current) =>
+      current
+        ? {
+            ...current,
+            pluginOptions: { ...current.pluginOptions, [key]: value },
+          }
+        : current,
+    );
+  }, []);
+
+  const confirmPendingInstallWithoutHooks = useCallback(async () => {
+    if (!pendingInstall) {
+      return;
+    }
+
+    const { kind, sourceValue } = pendingInstall;
+    setIsInstallingLocal(kind === 'local');
+    setIsInstallingGithub(kind === 'github');
+
+    try {
+      const result = await performInstall(
+        kind,
+        sourceValue,
+        pendingInstall.selectedOverwriteNames,
+        false,
+        pendingInstall.pluginOptions,
+      );
+      toast.success(
+        formatImportSuccess(
+          t,
+          result.importedNames.length,
+          result.overwrittenNames.length,
+          result.skippedNames.length,
+        ),
+      );
+      notifyImportWarnings(result);
+      if (kind === 'github') {
+        setRepoUrl('');
+      }
+      setPendingInstall(null);
+      await refresh();
+    } catch (error) {
+      logger.error('Failed to install skills without hook approval', error);
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsInstallingLocal(false);
+      setIsInstallingGithub(false);
+    }
+  }, [pendingInstall, performInstall, refresh, t]);
+
+  // #2927 D6 update indicator: after every overview load, ask GitHub
+  // whether any installed plugin has a newer commit. Non-blocking; a failed
+  // check just hides the badges — the indicator never claims what it
+  // cannot show. The effect keys on the id list, not the array object:
+  // `pluginSources` is a fresh `[]` on every render while the overview is
+  // loading, and an array identity would re-run this effect in a loop
+  // (each run sets a new state object and re-renders). `updatesRefreshTick`
+  // (#2954 G1.3) forces a re-check after a completed update, where the id
+  // list is unchanged but the recorded commits are not.
+  const pluginSourceIds = pluginSources.map((source) => source.id).join(',');
+  const [updatesRefreshTick, setUpdatesRefreshTick] = useState(0);
+  /** Re-run the update check (after an update changed an install commit). */
+  const refreshUpdates = useCallback(() => {
+    setUpdatesRefreshTick((tick) => tick + 1);
+  }, []);
+  // #2954 G1.3: updates also run from `/plugin update` in a session
+  // (different hook), so the shared flow signals completion via event.
+  useEffect(() => {
+    window.addEventListener(PLUGIN_UPDATED_EVENT, refreshUpdates);
+    return () => {
+      window.removeEventListener(PLUGIN_UPDATED_EVENT, refreshUpdates);
+    };
+  }, [refreshUpdates]);
+  useEffect(() => {
+    if (pluginSourceIds === '') {
+      setUpdatesAvailable((current) =>
+        Object.keys(current).length === 0 ? current : {},
+      );
+      return;
+    }
+    let cancelled = false;
+    checkPluginSourceUpdates()
+      .then((statuses) => {
+        if (cancelled) {
+          return;
+        }
+        const map: Record<string, boolean> = {};
+        for (const status of statuses) {
+          if (status.updateAvailable) {
+            map[status.sourceId] = true;
+          }
+        }
+        setUpdatesAvailable((current) => {
+          const next = JSON.stringify(current) === JSON.stringify(map) ? current : map;
+          return next;
+        });
+      })
+      .catch((error) => {
+        logger.error('Plugin update check failed', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pluginSourceIds, updatesRefreshTick]);
+
+  // #2927 D6: the Update button opens the update notice; the actual
+  // re-download runs only after the single Agree (confirmPluginUpdate).
+  const handleReinstallPluginSource = useCallback(
+    (sourceUrl: string) => {
+      if (isInstallingGithub || isInstallingLocal) {
+        return;
+      }
+      setPendingUpdateUrl(sourceUrl);
+    },
+    [isInstallingGithub, isInstallingLocal],
+  );
+
+  const confirmPluginUpdate = useCallback(async () => {
+    const sourceUrl = pendingUpdateUrl;
+    if (!sourceUrl || isInstallingGithub || isInstallingLocal) {
+      return;
+    }
+    setIsInstallingGithub(true);
+    try {
+      const plan = await planPluginUpdate(sourceUrl, 'global', undefined, t);
+      if (!plan) {
+        return;
+      }
+      setPendingUpdateUrl(null);
+      if (plan.userConflictNames.length > 0) {
+        // The D6 Agree already approved hooks and MCP servers for this
+        // update; the dialog now only reviews user-data collisions.
+        setPendingInstall(pendingInstallForUpdate(plan, sourceUrl));
+        return;
+      }
+      await installPluginUpdate(plan, sourceUrl);
+      toastPluginUpdated(t);
+      await refresh();
+      // #2954 G1.3: the install commit changed, so re-check for updates —
+      // the D6 badge must clear even though the source id list did not.
+      refreshUpdates();
+    } catch (error) {
+      logger.error('Failed to update plugin source', error);
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsInstallingGithub(false);
+    }
+  }, [
+    isInstallingGithub,
+    isInstallingLocal,
+    pendingUpdateUrl,
+    refresh,
+    refreshUpdates,
+    t,
+  ]);
+
+  const handleTogglePluginSourceEnabled = useCallback(
+    async (sourceId: string, enabled: boolean) => {
+      if (isDeletingSkill) {
+        return;
+      }
+      setIsDeletingSkill(sourceId);
+      try {
+        await setPluginSourceEnabled(sourceId, enabled);
+        toast.success(
+          enabled
+            ? t('settings.skills.pluginSourceEnabled', 'Plugin enabled.')
+            : t(
+                'settings.skills.pluginSourceDisabled',
+                'Plugin disabled. It stays installed; restart a session or type /reload to apply.',
+              ),
+        );
+        await refresh();
+      } catch (error) {
+        logger.error('Failed to change plugin enabled state', error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setIsDeletingSkill(null);
+      }
+    },
+    [isDeletingSkill, refresh, t],
+  );
+
+  const handleDeletePluginSource = useCallback(
+    async (sourceId: string) => {
+      if (isDeletingSkill) {
+        return;
+      }
+      setIsDeletingSkill(sourceId);
+      try {
+        await deletePluginSource(sourceId);
+        toast.success(
+          t('settings.skills.pluginSourceRemoved', 'Plugin source removed.'),
+        );
+        await refresh();
+      } catch (error) {
+        logger.error('Failed to delete plugin source', error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setIsDeletingSkill(null);
+      }
+    },
+    [isDeletingSkill, refresh, t],
+  );
 
   const handleDeleteUserSkill = useCallback(
     async (skillName: string) => {
@@ -378,6 +636,7 @@ export function useSkillsManagementPanel() {
     userSkills,
     systemDirectory,
     userDirectory,
+    pluginSources,
     isDragging,
     pendingInstall,
     pendingInstallSystemConflicts,
@@ -389,7 +648,10 @@ export function useSkillsManagementPanel() {
     isResettingUserSkills,
     openingDirectory,
     repoUrl,
+    pendingUpdateUrl,
+    updatesAvailable,
     setPendingInstall,
+    setPendingUpdateUrl,
     setIsResetDialogOpen,
     setRepoUrl,
     refresh,
@@ -397,6 +659,13 @@ export function useSkillsManagementPanel() {
     handleGitHubInstall,
     confirmPendingInstall,
     togglePendingOverwrite,
+    setPendingApproveHooks,
+    setPendingPluginOption,
+    confirmPendingInstallWithoutHooks,
+    handleReinstallPluginSource,
+    confirmPluginUpdate,
+    handleTogglePluginSourceEnabled,
+    handleDeletePluginSource,
     handleDeleteUserSkill,
     handleResetUserSkills,
   };

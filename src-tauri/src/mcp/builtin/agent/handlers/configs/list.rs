@@ -28,7 +28,7 @@ pub async fn list_agents_or_sessions(
         .unwrap_or("configs");
 
     match list_type {
-        "configs" => list_agent_configs(server, &args).await,
+        "configs" => list_agent_configs(server, &args, Some(caller_session_id)).await,
         "sessions" => list_delegated_sessions(caller_session_id, &args).await,
         _ => Ok(guided_error(
             ErrorCategory::InvalidInput,
@@ -97,37 +97,73 @@ fn build_pagination_note(
     }
 }
 
-async fn list_agent_configs(server: &AgentServer, args: &Value) -> Result<MCPResult, String> {
-    list_agent_configs_from_db(server.get_db(), args).await
+async fn list_agent_configs(
+    server: &AgentServer,
+    args: &Value,
+    caller_session_id: Option<&str>,
+) -> Result<MCPResult, String> {
+    list_agent_configs_from_db(server.get_db(), args, caller_session_id).await
 }
 
 pub async fn list_agent_configs_for_test(
     db: &DatabaseConnection,
     args: &Value,
 ) -> Result<MCPResult, String> {
-    list_agent_configs_from_db(db, args).await
+    list_agent_configs_from_db(db, args, None).await
 }
 
 async fn list_agent_configs_from_db(
     db: &DatabaseConnection,
     args: &Value,
+    caller_session_id: Option<&str>,
 ) -> Result<MCPResult, String> {
     let verbose = match read_bool_arg(args, "verbose", false, ToolGroup::Agent) {
         Ok(arg) => arg,
         Err(result) => return Ok(result),
     };
 
-    let result = list_agent_configs_from_db_inner(db, args, verbose.value).await?;
+    let result =
+        list_agent_configs_from_db_inner(db, args, verbose.value, caller_session_id).await?;
     Ok(verbose.annotate(result))
+}
+
+/// One row in the merged config list: an ordinary assistant row or a
+/// session-scope plugin agent synthesized from the session plugin store.
+enum ListRow<'a> {
+    Db(&'a crate::entity::assistant::Model),
+    Plugin(&'a crate::services::skill_service::PluginAgentListInfo),
 }
 
 async fn list_agent_configs_from_db_inner(
     db: &DatabaseConnection,
     args: &Value,
     verbose: bool,
+    caller_session_id: Option<&str>,
 ) -> Result<MCPResult, String> {
     let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
     let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
+
+    // #2923: merge the caller session's session-scope plugin agents into
+    // the list. Global-scope plugin agents are already ordinary assistant
+    // rows; a session install of the same plugin shadows them, so the
+    // shadowed global plugin rows are hidden and the session definitions
+    // replace them.
+    let shadowed_prefixes: Vec<String> = caller_session_id
+        .map(|sid| {
+            crate::services::skill_service::session_store_source_ids(sid)
+                .into_iter()
+                .map(|source_id| format!("plugin:{source_id}:"))
+                .collect()
+        })
+        .unwrap_or_default();
+    agents.retain(|a| {
+        !shadowed_prefixes
+            .iter()
+            .any(|p| a.id.starts_with(p.as_str()))
+    });
+    let mut plugin_agents: Vec<_> = caller_session_id
+        .map(crate::services::skill_service::session_plugin_agent_infos)
+        .unwrap_or_default();
 
     if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
         let q = query.to_lowercase();
@@ -136,19 +172,30 @@ async fn list_agent_configs_from_db_inner(
                 || a.name.to_lowercase().contains(&q)
                 || a.config.to_lowercase().contains(&q)
         });
+        plugin_agents.retain(|p| {
+            p.id.to_lowercase().contains(&q)
+                || p.name.to_lowercase().contains(&q)
+                || p.config.to_string().to_lowercase().contains(&q)
+        });
     }
 
     let (limit, offset) = extract_pagination_args(args);
 
-    let total = agents.len();
-    let paged_agents: Vec<_> = agents.into_iter().skip(offset).take(limit).collect();
+    let total = agents.len() + plugin_agents.len();
+    let paged_rows: Vec<ListRow> = agents
+        .iter()
+        .map(ListRow::Db)
+        .chain(plugin_agents.iter().map(ListRow::Plugin))
+        .skip(offset)
+        .take(limit)
+        .collect();
     let mcp_repo = crate::state::get_mcp_server_repository();
     let external_servers = mcp_repo.list().await.map_err(|e| e.to_string())?;
     let server_name_lookup = build_server_name_lookup(&external_servers);
 
     let mut results = Vec::new();
     let mut text_summary = format!("Found {} agent configurations.\n\n", total);
-    if !paged_agents.is_empty() {
+    if !paged_rows.is_empty() {
         if verbose {
             text_summary.push_str("| Name | ID | Capabilities | Servers | Description |\n");
             text_summary.push_str("|---|---|---|---|---|\n");
@@ -163,8 +210,21 @@ async fn list_agent_configs_from_db_inner(
         ));
     }
 
-    for agent in paged_agents {
-        let parsed_config = serde_json::from_str::<Value>(&agent.config).unwrap_or(Value::Null);
+    for row in paged_rows {
+        let (row_id, row_name, parsed_config, plugin_note) = match row {
+            ListRow::Db(agent) => (
+                agent.id.clone(),
+                agent.name.clone(),
+                serde_json::from_str::<Value>(&agent.config).unwrap_or(Value::Null),
+                None::<String>,
+            ),
+            ListRow::Plugin(info) => (
+                info.id.clone(),
+                info.name.clone(),
+                info.config.clone(),
+                Some(info.plugin_name.clone()),
+            ),
+        };
         let effective_builtin_capabilities =
             crate::agent::tools::runtime_allowed_builtin_service_aliases_from_value(&parsed_config);
         let external_mcp_servers = extract_string_array(&parsed_config, "mcpServerIds");
@@ -174,6 +234,10 @@ async fn list_agent_configs_from_db_inner(
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
+        if let Some(note) = plugin_note.as_deref() {
+            desc = format!("{desc} (plugin: {note})");
+            desc = desc.trim_start().to_string();
+        }
 
         if !verbose && desc.chars().count() > SUMMARY_DESCRIPTION_MAX_CHARS {
             desc = desc
@@ -183,8 +247,8 @@ async fn list_agent_configs_from_db_inner(
                 + "...";
         }
 
-        let name_clean = agent.name.replace('|', "\\|");
-        let id_clean = agent.id.replace('|', "\\|");
+        let name_clean = row_name.replace('|', "\\|");
+        let id_clean = row_id.replace('|', "\\|");
         let cap_clean = format_capability_list(&effective_builtin_capabilities).replace('|', "\\|");
         let server_clean = format_external_server_refs(&external_mcp_servers, &server_name_lookup)
             .replace('|', "\\|");
@@ -200,8 +264,8 @@ async fn list_agent_configs_from_db_inner(
                 resolve_external_server_labels(&external_mcp_servers, &server_name_lookup);
 
             results.push(json!({
-                "id": agent.id,
-                "name": agent.name,
+                "id": row_id,
+                "name": row_name,
                 "description": parsed_config.get("description").and_then(Value::as_str),
                 "systemPrompt": parsed_config.get("systemPrompt").and_then(Value::as_str),
                 "builtinCapabilities": effective_builtin_capabilities,
@@ -213,8 +277,8 @@ async fn list_agent_configs_from_db_inner(
                 name_clean, id_clean, desc_clean
             ));
             results.push(json!({
-                "id": agent.id,
-                "name": agent.name,
+                "id": row_id,
+                "name": row_name,
                 "description": desc,
             }));
         }

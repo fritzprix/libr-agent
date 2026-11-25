@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::runtime_state::{
     SessionRuntimeDockerState, SessionRuntimeInitResult, SessionRuntimePhase,
 };
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::message_repository::MessageRepository;
@@ -234,6 +236,11 @@ async fn complete_docker_provisioning(
     )
     .await?;
 
+    crate::services::hooks::spawn_session_start(
+        session_id,
+        crate::services::hooks::SessionStartSource::Startup,
+    );
+
     drain_and_start_pending_workflows(deps, session_id).await
 }
 
@@ -394,7 +401,7 @@ async fn emit_drain_workflow_failure(
         )
         .with_code("DOCKER_DRAIN_WORKFLOW_FAILED"),
     };
-    let _ = crate::agent::tauri_events::emit_agent_event(&deps.app_handle, error_event);
+    let _ = TauriEventDispatcher::from_handle(&deps.app_handle).emit_agent_event(error_event);
 }
 
 async fn drain_and_start_pending_workflows(

@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "fritzprix/e2e-tool-approval-normal"
+description = "Tool approval opens in normal mode and is answered through the E2E control plane"
+keywords = ["libragent", "session-e2e", "approval"]
+
+[metadata]
+difficulty = "easy"
+category = "session-api-e2e"
+tags = ["matrix", "2672-R-2", "approval", "normal-mode"]
+
+[metadata.libragent_session_e2e]
+matrix_id = "2672-R-2-normal"
+execution_mode = "normal"
+approve_standard_tools = true
+reject_hard_approvals = false
+auto_answer_interactive = true
+
+[verifier]
+timeout_sec = 180.0
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 300.0
+os = "linux"

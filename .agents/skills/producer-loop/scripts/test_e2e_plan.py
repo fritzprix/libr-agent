@@ -154,6 +154,7 @@ class E2ePlanTest(unittest.TestCase):
         self.assertIn("- **E-3** [blocked: #2557]", body)
         self.assertIn("## Acceptance criteria", body)
         self.assertIn("- Out of scope: #9 (no product change", body)
+        self.assertIn("e2e-build-precondition.md", body)
         self.assertIn(e2e_plan.range_marker(2562, 2562), body)
         self.assertIsNone(file_issue.private_text_reason(body))
         findings = e2e_plan.render_findings(self.collected(), items())

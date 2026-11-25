@@ -1,0 +1,2 @@
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "workspace__readFile","args": {"path": "notes/todo.md"}},"thoughtSignature": "CiwBVKhc7wF0nYxS3mQvL4Ld2fGd8kXo1ZpQe2Rk9M0cJtq1sX7uH2Ab"},{"functionCall": {"name": "workspace__listDirectory","args": {"path": "."}}}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 2048,"candidatesTokenCount": 40,"totalTokenCount": 2088},"modelVersion": "gemini-2.5-flash","responseId": "s30waOi9Hs3Lz7IPk_2kmQU"}
+

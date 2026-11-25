@@ -1,3 +1,4 @@
+use crate::mcp::builtin::utils::path_starts_with;
 use crate::models::system_settings::SystemSettings;
 use crate::models::workspace_isolation::DEFAULT_DOCKER_WORKDIR;
 use crate::session_isolation::IsolationLevel;
@@ -178,6 +179,54 @@ pub async fn is_session_docker_isolated(session_id: &str) -> bool {
     session_docker_root(session_id).await.0
 }
 
+/// Temp-directory variables every shell command gets (#2946). `TMPDIR` is the
+/// POSIX name, `TEMP` and `TMP` the Windows ones; a tool that asks the OS for a
+/// temp directory then writes inside the session instead of the shared one.
+pub const SESSION_TEMP_ENV_KEYS: [&str; 3] = ["TMPDIR", "TEMP", "TMP"];
+
+/// Point the temp-directory variables at `dir` (#2946).
+///
+/// A value the call itself passed in `env` wins: the agent asked for that path
+/// explicitly, and the shell must not silently redirect it. Everything else
+/// gets the session scratch directory.
+pub fn set_session_temp_env(env_vars: &mut std::collections::HashMap<String, String>, dir: &str) {
+    for key in SESSION_TEMP_ENV_KEYS {
+        env_vars
+            .entry(key.to_string())
+            .or_insert_with(|| dir.to_string());
+    }
+}
+
+/// Add this session's scratch directory as its temp directory (#2946).
+///
+/// Host sessions get the real path (`{data_dir}/workspaces/<session_id>/.libragent/tmp`).
+/// Docker sessions get `/tmp`, which the runtime binds to the same scratch
+/// directory, so a container path never leaks to the host and both scopes see
+/// the same files. A session without a workspace directory still runs; it just
+/// keeps the OS default.
+pub fn add_session_temp_env(
+    session_id: &str,
+    is_docker: bool,
+    env_vars: &mut std::collections::HashMap<String, String>,
+) {
+    if is_docker {
+        set_session_temp_env(env_vars, "/tmp");
+        return;
+    }
+    match crate::session::get_session_manager() {
+        Ok(manager) => {
+            let dir = manager
+                .get_session_scratch_dir_unverified(session_id)
+                .display()
+                .to_string();
+            set_session_temp_env(env_vars, &dir);
+        }
+        Err(error) => log::warn!(
+            "No session scratch directory for {session_id} ({error}); shell keeps the OS temp directory"
+        ),
+    }
+}
+
 /// Adds this session's wake URL to a shell environment.
 ///
 /// Host sessions get the loopback URL. Managed Docker sessions get the
@@ -323,10 +372,12 @@ pub async fn effective_command_cwd(session_id: &str, host_workspace: &Path) -> S
 /// Resolve optional `cwd` for host-isolated `runShell` / `runPowerShell`.
 ///
 /// Relative paths are anchored at the session workspace. Absolute paths must stay
-/// inside that workspace. Returns `None` when `cwd` is omitted/blank.
+/// inside that workspace or, when `allow_linked_worktrees` is on (the same setting file
+/// tools follow), one of its linked git worktrees. Returns `None` when `cwd` is omitted/blank.
 pub fn resolve_isolated_shell_cwd(
     workspace: &Path,
     cwd: Option<&str>,
+    allow_linked_worktrees: bool,
 ) -> Result<Option<std::path::PathBuf>, String> {
     let Some(raw) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
@@ -357,7 +408,12 @@ pub fn resolve_isolated_shell_cwd(
         ));
     }
 
-    if !canonical_cwd.starts_with(&canonical_workspace) {
+    let within_workspace = path_starts_with(&canonical_cwd, &canonical_workspace)
+        || (allow_linked_worktrees
+            && crate::mcp::builtin::utils::linked_worktree_roots(&canonical_workspace)
+                .iter()
+                .any(|root| path_starts_with(&canonical_cwd, root)));
+    if !within_workspace {
         return Err(format!(
             "cwd '{}' escapes the session workspace '{}'",
             canonical_cwd.display(),
@@ -427,6 +483,80 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::tempdir;
+
+    // #2946: every temp-directory variable points at the session scratch
+    // directory, so a tool that asks the OS for a temp dir stays in the session.
+    #[test]
+    fn temp_env_vars_point_at_the_scratch_dir() {
+        let mut env = std::collections::HashMap::new();
+        set_session_temp_env(&mut env, "/data/workspaces/s1/.libragent/tmp");
+        for key in SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                env.get(key).map(String::as_str),
+                Some("/data/workspaces/s1/.libragent/tmp"),
+                "{key} must point at the session scratch directory"
+            );
+        }
+
+        // An explicit `env` value from the call wins: the agent asked for that
+        // path, and the shell must not silently redirect it.
+        let mut env = std::collections::HashMap::from([(
+            "TMPDIR".to_string(),
+            "/workspace/.cache".to_string(),
+        )]);
+        set_session_temp_env(&mut env, "/data/workspaces/s1/.libragent/tmp");
+        assert_eq!(
+            env.get("TMPDIR").map(String::as_str),
+            Some("/workspace/.cache")
+        );
+        assert_eq!(
+            env.get("TEMP").map(String::as_str),
+            Some("/data/workspaces/s1/.libragent/tmp")
+        );
+    }
+
+    // #2946: the shell's temp variables follow the session scope. Host sessions
+    // get the real scratch path, Docker sessions `/tmp` (the runtime binds it to
+    // the same directory), and an explicit `env` value from the call still wins.
+    #[test]
+    fn add_session_temp_env_chooses_the_session_scope() {
+        let session_id = "temp-env-session";
+
+        let mut docker_env = std::collections::HashMap::new();
+        add_session_temp_env(session_id, true, &mut docker_env);
+        for key in SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                docker_env.get(key).map(String::as_str),
+                Some("/tmp"),
+                "{key} must stay inside the container"
+            );
+        }
+
+        // A container path never reaches the host: the host value is the scratch path.
+        let mut host_env = std::collections::HashMap::new();
+        add_session_temp_env(session_id, false, &mut host_env);
+        let scratch = crate::session::get_session_manager()
+            .expect("session manager")
+            .get_session_scratch_dir_unverified(session_id)
+            .display()
+            .to_string();
+        assert_ne!(scratch, "/tmp");
+        for key in SESSION_TEMP_ENV_KEYS {
+            assert_eq!(
+                host_env.get(key).map(String::as_str),
+                Some(scratch.as_str()),
+                "{key} must point at the session scratch directory"
+            );
+        }
+
+        let mut explicit =
+            std::collections::HashMap::from([("TMP".to_string(), "/workspace/.cache".to_string())]);
+        add_session_temp_env(session_id, false, &mut explicit);
+        assert_eq!(
+            explicit.get("TMP").map(String::as_str),
+            Some("/workspace/.cache")
+        );
+    }
 
     #[test]
     fn docker_cwd_accepts_root_relative_and_absolute_under_root() {
@@ -575,7 +705,7 @@ mod tests {
         let nested = root.path().join("nested");
         std::fs::create_dir_all(&nested).expect("mkdir nested");
 
-        let resolved = resolve_isolated_shell_cwd(root.path(), Some("nested"))
+        let resolved = resolve_isolated_shell_cwd(root.path(), Some("nested"), true)
             .expect("resolve ok")
             .expect("some cwd");
         assert_eq!(
@@ -583,7 +713,7 @@ mod tests {
             std::fs::canonicalize(&nested).unwrap()
         );
 
-        assert!(resolve_isolated_shell_cwd(root.path(), None)
+        assert!(resolve_isolated_shell_cwd(root.path(), None, true)
             .unwrap()
             .is_none());
 
@@ -591,8 +721,31 @@ mod tests {
         let err = resolve_isolated_shell_cwd(
             root.path(),
             Some(outside.path().to_str().expect("utf8 path")),
+            true,
         )
         .expect_err("escape must fail");
+        assert!(
+            err.contains("escapes the session workspace"),
+            "unexpected err: {err}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_isolated_shell_cwd_allows_linked_worktree() {
+        use crate::mcp::builtin::utils::linked_worktrees::test_support::{add_worktree, main_repo};
+
+        let parent = tempdir().expect("tempdir");
+        let repo = main_repo(parent.path());
+        let worktree = add_worktree(&repo, "worker");
+
+        let resolved =
+            resolve_isolated_shell_cwd(&repo, Some(worktree.to_str().expect("utf8")), true)
+                .expect("linked worktree cwd allowed")
+                .expect("some cwd");
+        assert_eq!(resolved, std::fs::canonicalize(&worktree).unwrap());
+
+        let err = resolve_isolated_shell_cwd(&repo, Some(worktree.to_str().expect("utf8")), false)
+            .expect_err("setting off must reject the sibling worktree");
         assert!(
             err.contains("escapes the session workspace"),
             "unexpected err: {err}"

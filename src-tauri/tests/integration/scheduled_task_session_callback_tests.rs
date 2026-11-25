@@ -60,6 +60,7 @@ fn make_session(session_id: &str, assistant_id: &str) -> SessionMetadata {
         docker_container_name: None,
         docker_host_workspace_path: None,
         status_reason: None,
+        forked_from: None,
     }
 }
 
@@ -1035,6 +1036,8 @@ fn sample_session_task(
         enabled,
         last_run_at: None,
         next_run_at,
+        run_claim_run: None,
+        run_claim_expires_at: None,
         created_at: 1_000,
         updated_at,
     }

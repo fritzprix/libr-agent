@@ -56,3 +56,54 @@ fn reasoning_budget_retries_once() {
         NonProductiveCompletionAction::Fail
     );
 }
+
+#[test]
+fn completion_cancel_tells_the_frontend_whether_a_retry_follows() {
+    // The frontend shows "Retrying…" only when `willRetry` is true (#2705).
+    let cancel = crate::agent::llm::types::CompletionCancelRequest {
+        session_id: "s1".to_string(),
+        response_message_id: "r1".to_string(),
+        reason: "reasoning-budget-exceeded".to_string(),
+        will_retry: false,
+    };
+
+    let json = serde_json::to_value(&cancel).unwrap();
+
+    assert_eq!(json["willRetry"], serde_json::json!(false));
+    assert_eq!(json["reason"], "reasoning-budget-exceeded");
+}
+
+#[test]
+fn streaming_issue_report_accepts_optional_max_output_tokens() {
+    use crate::agent::llm::types::StreamingIssueReport;
+
+    let with_source: StreamingIssueReport = serde_json::from_value(serde_json::json!({
+        "sessionId": "s1",
+        "responseMessageId": "r1",
+        "issueKind": "REASONING_BUDGET_EXCEEDED",
+        "observedTailChars": 10,
+        "patternLength": 7372,
+        "repetitionCount": 7400,
+        "maxOutputTokens": 8192,
+        "maxOutputTokensSource": "settings",
+    }))
+    .unwrap();
+    assert_eq!(with_source.max_output_tokens, Some(8192));
+    assert_eq!(
+        with_source.max_output_tokens_source.as_deref(),
+        Some("settings")
+    );
+
+    // Loop reports do not send the fields.
+    let without: StreamingIssueReport = serde_json::from_value(serde_json::json!({
+        "sessionId": "s1",
+        "responseMessageId": "r1",
+        "issueKind": "REPEATED_TEXT_LOOP",
+        "observedTailChars": 10,
+        "patternLength": 64,
+        "repetitionCount": 3,
+    }))
+    .unwrap();
+    assert_eq!(without.max_output_tokens, None);
+    assert_eq!(without.max_output_tokens_source, None);
+}

@@ -154,7 +154,7 @@ pub async fn recover_sessions(
     app_handle: &AppHandle,
     context_registry: Arc<ContextRegistry>,
 ) -> Result<(), String> {
-    let dispatcher = TauriEventDispatcher::new(app_handle.clone());
+    let dispatcher = TauriEventDispatcher::new(app_handle);
     recover_sessions_with_dispatcher(session_repo, active_sessions, &dispatcher, context_registry)
         .await
 }
@@ -178,6 +178,9 @@ pub async fn recover_sessions_with_dispatcher(
 }
 
 /// Recover BUSY sessions with optional injected message repository for isolated testing.
+///
+/// Each GUI startup runs this pass in-process (#2853). A second window does
+/// not skip recovery because it attached to another process.
 pub async fn recover_sessions_with_dispatcher_and_message_repo(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,

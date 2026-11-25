@@ -155,29 +155,52 @@ export function SkillsListModal({
                     key={skill.path}
                     skill={skill}
                     action={
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={deletingSkillName === skill.name}
-                            onClick={() => onDeleteUserSkill(skill.name)}
-                            aria-label={t('settings.skills.deleteUserSkill', {
+                      skill.pluginOwner ? (
+                        // #2927 D2: a plugin-owned skill is read-only; it
+                        // goes only with the plugin that owns it.
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Badge variant="secondary">
+                                {t(
+                                  'settings.skills.pluginOwnedBadge',
+                                  'plugin',
+                                )}
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t(
+                              'settings.skills.pluginOwnedTooltip',
+                              'Installed by a plugin. Remove the plugin to delete it.',
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={deletingSkillName === skill.name}
+                              onClick={() => onDeleteUserSkill(skill.name)}
+                              aria-label={t('settings.skills.deleteUserSkill', {
+                                name: skill.name,
+                                defaultValue: 'Delete {{name}}',
+                              })}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('settings.skills.deleteUserSkill', {
                               name: skill.name,
                               defaultValue: 'Delete {{name}}',
                             })}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {t('settings.skills.deleteUserSkill', {
-                            name: skill.name,
-                            defaultValue: 'Delete {{name}}',
-                          })}
-                        </TooltipContent>
-                      </Tooltip>
+                          </TooltipContent>
+                        </Tooltip>
+                      )
                     }
                   />
                 ))

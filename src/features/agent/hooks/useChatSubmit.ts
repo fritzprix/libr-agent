@@ -11,6 +11,10 @@ import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgent
 import { safeInvoke } from '@/lib/backend/core';
 import type { ExecutionMode } from '@/context/agent-session/types';
 import { isExecutionMode } from '@/lib/generated/execution-mode';
+import {
+  parsePluginInstallCommand,
+  parsePluginUpdateCommand,
+} from '../lib/plugin-command';
 
 const logger = getLogger('useChatSubmit');
 const OBVIOUS_OVERSIZE_CHAR_MULTIPLIER = 2;
@@ -46,6 +50,22 @@ interface UseChatSubmitProps {
   onSubmitted?: () => void | Promise<void>;
   onClearSession?: () => void;
   onExecutionModeChange?: (mode: ExecutionMode) => void;
+  /**
+   * Handles `/plugin install <git-url>` (needs the hook-approval dialog).
+   * Resolves true when the command was consumed.
+   */
+  onPluginInstall?: (repoUrl: string) => Promise<boolean>;
+  /**
+   * Handles `/plugin update <name|git-url>` (#2927 item 4): needs the D6
+   * update notice and the install-time approvals again, so it is consumed
+   * here like install. Resolves true when the command was consumed.
+   */
+  onPluginUpdate?: (target: string) => Promise<boolean>;
+  /**
+   * Notified after a command that can change the plugin command list
+   * (`/plugin install|uninstall`, `/reload`) succeeds (#2922).
+   */
+  onPluginCommandsChanged?: () => void;
 }
 
 export function useChatSubmit({
@@ -60,6 +80,9 @@ export function useChatSubmit({
   onSubmitted,
   onClearSession,
   onExecutionModeChange,
+  onPluginInstall,
+  onPluginUpdate,
+  onPluginCommandsChanged,
 }: UseChatSubmitProps) {
   const { t } = useTranslation();
   const { value: settings } = useSettings();
@@ -68,73 +91,16 @@ export function useChatSubmit({
   // Ref avoids stale closure and blocks nested `/clear` while invoke is in flight.
   const isSubmittingRef = useRef(false);
 
-  const handleSubmit = useCallback(
-    async (e?: React.FormEvent<HTMLFormElement>) => {
-      e?.preventDefault();
-
-      if (isSubmittingRef.current) {
-        logger.info('Submit ignored: already submitting');
-        return;
-      }
-
-      const messageText = input.trim();
-      const hasInput = messageText.length > 0 || pendingFiles.length > 0;
-
-      if (!hasInput) {
-        logger.info('Submit ignored: no input and no pending files');
-        return;
-      }
+  /**
+   * Ordinary chat send path. Shared by normal submit and plugin slash
+   * command expansion (#2922), where the expanded body is sent as a regular
+   * message (pending files still attach to it).
+   */
+  const sendChatText = useCallback(
+    async (text: string): Promise<boolean> => {
       if (!session?.id) {
         logger.info('Submit ignored: no session');
-        return;
-      }
-
-      // Intercept CLI command execution (allowed before Session Ready)
-      if (messageText.startsWith('/')) {
-        isSubmittingRef.current = true;
-        setIsSubmitting(true);
-        const currentInput = input;
-        setInput(''); // Clear input immediately for better UX
-        // Optimistic UI clear: do not wait for invoke. Backend also emits
-        // resourceUpdated(clear); without this, a slow command looks like a
-        // failed clear and users re-issue `/clear` (nested reset race).
-        if (messageText === '/clear') {
-          onClearSession?.();
-          clearPendingFiles();
-        }
-
-        try {
-          const result = await safeInvoke<{
-            success: boolean;
-            message: string;
-          }>('agent_execute_command', {
-            sessionId: session.id,
-            commandText: messageText,
-          });
-          if (result.success) {
-            if (messageText !== '/clear') {
-              clearPendingFiles();
-              const permissionMode = parsePermissionCommand(messageText);
-              if (permissionMode) {
-                onExecutionModeChange?.(permissionMode);
-              }
-            }
-            toast.success(result.message);
-          } else {
-            toast.error(result.message || 'Command failed');
-            setInput(currentInput); // Restore input on error
-          }
-        } catch (err) {
-          logger.error('Failed to execute command:', err);
-          toast.error(
-            typeof err === 'string' ? err : 'Command execution failed',
-          );
-          setInput(currentInput); // Restore input on error
-        } finally {
-          isSubmittingRef.current = false;
-          setIsSubmitting(false);
-        }
-        return;
+        return false;
       }
 
       if (!isProxyReady) {
@@ -142,18 +108,18 @@ export function useChatSubmit({
           'Submit ignored: proxy not ready (MCP discovery unfinished)',
         );
         toast.error(t('agent.input.proxyNotReadyToast'));
-        return;
+        return false;
       }
 
       if (
         !hasPersistedMessages &&
         pendingFiles.length === 0 &&
-        messageText.length >
+        text.length >
           settings.maxInputContext * OBVIOUS_OVERSIZE_CHAR_MULTIPLIER
       ) {
         logger.warn('Rejected obvious oversize first input in ChatInput', {
           sessionId: session.id,
-          inputLength: messageText.length,
+          inputLength: text.length,
           maxInputContext: settings.maxInputContext,
           obviousOversizeCharLimit:
             settings.maxInputContext * OBVIOUS_OVERSIZE_CHAR_MULTIPLIER,
@@ -161,7 +127,7 @@ export function useChatSubmit({
         toast.error(
           'First input is too large to start this session. Split it up or raise Max Input Context in Settings.',
         );
-        return;
+        return false;
       }
 
       let attachedFileRefs: AttachmentReference[] = [];
@@ -179,7 +145,7 @@ export function useChatSubmit({
         } catch (err) {
           logger.error('Error uploading pending files:', err);
           toast.error('Failed to upload files. Please try again.');
-          return;
+          return false;
         }
       }
 
@@ -213,7 +179,7 @@ export function useChatSubmit({
         sessionId: session.id,
         threadId: session.id,
         role: 'user',
-        content: [{ type: 'text', text: messageText }, ...inlineContent],
+        content: [{ type: 'text', text }, ...inlineContent],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -229,6 +195,7 @@ export function useChatSubmit({
       setInput(''); // Clear input immediately for better UX
       clearPendingFiles();
 
+      let sent = false;
       try {
         await submit(userMessage);
         logger.info('Message submitted successfully');
@@ -248,6 +215,7 @@ export function useChatSubmit({
         }
 
         await onSubmitted?.();
+        sent = true;
       } catch (err) {
         // Restore input on error
         setInput(currentInput);
@@ -256,6 +224,7 @@ export function useChatSubmit({
         isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
+      return sent;
     },
     [
       input,
@@ -267,11 +236,143 @@ export function useChatSubmit({
       refetchSessionFiles,
       hasPersistedMessages,
       onSubmitted,
-      onClearSession,
-      onExecutionModeChange,
       settings.maxInputContext,
       isProxyReady,
       t,
+    ],
+  );
+
+  const handleSubmit = useCallback(
+    async (e?: React.FormEvent<HTMLFormElement>) => {
+      e?.preventDefault();
+
+      if (isSubmittingRef.current) {
+        logger.info('Submit ignored: already submitting');
+        return;
+      }
+
+      const messageText = input.trim();
+      const hasInput = messageText.length > 0 || pendingFiles.length > 0;
+
+      if (!hasInput) {
+        logger.info('Submit ignored: no input and no pending files');
+        return;
+      }
+      if (!session?.id) {
+        logger.info('Submit ignored: no session');
+        return;
+      }
+
+      // `/plugin install` and `/plugin update` both need the desktop
+      // approval dialogs, so both are consumed here and never reach the
+      // generic `agent_execute_command` path (#2922, #2927).
+      const pluginInstallUrl = parsePluginInstallCommand(messageText);
+      const pluginUpdateTarget = pluginInstallUrl
+        ? null
+        : parsePluginUpdateCommand(messageText);
+      const pluginHandler = pluginInstallUrl
+        ? onPluginInstall
+        : pluginUpdateTarget
+          ? onPluginUpdate
+          : undefined;
+      const pluginTarget = pluginInstallUrl ?? pluginUpdateTarget;
+      if (pluginTarget && pluginHandler) {
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
+        const currentInput = input;
+        setInput('');
+        try {
+          const consumed = await pluginHandler(pluginTarget);
+          if (consumed) {
+            clearPendingFiles();
+            onPluginCommandsChanged?.();
+          } else {
+            setInput(currentInput);
+          }
+        } finally {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
+        return;
+      }
+
+      // Intercept CLI command execution (allowed before Session Ready)
+      if (messageText.startsWith('/')) {
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
+        const currentInput = input;
+        setInput(''); // Clear input immediately for better UX
+        // Optimistic UI clear: do not wait for invoke. Backend also emits
+        // resourceUpdated(clear); without this, a slow command looks like a
+        // failed clear and users re-issue `/clear` (nested reset race).
+        if (messageText === '/clear') {
+          onClearSession?.();
+          clearPendingFiles();
+        }
+
+        try {
+          const result = await safeInvoke<{
+            success: boolean;
+            message: string;
+            expandedPrompt?: string;
+          }>('agent_execute_command', {
+            sessionId: session.id,
+            commandText: messageText,
+          });
+          if (result.success) {
+            if (
+              messageText.startsWith('/plugin') ||
+              messageText === '/reload'
+            ) {
+              onPluginCommandsChanged?.();
+            }
+            if (result.expandedPrompt != null) {
+              // Plugin slash command (#2922): send the expanded Markdown
+              // body as an ordinary chat message; pending files still attach.
+              const sent = await sendChatText(result.expandedPrompt);
+              if (!sent) {
+                setInput(currentInput); // Nothing was sent: keep the typed command
+              }
+              return;
+            }
+            if (messageText !== '/clear') {
+              clearPendingFiles();
+              const permissionMode = parsePermissionCommand(messageText);
+              if (permissionMode) {
+                onExecutionModeChange?.(permissionMode);
+              }
+            }
+            toast.success(result.message);
+          } else {
+            toast.error(result.message || 'Command failed');
+            setInput(currentInput); // Restore input on error
+          }
+        } catch (err) {
+          logger.error('Failed to execute command:', err);
+          toast.error(
+            typeof err === 'string' ? err : 'Command execution failed',
+          );
+          setInput(currentInput); // Restore input on error
+        } finally {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
+        return;
+      }
+
+      await sendChatText(messageText);
+    },
+    [
+      input,
+      pendingFiles,
+      session,
+      clearPendingFiles,
+      onClearSession,
+      onExecutionModeChange,
+      onPluginInstall,
+      onPluginUpdate,
+      onPluginCommandsChanged,
+      sendChatText,
     ],
   );
 

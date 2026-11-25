@@ -12,20 +12,24 @@ lease.py combines the first two for one tick. A BUSY or a claim conflict says
 only what it says: see the `reason` it prints before concluding anything about
 other workers.
 
-State lives outside the user's checkout:
-`<repo>/../<repo-name>.worktrees/.worker-loop/` (override with $LOOP_STATE_DIR).
+State lives in the main checkout at `<repo>/.worker-loop/`, a git-ignored path
+shared by every worktree (override with $LOOP_STATE_DIR). State from the old
+`<repo>/../<repo-name>.worktrees/.worker-loop/` is copied there on first use.
+Agents inspect or change state only through this CLI, never by reading or
+writing the files.
 
 CLI:
   worker_state.py claim   --worker W --ref issue:N [--token T]   0 claimed, 1 held by another worker, 2 error, 4 lease lost
   worker_state.py release --worker W --ref pr:N                  release our own claim
+  worker_state.py set-current --worker W --ref issue:N [--branch B] [--token T]   set state.json `current`
+  worker_state.py clear-current --worker W [--token T]           clear `current` (the claim is released separately)
   worker_state.py list                                           print claims.json
-  worker_state.py status                                         every slot, tick, claim, needsUser, and scheduler
-  worker_state.py needs-user --ref R --question Q                record once; prints ADDED or ALREADY ASKED
-  worker_state.py needs-user --ref R --clear                     remove after the user answered
-  worker_state.py ci-attempt --pr N                              count one attempt; print the new total
-  worker_state.py ci-attempt --pr N --clear                      reset when CI is green
+  worker_state.py status                                         every slot, tick, claim, scheduler, and orphaned slot
   worker_state.py scheduler add --kind K --id I                  record an armed schedule
   worker_state.py scheduler list | clear                         list; clear prints what the caller must stop
+
+Owner questions and CI attempt counts live on GitHub (the `needs-owner` label and
+worker-loop comment markers), not here.
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -77,6 +82,31 @@ def worker_name(explicit: str | None = None) -> str:
     return name
 
 
+_MIGRATED_MARKER = "migrated-to-main"
+
+
+def _migrate_legacy_state(legacy: Path, target: Path) -> None:
+    """Copy the pre-#2793 state dir to `target` once; the old dir is left untouched.
+
+    The copy is built beside `target` and renamed into place, so `target` never
+    exists half-filled. Mutex files are skipped (they are recreated empty), and
+    the copy holds the claims mutex so a claim cannot change mid-copy.
+    """
+    tmp = target.with_name(f"{target.name}.migrating-{os.getpid()}")
+    try:
+        with exclusive(legacy / "claims.json.lock"):
+            shutil.copytree(legacy, tmp, ignore=shutil.ignore_patterns("*.json.lock", "*.guard"))
+        os.replace(tmp, target)
+    except OSError:
+        # Another process won the race (target now exists), or the copy failed.
+        if not target.exists():
+            raise
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    # The marker lives in the old dir, so it survives deleting `target` (e.g. `git clean -fdx`).
+    (legacy / _MIGRATED_MARKER).write_text("state copied to the main checkout (#2793)\n", encoding="utf-8")
+
+
 def state_root() -> Path:
     env = os.environ.get("LOOP_STATE_DIR")
     if env:
@@ -86,7 +116,11 @@ def state_root() -> Path:
     ).stdout.strip()
     common = Path(out).resolve()
     repo_root = common.parent if common.name == ".git" else common
-    return repo_root.parent / f"{repo_root.name}.worktrees" / ".worker-loop"
+    root = repo_root / ".worker-loop"
+    legacy = repo_root.parent / f"{repo_root.name}.worktrees" / ".worker-loop"
+    if not root.exists() and legacy.is_dir() and not (legacy / _MIGRATED_MARKER).exists():
+        _migrate_legacy_state(legacy, root)
+    return root
 
 
 def worker_dir(worker: str) -> Path:
@@ -99,6 +133,14 @@ def state_path(worker: str) -> Path:
 
 def shared_path() -> Path:
     return state_root() / "shared.json"
+
+
+def set_current(worker: str, current: dict | None) -> None:
+    """Set or clear (None) the work a slot resumes after a crash, keeping the rest of state.json."""
+    path = state_path(worker)
+    state = read_json(path)
+    state["current"] = current
+    atomic_write_json(path, state)
 
 
 def _host() -> str:
@@ -363,9 +405,13 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
+def lease_renewed_at(record: dict) -> float:
+    """When the run that wrote this slot or lock record last proved it was alive."""
+    return float(record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0)
+
+
 def lease_expired(record: dict) -> bool:
-    last = record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0
-    return time.time() - float(last) > LEASE_TTL_SECONDS
+    return time.time() - lease_renewed_at(record) > LEASE_TTL_SECONDS
 
 
 def lease_is_live(record: dict | None) -> bool:
@@ -470,21 +516,25 @@ def exclusive(lock_path: Path, timeout: float = 10.0):
 
 
 # --- Repo-wide operating state ------------------------------------------------
-# needsUser, ciAttempts, and schedulers describe the repo, not a slot: any worker
-# must see them, and `status` and `stop` must find them whichever slot armed them.
+# Schedulers describe the repo, not a slot: `status` and `stop` must find them
+# whichever slot armed them. Owner questions and CI attempts live on GitHub.
+
+# Questions recorded by older versions; `status` lists them until they are moved
+# to GitHub, and nothing writes new ones.
+_LEGACY_QUESTIONS = "needsUser"
 
 
 def _load_shared(path: Path) -> dict:
-    """Read shared.json; on first use, adopt what older versions kept per slot."""
+    """Read shared.json; on first use, adopt schedulers older versions kept per slot."""
     if path.is_file():
-        return read_json(path)
-    shared: dict = {"needsUser": [], "ciAttempts": {}, "schedulers": []}
+        data = read_json(path)
+        shared: dict = {"schedulers": data.get("schedulers") or []}
+        if data.get(_LEGACY_QUESTIONS):
+            shared[_LEGACY_QUESTIONS] = data[_LEGACY_QUESTIONS]
+        return shared
+    shared = {"schedulers": []}
     for slot_state in sorted(path.parent.glob("*/state.json")):
         state = read_json(slot_state)
-        known = {item.get("ref") for item in shared["needsUser"]}
-        shared["needsUser"] += [i for i in state.get("needsUser") or [] if i.get("ref") not in known]
-        for pr, count in (state.get("ciAttempts") or {}).items():
-            shared["ciAttempts"][pr] = max(count, shared["ciAttempts"].get(pr, 0))
         if state.get("scheduler"):
             shared["schedulers"].append(state["scheduler"])
     return shared
@@ -499,31 +549,14 @@ def _shared_update():
         atomic_write_json(path, shared)
 
 
-def add_needs_user(ref: str, question: str) -> bool:
-    """Record a question once across all workers. False means it was already asked."""
+def clear_legacy_question(ref: str) -> None:
+    """Drop a pre-GitHub question after it was posted with the `needs-owner` label."""
     with _shared_update() as shared:
-        if any(item.get("ref") == ref for item in shared["needsUser"]):
-            return False
-        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        shared["needsUser"].append({"ref": ref, "question": question, "since": since})
-    return True
-
-
-def clear_needs_user(ref: str) -> None:
-    with _shared_update() as shared:
-        shared["needsUser"] = [i for i in shared["needsUser"] if i.get("ref") != ref]
-
-
-def count_ci_attempt(pr: int) -> int:
-    with _shared_update() as shared:
-        count = shared["ciAttempts"].get(str(pr), 0) + 1
-        shared["ciAttempts"][str(pr)] = count
-    return count
-
-
-def clear_ci_attempts(pr: int) -> None:
-    with _shared_update() as shared:
-        shared["ciAttempts"].pop(str(pr), None)
+        remaining = [i for i in shared.get(_LEGACY_QUESTIONS, []) if i.get("ref") != ref]
+        if remaining:
+            shared[_LEGACY_QUESTIONS] = remaining
+        else:
+            shared.pop(_LEGACY_QUESTIONS, None)
 
 
 def add_scheduler(kind: str, scheduler_id: str) -> None:
@@ -554,6 +587,8 @@ def status() -> dict:
     slots = worker_slots.load_slots()
     names = set(slots) | {p.parent.name for p in root.glob("*/state.json")}
     claims = worker_claims.load_claims()
+    orphaned = worker_slots.orphaned_slots()
+    orphaned_names = {entry["worker"] for entry in orphaned}
     workers = {}
     for name in sorted(names):
         state = read_json(root / name / "state.json")
@@ -564,9 +599,10 @@ def status() -> dict:
             "tickRunning": lease_is_live(lock),
             "current": state.get("current"),
             "claims": sorted(r for r, c in claims.items() if c.get("worker") == name),
+            "orphaned": name in orphaned_names,
         }
     shared = _load_shared(shared_path())
-    return {"workers": workers, **shared}
+    return {"workers": workers, "orphaned": orphaned, **shared}
 
 
 def main() -> None:
@@ -576,12 +612,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "command",
-        choices=["claim", "release", "list", "status", "needs-user", "ci-attempt", "scheduler"],
+        choices=[
+            "claim", "release", "set-current", "clear-current", "list", "status",
+            "needs-user", "ci-attempt", "scheduler",
+        ],
     )
     parser.add_argument("action", nargs="?", choices=["add", "list", "clear"], help="With scheduler")
     parser.add_argument("--worker", default=None, help="Worker name (default: $WORKER_ID)")
     parser.add_argument("--token", default=None, help="Tick token from `tick_gate.py --lock`")
     parser.add_argument("--ref", default=None, help="issue:N or pr:N")
+    parser.add_argument("--branch", default=None, help="With set-current: the work's branch")
     parser.add_argument("--question", default=None)
     parser.add_argument("--pr", type=int, default=None)
     parser.add_argument("--clear", action="store_true")
@@ -596,18 +636,15 @@ def main() -> None:
             print(json.dumps(worker_claims.load_claims(), ensure_ascii=False, indent=2))
         elif args.command == "status":
             print(json.dumps(status(), ensure_ascii=False, indent=2))
-        elif args.command == "needs-user":
-            if args.clear:
-                clear_needs_user(args.ref)
-                print("CLEARED")
-            else:
-                print("ADDED" if add_needs_user(args.ref, args.question) else "ALREADY ASKED")
-        elif args.command == "ci-attempt":
-            if args.clear:
-                clear_ci_attempts(args.pr)
-                print("CLEARED")
-            else:
-                print(count_ci_attempt(args.pr))
+        elif args.command == "needs-user" and args.clear:
+            clear_legacy_question(args.ref)
+            print("CLEARED")
+        elif args.command in ("needs-user", "ci-attempt"):
+            sys.stderr.write(
+                f"worker_state error: `{args.command}` moved to GitHub; use the `needs-owner` label "
+                "or a `<!-- worker-loop: ci-attempt n=K -->` PR comment (see SKILL.md)\n"
+            )
+            sys.exit(2)
         elif args.command == "scheduler":
             if args.action == "add":
                 add_scheduler(args.kind, args.id)
@@ -615,6 +652,19 @@ def main() -> None:
             else:
                 entries = clear_schedulers() if args.action == "clear" else list_schedulers()
                 print(json.dumps(entries, ensure_ascii=False, indent=2))
+        elif args.command in ("set-current", "clear-current"):
+            worker = worker_name(args.worker)
+            if args.token and not worker_slots.holds_slot(worker, args.token):
+                print(f"LEASE LOST: {worker} no longer holds this tick; stop working")
+                sys.exit(EXIT_LEASE_LOST)
+            if args.command == "clear-current":
+                set_current(worker, None)
+                print(f"CLEARED current for {worker}")
+            else:
+                if not args.ref or not worker_claims.REF_FORMAT.match(args.ref):
+                    raise ValueError("--ref issue:N or pr:N is required")
+                set_current(worker, {"ref": args.ref, "branch": args.branch})
+                print(f"SET current for {worker}: {args.ref} on {args.branch or '(no branch)'}")
         else:
             if not args.ref:
                 raise ValueError("--ref is required")

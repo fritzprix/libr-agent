@@ -18,7 +18,7 @@ pub fn user_skills_write_rejected_error() -> String {
 
 /// Canonicalizes the deepest existing ancestor and re-appends the missing tail,
 /// so not-yet-created targets and symlinked parents resolve consistently.
-fn resolve_lenient(path: &Path) -> PathBuf {
+pub(crate) fn resolve_lenient(path: &Path) -> PathBuf {
     let mut tail = Vec::new();
     let mut current = path;
     loop {

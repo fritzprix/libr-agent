@@ -1,6 +1,8 @@
 #![allow(clippy::result_large_err)]
 
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::compact_context_repository::CompactContextRepository;
@@ -242,6 +244,15 @@ pub async fn request_llm_completion(
         }
     }
 
+    // Supported providers are answered in this process by default (#2760);
+    // unsupported ones (and ignored Base URLs) still go to the WebView.
+    if crate::agent::llm::rust_executor::try_dispatch_completion(app_handle, &request)
+        .await
+        .map_err(|e| *e)?
+    {
+        return Ok(());
+    }
+
     app_handle
         .emit("llm:completion-request", request)
         .map_err(|e| {
@@ -267,7 +278,7 @@ async fn process_pending_messages(
 ) -> Result<(), AgentRuntimeError> {
     match crate::agent::pending_queue::claim_all_pending_messages(
         active_sessions,
-        app_handle,
+        &TauriEventDispatcher::from_handle(app_handle),
         session_id,
     )
     .await
@@ -617,10 +628,7 @@ async fn check_token_limit(
         return Ok(final_messages);
     }
 
-    let safe_input_token_limit = std::cmp::min(
-        context_settings.max_input_context,
-        context_settings.model_max_limit,
-    );
+    let safe_input_token_limit = context_settings.max_input_context;
     let prompt_anchored_total_tokens =
         crate::agent::llm::token_utils::calculate_prompt_anchored_total_tokens(
             &final_messages,
@@ -657,7 +665,7 @@ async fn check_token_limit(
         session_id: session_id.to_string(),
         metrics: preflight_metrics,
     };
-    let _ = crate::agent::tauri_events::emit_agent_event(app_handle, event);
+    let _ = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event);
 
     if total_budget_tokens < safe_input_token_limit {
         return Ok(final_messages);

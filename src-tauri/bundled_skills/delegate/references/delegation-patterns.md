@@ -6,7 +6,7 @@ Use this file when you need concrete task wording or when a delegated child sess
 
 | Need | Safe with normal `agent__spawnSession`? | What to do |
 | --- | --- | --- |
-| Existing Idle child has the same assistant and compatible workspace | Prefer reuse | Inspect with `agent__listAgents(type="sessions")`, then use `agent__messageToSession`; add `reset=true` only for a fresh assignment |
+| Existing Idle child has the same assistant and compatible workspace | Prefer reuse | Inspect with `agent__listAgents(type="sessions")`, then use `agent__messageToSession(sessionId, complexity, message)`; add `reset=true` only for a fresh assignment |
 | Child runs a bounded task with its own workspace | Yes | Delegate normally |
 | Child sees parent workspace files automatically | No (plain default) | Pass `workspaceOverride="current"` (or `"."` / `"inherit"`), or inline content |
 | Child inherits parent workspace `agents.md` / `CLAUDE.md` | Only if SHARED | Share with `workspaceOverride="current"`, or copy critical rules into the handoff |
@@ -22,9 +22,9 @@ Use for code reading, trace analysis, or investigations where the child can work
 Suggested flow:
 
 1. Pick the most relevant assistant.
-2. Inspect existing child sessions and reuse a suitable Idle matching-role child with `agent__messageToSession` when its workspace is compatible.
+2. Inspect existing child sessions and reuse a suitable Idle matching-role child with `agent__messageToSession(sessionId, complexity, message)` when its workspace is compatible.
 3. Write a task that includes the exact question, output shape, and any hard constraints.
-4. Start a new child asynchronously with `agent__spawnSession` only when no suitable child exists or a distinct role, workspace, or parallel slot is needed.
+4. Start a new child asynchronously with `agent__spawnSession(configId, complexity, task, waitForResult=false)` only when no suitable child exists or a distinct role, workspace, or parallel slot is needed.
 5. Keep working in the parent or poll later.
 
 Task template:
@@ -107,7 +107,7 @@ Load **`delegation-eval-loop`** when any of these apply:
 - user or task requires tests/build/lint proof before "done"
 - child may edit a shared workspace and path invariants matter
 - implementation or refactor where fake completion / self-grading is likely
-- you need a bounded reject → `agent__messageToSession` → retry loop
+- you need a bounded reject → `agent__messageToSession(sessionId, complexity, message)` → retry loop
 
 Pattern: child generates; parent evaluates. Do not ask the child to grade its own acceptance as the final gate.
 
@@ -129,7 +129,7 @@ Response:
 
 Use when the user asks another agent to audit, review, or critique existing workspace files.
 
-1. `agent__spawnSession(configId="...", complexity="normal", task="...", workspaceOverride="current", waitForResult=true)` (or reuse an Idle SHARED child via `agent__messageToSession`).
+1. `agent__spawnSession(configId="...", complexity="normal", task="...", workspaceOverride="current", waitForResult=true)` (or reuse an Idle SHARED child via `agent__messageToSession(sessionId, complexity, message)`).
 2. Task text names relative paths under the shared root and the review criteria.
 3. Present the child's final text as the review result.
 4. On missing-file failure under isolation, fix the binding — never grade your own homework as the independent audit.

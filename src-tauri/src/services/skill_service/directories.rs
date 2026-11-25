@@ -254,12 +254,15 @@ pub async fn get_managed_skills_overview_for_directories(
     system_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
     user_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
 
+    let plugin_sources = super::plugin_sources::list_plugin_source_overviews()?;
+
     Ok(ManagedSkillsOverview {
         system_directory: system_dir.to_string_lossy().to_string(),
         user_directory: user_dir.to_string_lossy().to_string(),
         system_skills,
         user_skills,
         effective_skills,
+        plugin_sources,
     })
 }
 
@@ -268,6 +271,7 @@ pub async fn resolve_skills(
     user_dir: PathBuf,
     assistant_dir: Option<PathBuf>,
     workspace_dir: Option<PathBuf>,
+    session_plugin_skills_dir: Option<PathBuf>,
 ) -> Result<Vec<SkillMetadata>, String> {
     wait_for_managed_skills_sync().await;
 
@@ -278,6 +282,15 @@ pub async fn resolve_skills(
         "workspace",
         Some(WORKSPACE_SKILLS_ALIAS_PREFIX),
     )];
+
+    // Session plugin skills layer (#2942 G3.2): installed under the default
+    // session workspace directory so workspace changes cannot hide it. Skipped
+    // when identical to the live workspace layer (no override). No alias
+    // prefix — @workspace-skills/ stays owned by the workspace layer; plugin
+    // skills merge by name like workspace skills.
+    let session_plugin_layer =
+        session_plugin_skills_dir.filter(|dir| Some(dir) != workspace_dir.as_ref());
+    sources.push((session_plugin_layer, "workspace", "session_plugin", None));
 
     // Auto-discover agent hidden directories
     let workspace_root = workspace_dir.as_ref().and_then(|d| find_workspace_root(d));
@@ -361,6 +374,19 @@ pub fn get_workspace_skills_directory_for_session(session_id: &str) -> Result<Pa
     let session_manager = get_session_manager()?;
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
     Ok(get_workspace_skills_directory_from_path(&workspace_dir))
+}
+
+/// Session plugin skills directory (#2942 D1 revised, G3.2): skills
+/// installed by session plugins live under the **default** session workspace
+/// directory (`{data_dir}/workspaces/<session_id>/.libragent/skills`), so a
+/// workspace override or change can never hide them. Skills a user puts into
+/// the (possibly overridden) workspace remain workspace skills.
+pub fn get_session_plugin_skills_directory_for_session(
+    session_id: &str,
+) -> Result<PathBuf, String> {
+    let session_manager = get_session_manager()?;
+    let default_dir = session_manager.get_session_default_workspace_dir_unverified(session_id);
+    Ok(get_workspace_skills_directory_from_path(&default_dir))
 }
 
 pub fn migrate_workspace_skills_to_libragent(workspace_path: &Path) -> Result<(), String> {

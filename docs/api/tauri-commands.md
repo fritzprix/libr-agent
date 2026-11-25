@@ -275,6 +275,12 @@ OAuth token lifecycle for external integrations. Located in `src-tauri/src/comma
 - `get_oauth_token`: Retrieves the stored token (refreshes expired tokens automatically).
 - `revoke_oauth_token`: Deletes and revokes credentials for a provider.
 
+**Multiple GUIs (#2858):** custom-scheme (`libr-agent://`) callbacks are
+delivered by the OS to one registered instance (not necessarily the one that
+started the flow), and concurrent loopback callback binds can collide. Prefer
+one GUI per profile while running OAuth, or see `docs/api/http_api.md`
+(Per-process resources).
+
 ---
 
 ### 13. System Settings & Migration

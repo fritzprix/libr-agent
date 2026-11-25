@@ -15,12 +15,12 @@ SUBSTRATE_CHOICES = [SUBSTRATE_PLAIN, SUBSTRATE_ORG, SUBSTRATE_SCHEDULED]
 
 SUBSTRATE_DISPLAY = {
     SUBSTRATE_PLAIN: (
-        "Plain child sessions via agent__spawnSession(...). "
+        "Plain child sessions via agent__spawnSession(configId, complexity, task). "
         "Use delegate for delegation mechanics when needed."
     ),
     SUBSTRATE_ORG: (
         "Explicit org lineage via agent__createOrg(...) once from the root session, "
-        "then agent__spawnSession(...) for org-visible children. "
+        "then agent__spawnSession(configId, complexity, task) for org-visible children. "
         "Org-visible children inherit the governing session's effective workspace by default. "
         "Follow org for org-specific operating rules."
     ),
@@ -123,7 +123,7 @@ Own this responsibility: {responsibility}
 - If blocked, record the blocker instead of pretending progress happened.
 - Execution substrate for this task force: {execution_substrate}
 - If explicit org lineage is chosen later, follow `org`.
-- If scheduled task groups are chosen later, follow `schedule`.
+- If global scheduled tasks are chosen later, follow `schedule`.
 """
 
 
@@ -163,7 +163,7 @@ Active specialist skill: `{specialist_skill}`
 
 - Plain child sessions: use `delegate` when delegation mechanics matter.
 - Explicit org lineage: use `org`.
-- Scheduled task groups: use `schedule`.
+- Global scheduled tasks: use `schedule`.
 
 ## Active Roles
 
@@ -224,12 +224,12 @@ def build_teamwork_manifest(
             "workspacePolicy": {
                 "plainChildSessions": "isolated-by-default",
                 "explicitOrgLineage": "inherit-governing-session-workspace-by-default",
-                "scheduledTaskGroups": "workspace-defined-per-group",
+                "scheduledTasks": "global-cron-per-task",
             },
             "specialistSkills": {
                 "plainChildSessions": "delegate",
                 "explicitOrgLineage": "org",
-                "scheduledTaskGroups": "schedule",
+                "scheduledTasks": "schedule",
             },
             "orgLineage": {
                 "intended": is_org,
@@ -239,9 +239,9 @@ def build_teamwork_manifest(
                 "compatibilityAlias": "spawnOrgAgent",
                 "workspaceSharing": "inherit-parent-workspace-by-default",
             },
-            "scheduledTaskGroups": {
+            "scheduledTasks": {
                 "intended": is_scheduled,
-                "notes": "Use scheduled task groups for recurring or cron-like collaboration, not org lineage.",
+                "notes": "Use global scheduled tasks for standalone recurring or cron-like automation.",
             },
         },
         "refreshSemantics": {
@@ -347,8 +347,8 @@ def main() -> None:
 Active specialist skill: `{SUBSTRATE_SPECIALIST_SKILL[substrate_mode]}`
 
 ## Execution Notes
-- Plain child sessions: `agent__spawnSession(...)`, use `delegate` for delegation mechanics
-- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__spawnSession(...)`, follow `org`
+- Plain child sessions: `agent__spawnSession(configId, complexity, task)`, use `delegate` for delegation mechanics
+- Explicit org lineage: `agent__createOrg(...)` once from root, then `agent__spawnSession(configId, complexity, task)`, follow `org`
 - Recurring automation: `scheduled_task__createScheduledTask(...)` and related scheduled-task tools, follow `schedule`
 
 ## Definition of Done

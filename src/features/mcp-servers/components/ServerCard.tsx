@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
   CardContent,
+  Badge,
 } from '@/components/ui';
 import { Switch } from '@/components/ui/switch';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -231,6 +232,18 @@ export const ServerCard = React.memo(
             <div className="min-w-0 flex-1">
               <CardTitle className="text-base break-words">
                 {serverName}
+                {server.pluginSource ? (
+                  <Badge
+                    variant="secondary"
+                    className="ml-2 align-middle"
+                    title={t(
+                      'mcpServer.pluginOwnedHint',
+                      'Installed by a plugin. Edit and delete are disabled; uninstall the plugin to remove it.',
+                    )}
+                  >
+                    {t('mcpServer.pluginOwned', 'Plugin')}
+                  </Badge>
+                ) : null}
               </CardTitle>
               <p className="text-sm text-muted-foreground mt-1 break-words">
                 {server.metadata?.description ||
@@ -400,7 +413,16 @@ export const ServerCard = React.memo(
               <Button
                 variant="outline"
                 size="sm"
+                disabled={Boolean(server.pluginSource)}
                 onClick={() => onEdit(server)}
+                title={
+                  server.pluginSource
+                    ? t(
+                        'mcpServer.pluginOwnedHint',
+                        'Installed by a plugin. Edit and delete are disabled; uninstall the plugin to remove it.',
+                      )
+                    : undefined
+                }
                 aria-label={t('mcpServer.editServer', {
                   name: serverName,
                   defaultValue: 'Edit {{name}}',
@@ -455,7 +477,16 @@ export const ServerCard = React.memo(
             <Button
               variant="destructive"
               size="sm"
+              disabled={Boolean(server.pluginSource)}
               onClick={() => onDelete(server)}
+              title={
+                server.pluginSource
+                  ? t(
+                      'mcpServer.pluginOwnedHint',
+                      'Installed by a plugin. Edit and delete are disabled; uninstall the plugin to remove it.',
+                    )
+                  : undefined
+              }
               aria-label={t('mcpServer.deleteServer', {
                 name: serverName,
                 defaultValue: 'Delete {{name}}',

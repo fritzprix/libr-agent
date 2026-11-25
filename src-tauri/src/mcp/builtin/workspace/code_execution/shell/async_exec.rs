@@ -101,7 +101,13 @@ impl WorkspaceServer {
         let cwd_result = if is_docker {
             utils::resolve_docker_shell_cwd(&docker_root, requested_cwd)
         } else {
-            utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd)
+            utils::resolve_isolated_shell_cwd(
+                &workspace_path,
+                requested_cwd,
+                crate::models::system_settings::SystemSettings::load_global()
+                    .await
+                    .allow_linked_worktrees,
+            )
         };
         let working_directory = match cwd_result {
             Ok(cwd) => cwd,
@@ -132,6 +138,7 @@ impl WorkspaceServer {
             return Ok(result);
         }
         utils::add_wake_url_env(&session_id, &mut env_vars).await;
+        utils::add_session_temp_env(&session_id, is_docker, &mut env_vars);
 
         let reported_cwd = working_directory
             .as_ref()
@@ -506,5 +513,55 @@ impl WorkspaceServer {
         });
 
         Ok(hint.to_mcp_result_with_data(Some(response_data)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::types::MCPContent;
+
+    fn text_of(result: &MCPResult) -> String {
+        result
+            .content
+            .as_ref()
+            .expect("text content")
+            .iter()
+            .filter_map(|c| match c {
+                MCPContent::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn immediate_exit_result_reports_exit_code_and_stderr_tail() {
+        let stderr = vec!["line 1".to_string(), "immediate_boom".to_string()];
+        let result = immediate_exit_result("proc-1", "exit 42", Some(42), &stderr);
+
+        assert_eq!(result.is_error, Some(true));
+        let data = result.structured_content.as_ref().expect("structured data");
+        assert_eq!(data["process_id"], "proc-1");
+        assert_eq!(data["status"], "failed");
+        assert_eq!(data["exit_code"], 42);
+        assert_eq!(data["stderr_tail"], serde_json::json!(stderr));
+        let text = text_of(&result);
+        assert!(text.contains("exited immediately with code 42"), "{text}");
+        assert!(text.contains("immediate_boom"), "{text}");
+    }
+
+    #[test]
+    fn immediate_exit_result_handles_spawn_failure_without_stderr() {
+        let result = immediate_exit_result("proc-2", "nonexistent_bin", None, &[]);
+
+        assert_eq!(result.is_error, Some(true));
+        let data = result.structured_content.as_ref().expect("structured data");
+        assert_eq!(data["process_id"], "proc-2");
+        assert_eq!(data["status"], "failed");
+        assert!(data["exit_code"].is_null());
+        let text = text_of(&result);
+        assert!(text.contains("Process failed to start"), "{text}");
+        assert!(text.contains("(no stderr output)"), "{text}");
     }
 }

@@ -13,6 +13,7 @@ import type {
 } from '@/lib/mcp';
 import type { ToolCall, StreamingPhase } from '@/models/chat';
 import type { Settings } from '@/lib/services/settings-service';
+import type { MaxOutputTokensSource } from '@/models/agent-ipc';
 import { getLogger } from '@/lib/logger';
 import {
   estimateOutputBudgetTokens,
@@ -41,6 +42,8 @@ export interface StreamAccumulatorOptions {
    * provider completion_tokens) reaches 90% of this value with no tool calls.
    */
   reasoningBudgetMaxTokens?: number;
+  /** Where `reasoningBudgetMaxTokens` came from; reported with a budget abort. */
+  reasoningBudgetMaxTokensSource?: MaxOutputTokensSource;
 }
 
 export interface StreamAccumulatorState {
@@ -112,6 +115,8 @@ export class StreamAccumulator {
   private repeatedTextCheckCounter = 0;
   private reasoningBudgetIssueReported = false;
   private readonly reasoningBudgetThreshold?: number;
+  private readonly reasoningBudgetMaxTokens?: number;
+  private readonly reasoningBudgetMaxTokensSource?: MaxOutputTokensSource;
 
   /** True after a reasoning/output-budget abort was reported for this stream. */
   public didExceedReasoningBudget(): boolean {
@@ -142,6 +147,9 @@ export class StreamAccumulator {
       this.reasoningBudgetThreshold = reasoningBudgetThresholdTokens(
         options.reasoningBudgetMaxTokens,
       );
+      this.reasoningBudgetMaxTokens = options.reasoningBudgetMaxTokens;
+      this.reasoningBudgetMaxTokensSource =
+        options.reasoningBudgetMaxTokensSource;
     }
   }
 
@@ -191,6 +199,8 @@ export class StreamAccumulator {
       observedTailChars,
       patternLength: this.reasoningBudgetThreshold,
       repetitionCount: estimatedTokens,
+      maxOutputTokens: this.reasoningBudgetMaxTokens,
+      maxOutputTokensSource: this.reasoningBudgetMaxTokensSource,
     }).catch((error: unknown) => {
       logger.warn('Failed to report output/reasoning budget exceeded', {
         sessionId: this.sessionId,

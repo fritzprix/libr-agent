@@ -5,6 +5,7 @@ Outcomes here do not depend on timing: lease ages are set by editing records,
 races assert only what must hold for every interleaving, and nothing is retried.
 Real processes and real git repositories are used where the behaviour lives there.
 """
+import json
 import multiprocessing
 import os
 import subprocess
@@ -50,7 +51,13 @@ class StateDirCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name).resolve()
-        env = patch.dict(os.environ, {"LOOP_STATE_DIR": str(self.root)})
+        env = patch.dict(os.environ, {
+            "LOOP_STATE_DIR": str(self.root),
+            # The skills-freshness gate runs real git; these tests are about
+            # leases and slots, so the gate is skipped here (its own behavior
+            # is covered in test_tick_gate.py).
+            tick_gate.skills_freshness.SKIP_GATE_ENV: "1",
+        })
         env.start()
         self.addCleanup(env.stop)
         for name in _IDENTITY_ENVS:
@@ -304,7 +311,13 @@ class ErrorExitTest(StateDirCase):
             gh = bin_dir / "gh"
             gh.write_text("#!/bin/sh\nexit 1\n")
             gh.chmod(0o755)
-        return {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+        # On Windows CreateProcess never executes the .cmd stub, so the real gh
+        # runs there; invalid tokens make it fail the same way the stub does.
+        return {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "GH_TOKEN": "invalid-token-for-test",
+            "GITHUB_TOKEN": "invalid-token-for-test",
+        }
 
     def assert_nothing_held(self):
         self.assertEqual(worker_slots.load_slots(), {})
@@ -417,6 +430,70 @@ class ClaimRecoveryTest(StateDirCase):
         self.assertIn("issue:4", worker_claims.load_claims())
 
 
+class CurrentCliTest(StateDirCase):
+    def cli(self, *args):
+        """worker_state.py as a real process; return (exit code, output)."""
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "worker_state.py"), *args],
+            capture_output=True, text=True, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        return result.returncode, result.stdout + result.stderr
+
+    def current(self, worker):
+        return worker_state.read_json(worker_state.state_path(worker)).get("current")
+
+    def test_set_and_clear_round_trip_reflected_in_status(self):
+        held = lease.acquire(anon())
+        auth = ("--worker", held.worker, "--token", held.token)
+        code, _ = self.cli("set-current", *auth, "--ref", "issue:7", "--branch", "feat/x-7")
+        self.assertEqual(code, 0)
+        expected = {"ref": "issue:7", "branch": "feat/x-7"}
+        self.assertEqual(self.current(held.worker), expected)
+        self.assertEqual(worker_state.status()["workers"][held.worker]["current"], expected)
+        code, _ = self.cli("clear-current", *auth)
+        self.assertEqual(code, 0)
+        self.assertIsNone(self.current(held.worker))
+        self.assertIsNone(worker_state.status()["workers"][held.worker]["current"])
+
+    def test_set_current_keeps_other_state_keys(self):
+        held = lease.acquire(anon())
+        self.set_state(held.worker, {"lastFingerprint": "abc"})
+        self.cli("set-current", "--worker", held.worker, "--token", held.token, "--ref", "issue:7")
+        state = worker_state.read_json(worker_state.state_path(held.worker))
+        self.assertEqual(state["lastFingerprint"], "abc")
+        self.assertEqual(state["current"], {"ref": "issue:7", "branch": None})
+
+    def test_lease_lost_blocks_set_and_clear(self):
+        held = lease.acquire(anon())
+        self.set_state(held.worker, {"current": {"ref": "issue:7", "branch": "b"}})
+        bad = ("--worker", held.worker, "--token", "not-the-token")
+        code, out = self.cli("clear-current", *bad)
+        self.assertEqual(code, worker_state.EXIT_LEASE_LOST)
+        self.assertIn("LEASE LOST", out)
+        code, _ = self.cli("set-current", *bad, "--ref", "issue:8")
+        self.assertEqual(code, worker_state.EXIT_LEASE_LOST)
+        self.assertEqual(self.current(held.worker), {"ref": "issue:7", "branch": "b"})
+
+    def test_set_current_rejects_bad_ref(self):
+        held = lease.acquire(anon())
+        for ref in (None, "7", "branch:x"):
+            extra = ("--ref", ref) if ref else ()
+            code, _ = self.cli("set-current", "--worker", held.worker, "--token", held.token, *extra)
+            self.assertEqual(code, 2)
+        self.assertIsNone(self.current(held.worker))
+
+    def test_release_finished_follows_current(self):
+        held = lease.acquire(anon())
+        auth = ("--worker", held.worker, "--token", held.token)
+        worker_claims.claim(held.worker, "issue:7")
+        self.cli("set-current", *auth, "--ref", "issue:7", "--branch", "feat/x-7")
+        state = worker_state.read_json(worker_state.state_path(held.worker))
+        self.assertEqual(worker_claims.release_finished(held.worker, state), [])
+        self.cli("clear-current", *auth)
+        state = worker_state.read_json(worker_state.state_path(held.worker))
+        self.assertEqual(worker_claims.release_finished(held.worker, state), ["issue:7"])
+
+
 class StatusTest(StateDirCase):
     def test_status_finds_every_worker(self):
         running = lease.acquire(live_session("a"), requested="worker-4")
@@ -429,16 +506,29 @@ class StatusTest(StateDirCase):
         self.assertFalse(status["workers"]["worker-9"]["slotLive"])
         self.assertEqual(status["workers"]["worker-9"]["current"], {"ref": "issue:2"})
 
-    def test_questions_are_shared_and_asked_once(self):
-        self.assertTrue(worker_state.add_needs_user("issue:1", "which?"))
-        self.assertFalse(worker_state.add_needs_user("issue:1", "which?"))
-        self.assertEqual(len(worker_state.status()["needsUser"]), 1)
-        worker_state.clear_needs_user("issue:1")
-        self.assertTrue(worker_state.add_needs_user("issue:1", "again?"))
+    def test_shared_state_keeps_only_schedulers(self):
+        shared = worker_state.shared_path()
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        shared.write_text(json.dumps({
+            "schedulers": [{"kind": "process", "id": "1"}],
+            "ciAttempts": {"7": 2},
+            "needsUser": [],
+        }))
+        worker_state.add_scheduler("process", "2")
+        self.assertEqual(set(json.loads(shared.read_text())), {"schedulers"})
+        self.assertNotIn("needsUser", worker_state.status())
 
-    def test_ci_attempts_count_across_workers(self):
-        self.assertEqual(worker_state.count_ci_attempt(5), 1)
-        self.assertEqual(worker_state.count_ci_attempt(5), 2)
+    def test_legacy_questions_are_listed_until_cleared(self):
+        shared = worker_state.shared_path()
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        shared.write_text(json.dumps({
+            "schedulers": [],
+            "needsUser": [{"ref": "issue:1", "question": "q", "since": "s"}],
+        }))
+        self.assertEqual(len(worker_state.status()["needsUser"]), 1)
+        worker_state.clear_legacy_question("issue:1")
+        self.assertNotIn("needsUser", worker_state.status())
+        self.assertEqual(set(json.loads(shared.read_text())), {"schedulers"})
 
     def test_stop_finds_every_schedule(self):
         worker_state.add_scheduler("process", "1")
@@ -446,16 +536,13 @@ class StatusTest(StateDirCase):
         self.assertEqual(len(worker_state.clear_schedulers()), 2)
         self.assertEqual(worker_state.list_schedulers(), [])
 
-    def test_existing_per_slot_state_is_adopted_once(self):
-        self.set_state("worker", {
-            "scheduler": {"kind": "scheduled_task", "id": "x"},
-            "ciAttempts": {"7": 2},
-            "needsUser": [{"ref": "issue:1", "question": "q", "since": "s"}],
-        })
-        self.set_state("worker-2", {"ciAttempts": {"7": 1}})
-        self.assertEqual(worker_state.count_ci_attempt(7), 3)
-        self.assertEqual(worker_state.list_schedulers(), [{"kind": "scheduled_task", "id": "x"}])
-        self.assertFalse(worker_state.add_needs_user("issue:1", "q"))
+    def test_existing_per_slot_schedulers_are_adopted_once(self):
+        self.set_state("worker", {"scheduler": {"kind": "scheduled_task", "id": "x"}})
+        worker_state.add_scheduler("process", "1")
+        self.assertEqual(
+            worker_state.list_schedulers(),
+            [{"kind": "scheduled_task", "id": "x"}, {"kind": "process", "id": "1"}],
+        )
 
 
 def _git(cwd, *args):
@@ -630,6 +717,149 @@ class WorktreeIsolationTest(StateDirCase):
             _git(self.remote, "rev-parse", "refs/heads/fix/a-1"), _git(self.wt("worker"), "rev-parse", "HEAD")
         )
 
+    ORPHANED_AGE = worker_slots.DEFAULT_ORPHAN_AFTER_SECONDS + 60
+
+    def leave_orphan(self, owner=None, age=ORPHANED_AGE):
+        """A run in `worker` that committed, left changes, and died on fix/a-1."""
+        dead = lease.acquire(owner or anon("dead"), requested="worker")
+        wt = self.wt("worker")
+        _git(wt, "switch", "-q", "-C", "fix/a-1", "origin/fix/a-1")
+        (wt / "file.txt").write_text("committed, never pushed\n")
+        _git(wt, "commit", "-qam", "unpushed")
+        (wt / "file.txt").write_text("uncommitted\n")
+        (wt / "new.txt").write_text("untracked\n")
+        self.set_state("worker", {"current": {"ref": "issue:1", "branch": "fix/a-1"}})
+        self.assertIsNone(worker_claims.claim("worker", "issue:1"))
+        self.age("worker", age)
+        return dead
+
+    def takeover(self, held, *extra):
+        return self.run_tool("takeover", "--worker", held.worker, "--token", held.token,
+                             "--wt", str(self.wt(held.worker)), "--from", "worker", *extra)
+
+    def test_takeover_resumes_an_orphaned_slots_work(self):
+        dead = self.leave_orphan()
+        unpushed = _git(self.wt("worker"), "rev-parse", "HEAD")
+        me = lease.acquire(anon("me"), requested="worker-2")
+        code, out = self.takeover(me)
+        self.assertEqual(code, 0, out)
+        self.assertIn("TOOK OVER issue:1 from worker on fix/a-1", out)
+        mine = self.wt("worker-2")
+        self.assertEqual(_git(mine, "branch", "--show-current"), "fix/a-1")
+        self.assertEqual(_git(mine, "rev-parse", "HEAD~1"), unpushed)
+        self.assertEqual((mine / "file.txt").read_text(), "uncommitted\n")
+        self.assertEqual((mine / "new.txt").read_text(), "untracked\n")
+        self.assertEqual(_git(self.wt("worker"), "branch", "--show-current"), "")
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker-2")
+        self.assertIsNone(worker_state.read_json(worker_state.state_path("worker"))["current"])
+        self.assertEqual(
+            worker_state.read_json(worker_state.state_path("worker-2"))["current"],
+            {"ref": "issue:1", "branch": "fix/a-1"},
+        )
+        self.assertFalse(lease.renew("worker", dead.token), "the dead run must be fenced")
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+
+    def test_takeover_of_a_run_that_died_mid_rebase(self):
+        self.leave_orphan()
+        dead_wt = self.wt("worker")
+        _git(dead_wt, "checkout", "--", "file.txt")
+        (dead_wt / "new.txt").unlink()
+        unpushed = _git(dead_wt, "rev-parse", "HEAD")
+        _git(dead_wt, "switch", "-q", "-c", "conflicting", "origin/fix/a-1")
+        (dead_wt / "file.txt").write_text("conflicting change\n")
+        _git(dead_wt, "commit", "-qam", "conflicting")
+        _git(dead_wt, "switch", "-q", "fix/a-1")
+        rebase = subprocess.run(["git", "-C", str(dead_wt), "rebase", "conflicting"], capture_output=True)
+        self.assertNotEqual(rebase.returncode, 0, "the rebase must stop on a conflict")
+        self.assertEqual(_git(dead_wt, "branch", "--show-current"), "")
+
+        code, out = self.takeover(lease.acquire(anon("me"), requested="worker-2"))
+        self.assertEqual(code, 0, out)
+        mine = self.wt("worker-2")
+        self.assertEqual(_git(mine, "branch", "--show-current"), "fix/a-1")
+        self.assertEqual(_git(mine, "rev-parse", "HEAD"), unpushed)
+        self.assertEqual((mine / "file.txt").read_text(), "committed, never pushed\n")
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker-2")
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+
+    def test_failed_takeover_after_the_fence_keeps_the_work_reported(self):
+        dead = self.leave_orphan()
+        me = lease.acquire(anon("me"), requested="worker-2")
+        with patch.object(worker_worktree, "_commit_wip", side_effect=worker_worktree.WorktreeError("boom")):
+            code, out = self.takeover(me)
+        self.assertEqual(code, worker_worktree.EXIT_ERROR, out)
+        self.assertEqual([o["worker"] for o in worker_slots.orphaned_slots()], ["worker"])
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker")
+        self.assertFalse(lease.renew("worker", dead.token), "the dead run must stay fenced")
+
+        code, out = self.takeover(me)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker-2")
+
+    def test_a_tick_during_the_handoff_does_not_get_the_dead_slot(self):
+        self.leave_orphan()
+        me = lease.acquire(anon("me"), requested="worker-2")
+        commit_wip = worker_worktree._commit_wip
+        started = []
+
+        def tick_starts_meanwhile(dead_wt, dead):
+            started.append(lease.acquire(anon("new")))
+            return commit_wip(dead_wt, dead)
+
+        with patch.object(worker_worktree, "_commit_wip", side_effect=tick_starts_meanwhile):
+            code, out = self.takeover(me)
+        self.assertEqual(code, 0, out)
+        self.assertNotEqual(started[0].worker, "worker")
+        self.assertIsNone(worker_state.read_json(worker_state.state_path(started[0].worker)).get("current"))
+        self.assertEqual(
+            worker_state.read_json(worker_state.state_path("worker-2"))["current"],
+            {"ref": "issue:1", "branch": "fix/a-1"},
+        )
+        self.assertNotIn("worker", worker_slots.load_slots(), "the handoff lease must be released")
+
+    def test_recently_dead_slot_is_not_taken_over(self):
+        self.leave_orphan(age=worker_state.LEASE_TTL_SECONDS + 60)
+        me = lease.acquire(anon("me"), requested="worker-2")
+        code, out = self.takeover(me)
+        self.assertEqual(code, worker_worktree.EXIT_BRANCH_BUSY, out)
+        self.assertIn("NOT ORPHANED worker", out)
+        self.assertEqual(_git(self.wt("worker"), "branch", "--show-current"), "fix/a-1")
+        self.assertEqual(worker_claims.load_claims()["issue:1"]["worker"], "worker")
+
+    def test_orphan_threshold_is_configurable(self):
+        self.leave_orphan(age=worker_state.LEASE_TTL_SECONDS + 60)
+        me = lease.acquire(anon("me"), requested="worker-2")
+        with patch.dict(os.environ, {worker_slots.ORPHAN_AFTER_ENV: str(worker_state.LEASE_TTL_SECONDS)}):
+            self.assertEqual([o["worker"] for o in worker_slots.orphaned_slots()], ["worker"])
+        code, out = self.takeover(me, "--orphan-after", str(worker_state.LEASE_TTL_SECONDS))
+        self.assertEqual(code, 0, out)
+
+    def test_live_pid_bound_run_is_never_orphaned(self):
+        self.leave_orphan(owner=live_session("dead"))
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+        code, out = self.takeover(lease.acquire(anon("me"), requested="worker-2"))
+        self.assertEqual(code, worker_worktree.EXIT_BRANCH_BUSY, out)
+        self.assertEqual((self.wt("worker") / "file.txt").read_text(), "uncommitted\n")
+
+    def test_slot_without_current_work_is_not_orphaned(self):
+        self.leave_orphan()
+        self.set_state("worker", {"current": None})
+        self.assertEqual(worker_slots.orphaned_slots(), [])
+
+    def test_takeover_refuses_while_this_slot_has_its_own_work(self):
+        self.leave_orphan()
+        me = lease.acquire(anon("me"), requested="worker-2")
+        self.set_state("worker-2", {"current": {"ref": "issue:2", "branch": "fix/b-2"}})
+        code, out = self.takeover(me)
+        self.assertEqual(code, worker_worktree.EXIT_ERROR, out)
+        self.assertEqual(worker_slots.orphaned_slots()[0]["worker"], "worker")
+
+    def test_status_reports_orphaned_slots(self):
+        self.leave_orphan()
+        report = worker_state.status()
+        self.assertEqual([(o["worker"], o["ref"]) for o in report["orphaned"]], [("worker", "issue:1")])
+        self.assertTrue(report["workers"]["worker"]["orphaned"])
+
 
 class LeaseRunTest(StateDirCase):
     def lease_run(self, *args, env=None, **kwargs):
@@ -666,8 +896,13 @@ class LeaseRunTest(StateDirCase):
         waits_for_renewal = (
             "import json,time,sys\n"
             f"p={str(lock)!r}\n"
-            "start=json.load(open(p))['renewedAt']\n"
-            "while json.load(open(p))['renewedAt']==start: time.sleep(0.02)\n"
+            # Renewal replaces the file; on Windows a read can hit it mid-replace.
+            "def r():\n"
+            "    while True:\n"
+            "        try: return json.load(open(p))['renewedAt']\n"
+            "        except (OSError, ValueError): time.sleep(0.01)\n"
+            "start=r()\n"
+            "while r()==start: time.sleep(0.02)\n"
         )
         result = self.lease_run("--worker", held.worker, "--token", held.token, "--interval", "0.05", "--",
                                 *self.py(waits_for_renewal))

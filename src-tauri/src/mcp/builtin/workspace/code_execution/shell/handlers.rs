@@ -286,7 +286,7 @@ impl WorkspaceServer {
         }
 
         // Parse optional environment variables
-        let env_vars = args
+        let mut env_vars: std::collections::HashMap<String, String> = args
             .get("env")
             .and_then(|v| v.as_object())
             .map(|obj| {
@@ -316,7 +316,13 @@ impl WorkspaceServer {
         let cwd_result = if is_docker {
             utils::resolve_docker_shell_cwd(&docker_root, requested_cwd)
         } else {
-            utils::resolve_isolated_shell_cwd(&workspace_path, requested_cwd)
+            utils::resolve_isolated_shell_cwd(
+                &workspace_path,
+                requested_cwd,
+                crate::models::system_settings::SystemSettings::load_global()
+                    .await
+                    .allow_linked_worktrees,
+            )
         };
         let working_directory = match cwd_result {
             Ok(cwd) => cwd,
@@ -346,6 +352,9 @@ impl WorkspaceServer {
         ) {
             return Ok(result);
         }
+
+        // #2946: temp files belong to the session, not to the shared OS temp dir.
+        utils::add_session_temp_env(session_id, is_docker, &mut env_vars);
 
         // Ask only after every other check passed, so a rejected call opens no prompt.
         let stored_name = if require_input.value {
@@ -556,6 +565,7 @@ mod tests {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         }
     }
 
@@ -577,6 +587,7 @@ mod tests {
             repeated_text_loop_retry_count: Arc::new(RwLock::new(0)),
             reasoning_budget_retry_count: Arc::new(RwLock::new(0)),
             malformed_tool_markup_retry_count: Arc::new(RwLock::new(0)),
+            invalid_tool_args_retry_count: Arc::new(RwLock::new(0)),
             pending_events: Arc::new(RwLock::new(PendingEventManager::new())),
             pending_approvals: Arc::new(RwLock::new(HashMap::new())),
             context_registry: Arc::new(ContextRegistry::new()),

@@ -27,6 +27,34 @@ export interface SkillMetadata {
    * - 'workspace': Workspace-local skill.
    */
   origin?: 'system' | 'user' | 'assistant' | 'workspace';
+  /**
+   * Source id of the plugin that owns this skill (#2927 D2). A plugin-owned
+   * skill is read-only: delete, update, and import-overwrite are rejected,
+   * and it is removed only with the plugin.
+   */
+  pluginOwner?: string;
+}
+
+/** Whether a global plugin has a newer source on GitHub (#2927 D6). */
+export interface PluginUpdateStatus {
+  sourceId: string;
+  updateAvailable: boolean;
+}
+
+export interface PluginSourceOverview {
+  id: string;
+  sourceUrl: string;
+  skillNames: string[];
+  hookEvents: string[];
+  hooksApproved: boolean;
+  /** Manifest `name` from `.claude-plugin/plugin.json`, when present. */
+  pluginName?: string;
+  pluginVersion?: string;
+  pluginDescription?: string;
+  /** Whether the plugin is enabled (#2927). */
+  enabled: boolean;
+  /** Source commit recorded at install, when GitHub exposed one (#2927). */
+  installedCommit?: string;
 }
 
 export interface ManagedSkillsOverview {
@@ -35,6 +63,7 @@ export interface ManagedSkillsOverview {
   systemSkills: SkillMetadata[];
   userSkills: SkillMetadata[];
   effectiveSkills: SkillMetadata[];
+  pluginSources: PluginSourceOverview[];
 }
 
 export interface SkillImportCandidate {
@@ -48,13 +77,136 @@ export interface SkillImportConflict {
   existingPath: string;
 }
 
+export type SkillImportKind = 'skillBundle' | 'plugin';
+
+export type HookPreviewExecutionStatus = 'executed' | 'stubbed';
+
+export interface HookPreviewEntry {
+  event: string;
+  matcher?: string;
+  command: string;
+  powershell?: string;
+  scriptBody?: string;
+  executionStatus: HookPreviewExecutionStatus;
+}
+
+/** `.claude-plugin/plugin.json` summary shown in the install preview (#2921). */
+export interface PluginManifestSummary {
+  name: string;
+  version?: string;
+  description?: string;
+}
+
+/** One plugin-declared MCP server in the install preview (#2924). */
+export interface McpServerPreviewEntry {
+  name: string;
+  transport: 'stdio' | 'http';
+  command?: string;
+  /** Command arguments joined with spaces, as declared (#2924 D3). */
+  args?: string;
+  /** Environment variable NAMES the server sets (values never shown). */
+  envNames?: string[];
+  url?: string;
+  /** HTTP header NAMES the server sends (values never shown). */
+  headerNames?: string[];
+}
+
 export interface SkillImportPreview {
+  kind: SkillImportKind;
   discoveredSkills: SkillImportCandidate[];
   conflicts: SkillImportConflict[];
+  hooks: HookPreviewEntry[];
+  hooksRequireApproval: boolean;
+  /** MCP servers the plugin declares (#2924). */
+  mcpServers?: McpServerPreviewEntry[];
+  /** Starting the plugin's MCP servers needs install-time approval (#2924). */
+  mcpRequireApproval?: boolean;
+  /** Slash command names the plugin's `commands/` provides (#2922). */
+  pluginCommands?: string[];
+  /** Subagent definitions the plugin's `agents/` provides (#2923). */
+  pluginAgents?: PluginAgentPreview[];
+  /** Present when the source carried a `.claude-plugin/plugin.json`. */
+  pluginManifest?: PluginManifestSummary;
+  /** `userConfig` options the plugin asks for (#2926). */
+  userConfig?: UserConfigPreviewEntry[];
+}
+
+/** One `userConfig` option asked for at install (#2926). Mirrors Rust
+ *  `UserConfigPreviewEntry`. */
+export interface UserConfigPreviewEntry {
+  key: string;
+  title: string;
+  description?: string;
+  /** 'string' | 'number' | 'boolean' | 'directory' | 'file' */
+  valueType: string;
+  /** Masked input; stored in secure storage, never in a plain file. */
+  sensitive: boolean;
+  required: boolean;
+  default?: string;
+}
+
+/** One `agents/*.md` subagent definition shown in the install preview
+ *  (#2923). `unmappedTools` are Claude Code tools with no LibrAgent
+ *  mapping: they are shown here and never silently granted.
+ *  `grantedServices` are the LibrAgent builtin services the declared
+ *  `tools` map to (gatekeeper G1.2: the user must see what IS granted;
+ *  `workspace` includes file writes and shell). `grantsAllServices` is
+ *  true when the definition has no `tools` line at all. */
+export interface PluginAgentPreview {
+  name: string;
+  description: string;
+  unmappedTools: string[];
+  grantedServices: string[];
+  grantsAllServices: boolean;
+  model?: string;
 }
 
 export interface SkillImportResult {
   importedNames: string[];
   overwrittenNames: string[];
   skippedNames: string[];
+  /** Non-fatal problems the user must see, e.g. an approved plugin MCP
+   *  server that could not be installed (#2924 gatekeeper G1.2). */
+  warnings?: string[];
+}
+
+/** Where an active plugin was installed. Mirrors Rust `PluginScope`. */
+export type PluginScope = 'global' | 'session';
+
+/** Mirrors Rust `SessionPluginEntry` (camelCase). */
+export interface SessionPluginEntry {
+  id: string;
+  sourceUrl: string;
+  scope: PluginScope;
+  /**
+   * Unix **seconds** of the install (the backend `i64`). Multiply by 1000
+   * before building a `Date` — it is not an ISO string (#2927).
+   */
+  installedAt: number;
+  skillNames: string[];
+  hookEvents: string[];
+  hooksApproved: boolean;
+  /** Whether the plugin is enabled (#2927). */
+  enabled: boolean;
+  /** Manifest `version` from `.claude-plugin/plugin.json`, when present. */
+  version?: string;
+  /** Source commit recorded at install, when it is known (#2927). */
+  commit?: string;
+}
+
+export type SessionPluginAction = 'install' | 'uninstall';
+
+/** Mirrors Rust `SessionPluginHistoryEntry` (camelCase). */
+export interface SessionPluginHistoryEntry {
+  sourceId: string;
+  sourceUrl: string;
+  action: SessionPluginAction;
+  /** Unix **seconds** of the action (the backend `i64`), not an ISO string. */
+  at: number;
+}
+
+/** Mirrors Rust `SessionPluginsOverview` (camelCase). */
+export interface SessionPluginsOverview {
+  active: SessionPluginEntry[];
+  history: SessionPluginHistoryEntry[];
 }

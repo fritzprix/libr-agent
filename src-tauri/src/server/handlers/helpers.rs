@@ -102,6 +102,24 @@ pub fn resolve_error_reply(
     warp::reply::with_status(warp::reply::json(&ErrorResponse { error }), status)
 }
 
+/// Open-path gate shared by the open, resume and send handlers (#2759):
+/// resolves the session reference, then refuses any caller that sends an
+/// attachment header. Returns the storage id, or the ready-made `404` /
+/// `400` reply. See [`crate::server::session_ownership::reject_attachment_header`]
+/// for the header rules.
+pub async fn open_gate(
+    session_ref: &str,
+    attachment: Option<&str>,
+    repo: &dyn SessionRepository,
+) -> Result<String, warp::reply::WithStatus<warp::reply::Json>> {
+    let id = resolve_session_ref_in(repo, session_ref)
+        .await
+        .map_err(|(status, error)| resolve_error_reply(status, error))?;
+    crate::server::session_ownership::reject_attachment_header(attachment)
+        .map_err(|(status, error)| resolve_error_reply(status, error))?;
+    Ok(id)
+}
+
 /// Resolve optional parent/org-root refs on create bodies before spawn.
 pub async fn resolve_create_session_body_refs(
     mut body: crate::agent::types::CreateSessionRequest,

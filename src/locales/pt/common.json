@@ -86,7 +86,9 @@
       "description": "Descrição",
       "fullConfiguration": "Configuração completa",
       "expand": "Expandir configuração",
-      "collapse": "Recolher configuração"
+      "collapse": "Recolher configuração",
+      "pluginOwned": "Plugin: {{name}}",
+      "pluginOwnedHint": "Instalado por um plugin. A edição está desativada; desinstale o plugin para removê-lo."
     }
   },
   "status": {
@@ -274,7 +276,10 @@
       "subagentsCount_one": "+{{count}} subagente",
       "subagentsCount_other": "+{{count}} subagentes",
       "subagentsKept": "Subagentes mantidos",
-      "bookmarkedBadge": "Favorita"
+      "bookmarkedBadge": "Favorita",
+      "openElsewhere": "Aberta em outro lugar",
+      "forked": "Fork",
+      "forkedFrom": "Fork da sessão {{id}}"
     },
     "actions": {
       "view": "Ver",
@@ -302,7 +307,8 @@
       "confirmDelete": "Confirmar Exclusão",
       "confirmDeleteAria": "Confirmar exclusão",
       "cancel": "Cancelar",
-      "cancelDeletionAria": "Cancelar exclusão"
+      "cancelDeletionAria": "Cancelar exclusão",
+      "openElsewhereAria": "A sessão {{name}} está aberta em outro processo"
     },
     "emptyState": {
       "title": "Nenhuma sessão ainda",
@@ -532,7 +538,7 @@
       "circuitBreaker": "Limite de loop de ferramentas",
       "circuitBreakerDescription": "Número de erros repetidos permitidos antes de parar a tarefa.",
       "maxOutputTokens": "Máximo de Tokens de Saída (Padrão)",
-      "maxOutputTokensDescription": "Máximo de tokens de saída padrão para novas sessões, se não especificado pelo assistente.",
+      "maxOutputTokensDescription": "Máximo de tokens de saída padrão quando o assistente não define o seu próprio. É lido a cada solicitação.",
       "defaultSessionMaxDepth": "Limite de Ramificação de Sessão (Avançado)",
       "defaultSessionMaxDepthDescription": "Controla quantos níveis de sessão-filho são permitidos por padrão. Defina 0 para ilimitado. A maioria dos usuários pode deixar como está.",
       "defaultSessionMaxDepthPlaceholder": "ex: 3",
@@ -894,7 +900,31 @@
       "importSuccessWithOverwriteAndSkipped_one": "{{count}} habilidade importada ({{overwrittenCount}} substituída, {{skippedCount}} ignorada)",
       "importSuccessWithOverwriteAndSkipped_other": "{{count}} habilidades importadas ({{overwrittenCount}} substituídas, {{skippedCount}} ignoradas)",
       "importSkippedOnly_one": "{{count}} habilidade em conflito ignorada",
-      "importSkippedOnly_other": "{{count}} habilidades em conflito ignoradas"
+      "importSkippedOnly_other": "{{count}} habilidades em conflito ignoradas",
+      "commandsToInstall": "Comandos de barra a instalar",
+      "agentsToInstall": "Subagentes a instalar",
+      "agentUnmappedTools": "Ferramentas sem mapeamento não são concedidas (entradas restritas como Bash(git:*) contam como sem mapeamento): {{tools}}",
+      "agentGrantedServices": "Serviços concedidos: {{services}}",
+      "agentGrantsAllServices": "Sem linha tools: todos os serviços do LibrAgent serão concedidos.",
+      "agentGrantsNoServices": "Nenhum serviço concedido (nenhum tool mapeado).",
+      "agentWorkspaceGrantNote": "O serviço workspace inclui escrita de arquivos e execução de shell.",
+      "userConfigTitle": "Configuração solicitada por este plugin",
+      "userConfigHint": "Estes valores são entregues ao plugin quando ele é executado. Um valor sensível fica no armazenamento seguro deste computador e nunca é mostrado novamente.",
+      "userConfigMissing": "Obrigatório: {{names}}",
+      "pluginDisabledBadge": "desativado",
+      "pluginUpdateAria": "Atualizar plugin",
+      "pluginOwnedBadge": "plugin",
+      "pluginOwnedTooltip": "Instalado por um plugin. Remova o plugin para excluí-lo.",
+      "disablePlugin": "Desativar plugin",
+      "enablePlugin": "Ativar plugin",
+      "pluginDetails": "Detalhes",
+      "pluginSourceEnabled": "Plugin ativado.",
+      "pluginSourceDisabled": "Plugin desativado. Ele continua instalado; reinicie uma sessão ou digite /reload para aplicar.",
+      "pluginUpdateNoticeTitle": "Atualizar este plugin?",
+      "pluginUpdateNoticeBody": "Uma atualização baixa o plugin novamente. Ela pode alterar os servidores MCP e os hooks do plugin, e eles podem executar código na sua máquina. Concordar aprova toda a atualização, incluindo servidores MCP e hooks alterados.",
+      "pluginUpdateAgree": "Concordar e atualizar",
+      "pluginUpdateAvailable": "atualização disponível",
+      "pluginUpdatedReload": "Plugin atualizado. Ele entra em vigor quando uma sessão for aberta novamente; digite /reload para aplicar agora."
     },
     "dev": {
       "devOnly": "SOMENTE DEV",
@@ -1550,7 +1580,22 @@
       "badgeBuiltin": "integrada",
       "badgeMcp": "mcp",
       "viewDescription": "Ver Descrição",
-      "viewSchema": "Ver Esquema de Entrada"
+      "viewSchema": "Ver Esquema de Entrada",
+      "plugins": {
+        "title": "Plugins",
+        "empty": "Nenhum plugin ativo nesta sessão. Use /plugin install <git-url> para adicionar um.",
+        "scopeGlobal": "global",
+        "scopeSession": "sessão",
+        "installedAt": "Instalado em {{time}}",
+        "skills": "Skills",
+        "hooks": "Hooks",
+        "hooksNotApproved": "não aprovados",
+        "history": "Histórico de instalação",
+        "actionInstall": "Instalado",
+        "actionUninstall": "Desinstalado",
+        "disabled": "desativado",
+        "version": "Versão"
+      }
     },
     "panels": {
       "shellTitle": "Painéis do agente",
@@ -1636,6 +1681,10 @@
     },
     "bubble": {
       "toolError": "Erro de execução da ferramenta",
+      "fallbackNoticeLabel": "Modelo alternativo",
+      "fallbackNotice": "O servidor rejeitou a solicitação (HTTP {{status}}). Tentando novamente com o modelo alternativo {{model}}.",
+      "fallbackNoticeNoStatus": "O modelo principal falhou. Tentando novamente com o modelo alternativo {{model}}.",
+      "fallbackNoticeDetails": "Mostrar erro do servidor",
       "notification": "Notificação",
       "channel": "CANAL",
       "assistant": "ASSISTENTE",
@@ -1886,7 +1935,26 @@
     "tryAgain": "Tentar Novamente",
     "goToSettings": "Configurar chave de API nas Configurações",
     "invalidContextState": "Esta sessão precisa de um limite de contexto maior. Nas configurações, aumente o contexto de entrada máx. e tente de novo.",
-    "openContextSettings": "Abrir configurações de contexto"
+    "openContextSettings": "Abrir configurações de contexto",
+    "reasoningStop": {
+      "budgetReason": "O modelo gastou o orçamento de saída em raciocínio sem dar uma resposta nem chamar uma ferramenta, por isso o turno foi interrompido.",
+      "budgetNumbers": "Usou cerca de {{used}} tokens. O limite é de {{budget}} tokens, 90% do máximo de tokens de saída.",
+      "sourceAssistant": "O máximo de tokens de saída é {{max}}, definido neste assistente. Alterar o padrão nas Configurações não muda esta sessão.",
+      "sourceSettings": "O máximo de tokens de saída é {{max}}, vindo de Configurações → Interface de Chat → Máximo de Tokens de Saída (Padrão).",
+      "sourceFallback": "O máximo de tokens de saída é {{max}}, o valor interno, porque não há valor definido nas Configurações.",
+      "budgetNextSteps": "Próximo passo: aumente Máximo de Tokens de Saída (Padrão) nas Configurações e tente novamente. O novo valor vale a partir da próxima solicitação. Tentar de novo sem mudar nada costuma parar do mesmo jeito.",
+      "budgetNextStepsAssistant": "Próximo passo: tente novamente ou restrinja o pedido para que exija menos raciocínio. Tentar de novo sem mudar nada costuma parar do mesmo jeito.",
+      "thinkingOnlyReason": "O modelo terminou apenas com raciocínio interno: sem resposta e sem chamada de ferramenta.",
+      "thinkingOnlyNextSteps": "Próximo passo: tente novamente ou peça uma resposta direta. Se o modelo pode ter atingido o limite de saída, aumente antes Máximo de Tokens de Saída (Padrão) nas Configurações.",
+      "thinkingLoopReason": "O modelo ficou repetindo o mesmo raciocínio, por isso o turno foi interrompido.",
+      "textLoopReason": "O modelo ficou repetindo o mesmo texto, por isso o turno foi interrompido.",
+      "loopNumbers": "Foi detectado um padrão de {{patternLength}} caracteres repetido {{repetitionCount}} vezes.",
+      "thinkingLoopNextSteps": "Próximo passo: tente novamente, ou reformule ou restrinja o pedido. Se foi um alarme falso, aumente Comprimento mínimo do padrão de loop de pensamento ou Repetições mínimas do loop de pensamento em Configurações → Avançado.",
+      "textLoopNextSteps": "Próximo passo: tente novamente, ou reformule ou restrinja o pedido.",
+      "autoRetries": "Novas tentativas automáticas já usadas: {{retries}}.",
+      "openOutputTokenSettings": "Abrir configurações de máximo de tokens de saída",
+      "openLoopSettings": "Abrir configurações avançadas"
+    }
   },
   "knowledge": {
     "untitledEntry": "Entrada de conhecimento sem título",
@@ -2068,6 +2136,11 @@
       "docsExport": {
         "title": "Receba respostas em PDF, Word ou PowerPoint",
         "body": "Digite @skill:docs e peça um relatório, uma proposta ou uma ata: o agente salva um arquivo PDF, DOCX ou PPTX pronto para compartilhar.",
+        "cta": "Experimentar no chat"
+      },
+      "plugins": {
+        "title": "Instale plugins com /plugin install",
+        "body": "Adicione plugins do Claude Code no chat ou em Skills para liberar novos comandos slash, subagentes, hooks e ferramentas MCP.",
         "cta": "Experimentar no chat"
       }
     }

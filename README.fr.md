@@ -32,7 +32,7 @@ LibrAgent résout ces contraintes en proposant une **application de bureau compl
 | Approche traditionnelle                                        | Avec LibrAgent                                                                                                                                                  |
 | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Éditer manuellement des fichiers de configuration JSON MCP     | **Extensions en un clic** — Préréglages immédiats (GitHub, Brave Search, système de fichiers) et importation transparente depuis Cursor, VS Code et Claude Code |
-| Développer soi-même des systèmes multi-agents en code          | **Modèles de coordination intégrés** — Compétences packagées prêtes à l'emploi (`pipeline`, `hub-spoke`, `divide-conquer`, `consensus-delegation`)              |
+| Développer soi-même des systèmes multi-agents en code          | **Modèles de coordination intégrés** — Compétences packagées prêtes à l'emploi (`teamwork` (pipeline, hub-and-spoke), `divide-conquer`, `consensus-delegation`)              |
 | Dépendance stricte aux modèles et outils d'un seul fournisseur | **Liberté technologique totale** — Connectez vos clés d'API cloud ou un modèle local ([Ollama](https://ollama.com)) sous licence open source MIT                |
 
 [Télécharger la dernière version](https://github.com/fritzprix/libr-agent/releases/latest) · [Démarrage en 5 minutes](#guide-de-démarrage-en-5-minutes)
@@ -56,7 +56,7 @@ LibrAgent résout ces contraintes en proposant une **application de bureau compl
 ### 3. Choisir un modèle de coordination sans programmation
 
 - Décrivez simplement votre méthode de travail dans l'invite :
-  - _"@skill:pipeline — recherche, puis rédaction, puis relecture ; produis un rapport final unique"_
+  - _"@skill:teamwork pipeline — recherche, puis rédaction, puis relecture ; produis un rapport final unique"_
   - _"@skill:divide-conquer — divise cette tâche en étapes indépendantes exécutées en parallèle et fusionne les résultats"_
 - Les modèles de coordination sont des compétences intégrées ne nécessitant aucun SDK externe. Consultez le guide [Sous-agents et orchestration](docs/user/guides/sub-agents.md).
 
@@ -73,11 +73,11 @@ Sélectionnez le modèle adapté à la structure de votre tâche directement dep
 
 | Nom de compétence                    | Modèle de coordination | Cas d'usage recommandé                                                                |
 | ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------- |
-| `pipeline`                           | Étapes séquentielles   | La sortie d'une étape sert d'entrée à la suivante (Recherche → Rédaction → Relecture) |
-| `hub-spoke`                          | Hub-and-Spoke          | Un agent coordinateur central pilote et intègre plusieurs agents spécialisés          |
+| `teamwork` (pipeline)                           | Étapes séquentielles   | La sortie d'une étape sert d'entrée à la suivante (Recherche → Rédaction → Relecture) |
+| `teamwork` (hub-and-spoke)                          | Hub-and-Spoke          | Un agent coordinateur central pilote et intègre plusieurs agents spécialisés          |
 | `divide-conquer`                     | Division parallèle     | Découper le travail en sous-tâches indépendantes en parallèle, puis fusionner         |
 | `consensus-delegation`               | Multi-perspectives     | Soumettre la même question à plusieurs agents experts pour concilier les analyses     |
-| `gatekeeper` / `pair-programming`    | Boucles de revue       | Relecture stricte de code ou programmation collaborative en binôme                    |
+| `delegation-eval-loop` (gatekeeper) / `teamwork` (pair programming)    | Boucles de revue       | Relecture stricte de code ou programmation collaborative en binôme                    |
 | `delegate`                           | Délégation ciblée      | Déléguer une tâche précise à une sous-session avec suivi complet de la lignée         |
 | `teamwork` → `org`                   | Équipe permanente      | Organiser des équipes durables avec charte partagée et organigramme interactif        |
 | `schedule` / `loop` / `call-me-back` | Événements & temps     | Planifications Cron, délais programmés ou reprise sur événement externe               |
@@ -125,7 +125,7 @@ La compression automatique de contexte, les disjoncteurs antiboucle et la valida
 
 ### Utilisateur avancé — Délégation par modèles éprouvés
 
-1. Saisissez `@skill:pipeline` (ou `hub-spoke`, `divide-conquer`) dans le champ de discussion.
+1. Saisissez `@skill:teamwork pipeline` (ou `teamwork` (hub-and-spoke), `divide-conquer`) dans le champ de discussion.
 2. Les agents collaborent harmonieusement selon le modèle retenu.
 3. Obtenez un livrable consolidé dans votre espace de travail sans devoir maintenir de bibliothèque de code externe.
 
@@ -152,10 +152,10 @@ Téléchargez le dernier programme d'installation depuis la **[Page des versions
 
 <!-- RELEASE_DOWNLOADS_START -->
 
-- **Windows :** [`LibrAgent_0.9.31_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64-setup.exe) · [`LibrAgent_0.9.31_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_x64_en-US.msi)
-- **macOS (Apple Silicon) :** [`LibrAgent_0.9.31_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_aarch64.dmg)
-- **Linux :** [`LibrAgent_0.9.31_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.AppImage) · [`LibrAgent_0.9.31_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent_0.9.31_amd64.deb) · [`LibrAgent-0.9.31-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.31/LibrAgent-0.9.31-1.x86_64.rpm)
-- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.31)
+- **Windows :** [`LibrAgent_0.9.32_x64-setup.exe`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64-setup.exe) · [`LibrAgent_0.9.32_x64_en-US.msi`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_x64_en-US.msi)
+- **macOS (Apple Silicon) :** [`LibrAgent_0.9.32_aarch64.dmg`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_aarch64.dmg)
+- **Linux :** [`LibrAgent_0.9.32_amd64.AppImage`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.AppImage) · [`LibrAgent_0.9.32_amd64.deb`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent_0.9.32_amd64.deb) · [`LibrAgent-0.9.32-1.x86_64.rpm`](https://github.com/fritzprix/libr-agent/releases/download/v0.9.32/LibrAgent-0.9.32-1.x86_64.rpm)
+- **Tous les fichiers de release :** [page des Releases](https://github.com/fritzprix/libr-agent/releases/tag/v0.9.32)
 <!-- RELEASE_DOWNLOADS_END -->
 
 ### Guide de démarrage en 5 minutes
@@ -177,7 +177,7 @@ Téléchargez le dernier programme d'installation depuis la **[Page des versions
 
 **Étapes suivantes — Coordination et automatisation avancées**
 
-- _"@skill:pipeline — effectue des recherches sur ce sujet, rédige une synthèse, relis-la et enregistre le rapport final"_
+- _"@skill:teamwork pipeline — effectue des recherches sur ce sujet, rédige une synthèse, relis-la et enregistre le rapport final"_
 - _"Prépare un espace de travail teamwork pour ce dépôt"_
 - _"Mets en place une tâche planifiée quotidienne de veille concurrentielle à 07h00"_ (ou utilisez la recette Morning Briefing)
 
@@ -186,7 +186,7 @@ Téléchargez le dernier programme d'installation depuis la **[Page des versions
 - _"Importe ma configuration de serveurs MCP depuis Cursor et indique-moi les outils ajoutés."_
 - _"Installe le préréglage GitHub MCP et connecte-le à un agent de développement."_
 - _"Passe en revue cet espace de travail et rédige des pistes d'amélioration concrètes dans `DELIVERABLE.md`."_
-- _"@skill:pipeline — approfondis ce sujet d'étude, rédige une synthèse, effectue une revue croisée et sauvegarde le rapport final."_
+- _"@skill:teamwork pipeline — approfondis ce sujet d'étude, rédige une synthèse, effectue une revue croisée et sauvegarde le rapport final."_
 - _"Configure une tâche planifiée pour générer automatiquement une synthèse d'actualité financière chaque matin à 07h00."_
 
 ### Configuration pour développeurs

@@ -29,9 +29,12 @@ python scripts/extract_logs.py --pattern "[WARN]" -o warnings.txt
 
 LibrAgent stores logs in platform-specific directories:
 
-- **Windows**: `%LOCALAPPDATA%\com.fritzprix.libragent\logs\libragent.log`
-- **macOS**: `~/Library/Logs/com.fritzprix.libragent/libragent.log`
-- **Linux**: `~/.local/share/com.fritzprix.libragent/logs/libragent.log`
+- **Windows**: `%LOCALAPPDATA%\com.fritzprix.libragent\logs\libragent.<pid>.log`
+- **macOS**: `~/Library/Logs/com.fritzprix.libragent/libragent.<pid>.log`
+- **Linux**: `~/.local/share/com.fritzprix.libragent/logs\libragent.<pid>.log`
+
+  (Pre-#2858 single-file `libragent.log` may still exist; with multiple backends,
+  each process has its own `libragent.<pid>.log`.)
 
 The script automatically detects and uses the correct path.
 

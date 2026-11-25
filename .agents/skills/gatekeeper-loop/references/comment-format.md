@@ -6,6 +6,8 @@ Worker and gatekeeper share one GitHub account, and GitHub rejects Approve / Req
 
 `head` = full SHA of the PR head that was reviewed. `base` = the PR's base branch at review time (a later change forces re-review). `round` starts at 1 and increments per verdict (`clean` markers do not count).
 
+**Before posting:** follow [pre-post-checklist.md](pre-post-checklist.md) (head drift, duplicate `head`+`verdict`, severity, clean→approve consistency).
+
 ```markdown
 <!-- gatekeeper-loop: round=2 verdict=changes-requested head=<sha> base=<branch> -->
 
@@ -17,7 +19,8 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 
 - **G2.1** `src-tauri/src/agent/tool_approvals.rs:212` — <problem>. Expected: <concrete fix or acceptance check>.
 - **G2.2** <missing test> — Expected: a unit test covering <case>.
-- **G2.3** `CI failure (<job-name>)` — <diagnosed root cause from CI logs>. Expected: <concrete fix>.
+- **G2.3** `CI failure (<job-name>)` — <diagnosed root cause from CI logs, PR-introduced only>. Expected: <concrete fix>.
+  - Base-branch / out-of-scope CI: **no `G` item** — note “Out-of-scope base CI: #<issue>” (gatekeeper-created §8 follow-up).
 
 ### Suggestions (non-blocking)
 
@@ -27,9 +30,9 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 
 - G1.1 ✅ fixed in <short-sha> · G1.2 ✅ decline accepted (<reason>)
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect the verdict above (decision is based on open required `G` items only).
+Total **<sum>/100**. A total of 85 or lower requires changes (see the `G` items for the lowest categories).
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale with evidence>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -38,7 +41,7 @@ Total **<sum>/100**. Does not affect the verdict above (decision is based on ope
 - **Error handling and robustness (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 - **Scope discipline (<n>/10)** — `<file>:<line>` — <one-line rationale>.
 
-Do not score CI status or the PR body. See [review-rubric.md](review-rubric.md#code-quality-score-100-points-informational).
+Do not score CI status or the PR body. See [review-rubric.md](review-rubric.md#code-quality-score-100-points-gate).
 ```
 
 Approve:
@@ -55,9 +58,9 @@ Approve:
 - `<acceptance criterion 1 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
 - `<acceptance criterion 2 from linked issue>` — verified in `<file>:<line>` (<brief explanation>).
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect the verdict above.
+Total **<sum>/100** (≥86 required for approve).
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -79,9 +82,9 @@ Clean, waiting for CI (no label change, not a round; lets any tick or machine se
 
 <1–2 lines: what was reviewed, zero open required findings>
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect the clean marker (awaiting CI only).
+Total **<sum>/100** (≥86 required for a clean marker).
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -100,9 +103,9 @@ Escalate (round limit or unresolved disagreement):
 
 <the open disagreement, both positions, and the decision needed>
 
-### Code quality score (informational)
+### Code quality score (gate: ≥86 to approve)
 
-Total **<sum>/100**. Does not affect escalation.
+Total **<sum>/100**.
 
 - **Correctness incl. boundary conditions (<n>/30)** — `<file>:<line>` — <one-line rationale>.
 - **Tests exercise the real production code path (<n>/20)** — `<file>:<line>` — <one-line rationale>.
@@ -123,7 +126,8 @@ Posted after addressing a `changes-requested` verdict, in the same round number.
 
 - **G2.1** fixed in <short-sha> — <one line>
 - **G2.2** declined — <reason grounded in code, issue scope, or project rules>
-- **S2.1** deferred — <reason or follow-up issue link>
+- **S2.1** deferred — <reason> (non-blocking; gatekeeper does **not** file an issue for `S` items)
+- **G2.x** declined — deferred out of scope — follow-up **#<issue>** (filed by gatekeeper, not the worker)
 ```
 
 Every `G` item must be answered as **fixed** or **declined**. Suggestions may be skipped silently.
@@ -134,9 +138,9 @@ Every `G` item must be answered as **fixed** or **declined**. Suggestions may be
 | ------------------------------ | ---------- | ---------------------------------------------------------------------------------------- |
 | `gatekeeper:changes-requested` | gatekeeper | Latest verdict requests changes                                                          |
 | `gatekeeper:approved`          | gatekeeper | Approved at the current head; ready for a human merge                                    |
-| `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision                                                              |
-| `gatekeeper:needs-human`       | gatekeeper | Security-sensitive; a human must confirm before merge (kept alongside the verdict label) |
+| `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision; repository owner removes this label on GitHub to resume for +2 rounds |
+| `gatekeeper:needs-human`       | gatekeeper | Security-sensitive or loop-skill PR; human must confirm before merge (removing it never resumes an escalation) |
 
-Unmarked comments from the repo owner (or `@me`) posted after the last marker are read as required items and trigger a review.
+Unmarked comments from the repo owner (or `@me`) posted after the last gatekeeper marker are read as required items and trigger a review (worker response markers do not hide them).
 
 Keep exactly one of the first three labels on a PR; swap them with each verdict. Create missing labels once with `gh label create <name> --color <hex> --description <text>`.

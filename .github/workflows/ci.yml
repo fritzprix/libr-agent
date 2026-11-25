@@ -87,6 +87,9 @@ jobs:
       - name: Run frontend tests
         run: pnpm test:run
 
+      - name: Run smoke matrix guard tests
+        run: node --test .agents/skills/libr-e2e-verify/scripts/smoke_matrix.test.cjs
+
       - name: Check TypeScript
         run: pnpm tsc --noEmit
 
@@ -95,7 +98,26 @@ jobs:
         run: pnpm build && pnpm perf:bundle
 
       - name: Check Rust
-        run: cd src-tauri && cargo check
+        # `ort-sys` (transitive via fastembed) downloads prebuilt ONNX Runtime
+        # binaries at build time; a torn CDN download ("Peer disconnected")
+        # must not fail the job on its first occurrence (#2803). Retry once
+        # when the build script reports that failure; a successful attempt
+        # caches the binaries on disk for every later build step of this job.
+        shell: bash
+        run: |
+          cd src-tauri
+          status=0
+          cargo check 2>&1 | tee "$RUNNER_TEMP/cargo-check.log" || status=$?
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if grep -qiE 'ort-sys.*(download|extract|prebuilt)' "$RUNNER_TEMP/cargo-check.log"; then
+            echo "::warning::ort-sys prebuilt ONNX Runtime download failed; retrying cargo check once"
+            sleep 15
+            cargo check
+          else
+            exit "$status"
+          fi
 
       - name: Fix macOS SDKROOT for Rust linker
         if: runner.os == 'macOS'

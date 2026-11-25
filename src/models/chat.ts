@@ -341,6 +341,13 @@ export interface MCPServerEntity {
   toolCount?: number;
   verificationStatus?: 'pending' | 'success' | 'error';
   lastVerificationError?: string;
+
+  /**
+   * Owner marker `plugin:<source_id>` for servers installed by a plugin
+   * (#2924). Read-only: edit and delete are rejected by the backend and the
+   * server is removed only with its plugin.
+   */
+  pluginSource?: string;
 }
 
 export interface Assistant {
@@ -362,6 +369,17 @@ export interface Assistant {
    */
   allowedBuiltInServiceAliases?: string[];
   deletionProtected: boolean;
+
+  /**
+   * Owner marker `plugin:<source_id>` for agents installed by a plugin
+   * (#2923). Read-only: update and delete are rejected by the backend and
+   * the agent is removed only with its plugin.
+   */
+  pluginSource?: string;
+  /** Plugin display name for the source label `plugin: <name>` (#2923). */
+  pluginSourceName?: string;
+  /** Which store owns the row: `global` or `session` (#2923 D2). */
+  pluginScope?: string;
 
   createdAt: Date;
   updatedAt: Date;

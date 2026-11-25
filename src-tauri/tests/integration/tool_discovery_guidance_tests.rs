@@ -154,6 +154,7 @@ async fn tool_list_uses_canonical_agent_update_guidance() {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         })
         .await
         .expect("session should insert");
@@ -256,6 +257,7 @@ async fn tool_list_marks_unavailable_external_servers_as_unsupported_in_current_
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         })
         .await
         .expect("session should insert");
@@ -325,6 +327,7 @@ async fn tool_list_uses_builtin_service_alias_for_session_status() {
             docker_container_name: None,
             docker_host_workspace_path: None,
             status_reason: None,
+            forked_from: None,
         })
         .await
         .expect("session should insert");

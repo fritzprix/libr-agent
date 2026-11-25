@@ -10,11 +10,12 @@
 //! 4. Log `checkpoint_seed_split_idx` separately from `preferred_split_idx` /
 //!    `chosen_split_idx` so regressions are visible in production logs.
 
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::completion::request::normalize_request_messages;
 use crate::agent::state::{
     AgentSession, CompactionBeginOutcome, CompactionKind, CompactionReuseOutcome,
 };
-use crate::agent::tauri_events::{emit_compact_request, emit_compact_started};
+use crate::agent::tauri_events::{emit_compact_request, TauriEventDispatcher};
 use crate::models::chat::Message;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -138,8 +139,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         session_id,
     )
     .await;
-    let current_context_limit =
-        std::cmp::min(settings.max_input_context(), settings.model_max_limit);
+    let current_context_limit = settings.max_input_context();
     let effective_input_budget = crate::agent::llm::token_utils::calculate_effective_input_budget(
         current_context_limit,
         measured_output_tokens_reserve,
@@ -252,6 +252,23 @@ pub(crate) async fn try_trigger_preflight_compaction(
         effective_input_budget,
         split_candidates
     );
+
+    // Dispatch PreCompact once per compaction attempt (before the split-backoff
+    // and overflow-recovery ladder) with the actual trigger ("auto" vs "manual", #2925).
+    let compact_trigger = pre_compact_trigger_label(resume_completion_after_compact);
+    let mut pre_compact_params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::PreCompact,
+    );
+    pre_compact_params.compact_source = Some(compact_trigger.to_string());
+    let _ = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::PreCompact,
+        compact_trigger,
+        &pre_compact_params,
+        session_id,
+    )
+    .await;
 
     let mut prepared_attempt = None;
     let mut chosen_split_idx = preferred_split_idx;
@@ -398,6 +415,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
     } else {
         CompactionKind::Manual
     };
+    let dispatcher = TauriEventDispatcher::from_handle(app_handle);
     match compaction
         .try_begin(
             kind,
@@ -411,8 +429,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
                 .set_recovery_progress(recovery_phase, retry_attempt)
                 .await;
             compaction.set_current_request(compact_event.clone()).await;
-            if let Err(error) = emit_compact_started(
-                app_handle,
+            if let Err(error) = dispatcher.emit_compact_started(
                 session_id.to_string(),
                 Some(session_name.to_string()),
                 resume_completion_after_compact,
@@ -437,7 +454,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
                     },
                 )
                 .await;
-            if let Err(error) = emit_compact_request(app_handle, compact_event) {
+            if let Err(error) = emit_compact_request(app_handle, compact_event).await {
                 compaction.clear_runtime_state(true).await;
                 compaction.reset_recovery_progress().await;
                 return Err(error);
@@ -449,8 +466,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
             } else {
                 CompactionReuseOutcome::NoChange
             };
-            emit_compact_started(
-                app_handle,
+            dispatcher.emit_compact_started(
                 session_id.to_string(),
                 Some(session_name.to_string()),
                 resume_completion_after_compact,
@@ -570,6 +586,14 @@ pub async fn trigger_preflight_compaction_for_session(
     .await
 }
 
+pub(crate) fn pre_compact_trigger_label(resume_completion_after_compact: bool) -> &'static str {
+    if resume_completion_after_compact {
+        "auto"
+    } else {
+        "manual"
+    }
+}
+
 pub async fn trigger_manual_compaction_for_session(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
@@ -595,4 +619,15 @@ pub async fn trigger_manual_compaction_for_session(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pre_compact_trigger_label;
+
+    #[test]
+    fn pre_compact_trigger_distinguishes_auto_and_manual() {
+        assert_eq!(pre_compact_trigger_label(true), "auto");
+        assert_eq!(pre_compact_trigger_label(false), "manual");
+    }
 }

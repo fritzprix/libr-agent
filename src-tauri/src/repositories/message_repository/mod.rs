@@ -8,6 +8,7 @@
 
 mod index_meta;
 mod persist;
+pub(crate) use persist::decode_persisted_tool_error;
 mod sqlite;
 mod types;
 

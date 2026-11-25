@@ -4,7 +4,7 @@ description: >
   Split a large task into independent subtasks, delegate them to child sessions
   for parallel execution, and merge the results. Use when a task can be broken
   into non-overlapping pieces that don't depend on each other's output.
-  Not for consensus/review (use consensus-delegation) or benchmarks (use bench).
+  Not for consensus/review (use consensus-delegation).
   Triggers: "분할 정복", "병렬 처리", "대량 문서 요약", "문서 수십 개 요약", "여러 개를 빠르게", "parallel execution", "split and process", "summarize all of these quickly".
 ---
 
@@ -44,7 +44,7 @@ The Divide-Conquer pattern splits a complex task into independent subtasks, dele
 - **Discovery**: Use `agent__listAgents(type="configs")` to find assistant IDs.
 - **Delegation**: Use `agent__messageToSession(..., complexity=..., reset=true)` to assign fresh work to a suitable Idle matching-role child. Use `agent__spawnSession(..., complexity=..., waitForResult=false)` only when no suitable child exists, a different role or workspace is needed, or another parallel capacity slot is required. Always pass `complexity` (`low`|`normal`|`high`).
 - **Monitoring**: Check status via `agent__listAgents(type="sessions")` and wait for completion via `agent__checkSession(sessionId, wait=true)`.
-- **Rework**: Use `agent__messageToSession(sessionId, message)` to wake/retry paused/error sessions.
+- **Rework**: Use `agent__messageToSession(sessionId, complexity="...", message="...")` to wake/retry paused/error sessions.
 - **Cancellation**: Use `agent__stopSession(sessionId)` to abort hung subtasks.
 
 ## ⚖️ `consensus-delegation` vs `divide-conquer`

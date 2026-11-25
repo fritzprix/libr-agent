@@ -130,6 +130,12 @@ impl MCPServiceProxyManager {
         // 4. Remove HTTP session manager (HTTP connections are shared, just remove the manager)
         self.session_http_managers.write().await.remove(session_id);
 
+        // 4b. Stop masking this session's filled MCP secret values in app logs (#2969).
+        crate::mcp::builtin::workspace::persistent_shell::secrets::forget_log_secret_values(
+            session_id,
+            crate::mcp::builtin::workspace::persistent_shell::secrets::MCP_SECRET_MASK_SOURCE,
+        );
+
         // 5. Remove per-session creation guard while still holding `_session_lock`
         //    so waiters cannot observe a missing guard mid-teardown.
         self.creation_guards.lock().await.remove(session_id);

@@ -141,3 +141,8 @@ test-results/
 .freebuff/
 
 ./attachments
+# worker-loop shared state (claims, slots, per-worker state); managed only via worker_state.py
+/.worker-loop/
+/.worker-loop.migrating-*/
+
+.producer-loop/

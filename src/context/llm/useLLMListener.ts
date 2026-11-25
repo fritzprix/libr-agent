@@ -3,7 +3,7 @@ import {
   handleLLMResponse,
 } from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -49,6 +49,20 @@ function logStartupLifecycleOnce(key: string, message: string) {
 
 export function __resetLLMListenerStartupLogStateForTests() {
   startupLifecycleLogKeys.clear();
+}
+
+/**
+ * The HTTP status a provider SDK error carries (OpenAI/Anthropic expose
+ * `status`), when it has one (#2961).
+ */
+export function httpStatusOf(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status: unknown }).status;
+    if (typeof status === 'number' && status >= 400 && status <= 599) {
+      return status;
+    }
+  }
+  return undefined;
 }
 
 function notifyRecoveryCancel(reason: string, t: TFunction): void {
@@ -337,6 +351,27 @@ export function useLLMListener({
                   { sessionId },
                 );
 
+                // Same chat notice the Rust executor emits on fallback (#2961),
+                // so the switch is not silent on either path.
+                try {
+                  await emit('agent:event', {
+                    type: 'llmFallbackNotice',
+                    sessionId,
+                    statusCode: httpStatusOf(primaryError),
+                    fallbackProvider: fallbackModel.provider,
+                    fallbackModel: fallbackModel.model,
+                    errorMessage:
+                      primaryError instanceof Error
+                        ? primaryError.message
+                        : String(primaryError),
+                  });
+                } catch (noticeError) {
+                  logger.warn('Could not emit the fallback notice', {
+                    sessionId,
+                    noticeError,
+                  });
+                }
+
                 // Reset streaming indicator for fallback attempt
                 setStreamingMessages((prev) => {
                   const next = new Map(prev);
@@ -444,13 +479,19 @@ export function useLLMListener({
       const unlistenFn = await listen<CompletionCancelRequest>(
         'llm:completion-cancel',
         (event) => {
-          const { sessionId, responseMessageId, reason } = event.payload;
+          const { sessionId, responseMessageId, reason, willRetry } =
+            event.payload;
           logger.info('Received Rust-driven completion cancel request', {
             sessionId,
             responseMessageId,
             reason,
+            willRetry,
           });
-          notifyRecoveryCancel(reason, tRef.current);
+          // The "Retrying…" toast is true only when Rust starts a new turn.
+          // On the final failure the error bubble explains what happened.
+          if (willRetry) {
+            notifyRecoveryCancel(reason, tRef.current);
+          }
           cancelCompletionRequest(sessionId, responseMessageId);
         },
       );

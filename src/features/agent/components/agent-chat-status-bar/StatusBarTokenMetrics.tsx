@@ -22,34 +22,6 @@ function hasTokenUsageData(
   );
 }
 
-function mergePersistedTokenUsage(
-  previousUsage: TokenUsage | null,
-  nextUsage: TokenUsage,
-): TokenUsage {
-  if (!previousUsage) {
-    return nextUsage;
-  }
-
-  return {
-    ...previousUsage,
-    ...nextUsage,
-    details: {
-      ...previousUsage.details,
-      ...nextUsage.details,
-      evalDuration:
-        nextUsage.details?.evalDuration ?? previousUsage.details?.evalDuration,
-      timeToFirstToken:
-        nextUsage.details?.timeToFirstToken ??
-        previousUsage.details?.timeToFirstToken,
-      promptEvalDuration:
-        nextUsage.details?.promptEvalDuration ??
-        previousUsage.details?.promptEvalDuration,
-      loadDuration:
-        nextUsage.details?.loadDuration ?? previousUsage.details?.loadDuration,
-    },
-  };
-}
-
 function findLatestAssistantUsage(messages: Message[]): TokenUsage | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -110,13 +82,10 @@ export function StatusBarTokenMetrics({
         return;
       }
 
-      setPersistedMetrics((previous) => ({
+      setPersistedMetrics({
         sessionId,
-        usage: mergePersistedTokenUsage(
-          previous.sessionId === sessionId ? previous.usage : null,
-          usage,
-        ),
-      }));
+        usage,
+      });
     },
     [sessionId],
   );

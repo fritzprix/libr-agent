@@ -4,13 +4,18 @@ use tauri::Manager;
 use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
+pub mod bootstrap; // shared entry-point bootstrap (dotenv, profile, dirs, descriptors)
 pub mod browser_extension_bridge;
 pub mod browser_sidecar;
+pub mod build_provenance;
 pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
+pub mod e2e_picker; // File-dialog test hook armed by the debug E2E control plane (#2903)
+pub mod e2e_ui_bridge; // Frontend↔control-plane bridge for UI automation (#2902)
 pub mod entity; // SeaORM entity definitions
 pub mod execution_mode;
+pub mod headless;
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
@@ -26,6 +31,7 @@ pub mod session;
 pub mod session_export;
 pub mod session_isolation;
 mod state;
+pub mod tui; // `libragent --tui` entry and terminal set-up/restore (#2761)
 pub mod utils;
 
 // Re-export migration for use in MCP modules
@@ -42,16 +48,17 @@ use commands::agent_commands::{
     agent_execute_command, agent_execute_ui_tauri_action, agent_factory_reset,
     agent_get_all_sessions, agent_get_available_tools, agent_get_child_session_ids,
     agent_get_child_sessions, agent_get_compact_context, agent_get_descendant_session_ids,
-    agent_get_pending_queue, agent_get_service_contexts, agent_get_session, agent_get_tools,
-    agent_get_user_prompt, agent_handle_compact_error, agent_handle_compact_response,
-    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
-    agent_init_session_with_messages, agent_inject_channel_message,
+    agent_get_pending_approval_counts, agent_get_pending_queue, agent_get_service_contexts,
+    agent_get_session, agent_get_tools, agent_get_user_prompt, agent_handle_compact_error,
+    agent_handle_compact_response, agent_handle_llm_error, agent_handle_llm_response,
+    agent_handle_tool_result, agent_init_session_with_messages, agent_inject_channel_message,
     agent_inject_channel_message_auto, agent_inject_messages, agent_list_attention_sessions,
-    agent_list_sessions, agent_mark_session_viewed, agent_open_session, agent_pause_workflow,
-    agent_regenerate_last_turn, agent_report_llm_streaming_issue, agent_respond_channel_permission,
-    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow, agent_send_message,
-    agent_set_execution_mode, agent_submit_user_prompt, agent_terminate_workflow,
-    agent_toggle_session_bookmark, agent_update_session_config, agent_update_session_name,
+    agent_list_plugin_commands, agent_list_sessions, agent_mark_session_viewed, agent_open_session,
+    agent_pause_workflow, agent_regenerate_last_turn, agent_report_llm_streaming_issue,
+    agent_respond_channel_permission, agent_respond_tool_approval, agent_resume_session,
+    agent_resume_workflow, agent_send_message, agent_set_execution_mode, agent_submit_user_prompt,
+    agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
+    agent_update_session_name,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant,
@@ -118,9 +125,11 @@ use commands::skill_commands::{
     get_skill_content, open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
-    copy_global_to_assistant, delete_assistant_skill, delete_user_skill, import_assistant_skills,
-    import_user_skills, install_github_skills, preview_github_skill_install,
-    preview_user_skill_import, reset_assistant_skills, reset_user_skills,
+    check_plugin_source_updates, copy_global_to_assistant, delete_assistant_skill,
+    delete_plugin_source, delete_user_skill, import_assistant_skills, import_user_skills,
+    install_github_skills, install_session_plugin, list_plugin_sources, list_session_plugins,
+    preview_github_skill_install, preview_session_plugin_install, preview_user_skill_import,
+    reset_assistant_skills, reset_user_skills, resolve_plugin_target, set_plugin_source_enabled,
 };
 use commands::url_commands::{open_external_url, open_path_with_default_app};
 use commands::workspace_commands::{
@@ -178,6 +187,247 @@ fn prevent_browser_reload_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     builder.build()
 }
 
+/// Generate the Tauri application context once in the library crate so macOS
+/// `embed_info_plist_bytes` does not emit duplicate `_EMBED_INFO_PLIST` symbols.
+pub(crate) fn create_tauri_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
+/// Attach shared plugins and invoke handlers to a Tauri builder.
+pub(crate) fn configure_tauri_builder(
+    builder: tauri::Builder<tauri::Wry>,
+) -> tauri::Builder<tauri::Wry> {
+    builder
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(prevent_browser_reload_plugin())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            restart_app,
+            list_workspace_files,
+            probe_mcp_server,
+            retry_session_mcp_server,
+            validate_tool_schema,
+            list_builtin_servers,
+            list_builtin_tools,
+            list_builtin_servers_with_metadata,
+            list_available_builtin_server_definitions,
+            // Download commands
+            download_media_file,
+            download_text_file,
+            download_binary_file,
+            download_text_pdf,
+            download_workspace_file,
+            crate::e2e_picker::e2e_take_picker_override,
+            crate::e2e_ui_bridge::e2e_ui_enabled,
+            crate::e2e_ui_bridge::e2e_ui_report,
+            crate::e2e_ui_bridge::e2e_ui_report_dialog,
+            export_and_download_zip,
+            // Session management commands (still needed for workspace isolation)
+            remove_session,
+            export_dataset,
+            export_session_file,
+            delete_attachments,
+            get_app_data_dir,
+            get_app_logs_dir,
+            get_update_install_capability,
+            media_assist_plugin_status,
+            media_assist_run_plugin,
+            backup_current_log,
+            clear_current_log,
+            list_log_files,
+            get_launch_log_level,
+            log_trace,
+            log_debug,
+            log_info,
+            log_warn,
+            log_error_from_frontend,
+            log_batch,
+            register_dropped_files,
+            check_dropped_path_type,
+            read_dropped_file,
+            write_file,
+            workspace_write_file,
+            list_global_knowledge,
+            get_global_knowledge_detail,
+            get_global_knowledge_graph,
+            delete_global_knowledge,
+            open_external_url,
+            open_path_with_default_app,
+            open_workspace_file_with_default_app,
+            read_workspace_file_content,
+            open_workspace_in_explorer,
+            open_workspace_in_terminal,
+            get_workspace_override,
+            set_workspace_override,
+            cancel_workspace_override,
+            get_workspace_dir,
+            read_local_file_as_base64,
+            start_docker_desktop,
+            docker_desktop_launch_supported,
+            check_docker_health,
+            probe_runtime_binaries,
+            // Interactive Browser commands
+            create_browser_session,
+            close_browser_session,
+            list_browser_sessions,
+            navigate_to_url,
+            execute_script,
+            navigate_back,
+            navigate_forward,
+            clear_agent_browser_data,
+            get_extension_bridge_status,
+            get_extension_unpacked_path,
+            // OAuth 2.1 Authentication commands
+            has_oauth_token,
+            get_oauth_token,
+            revoke_oauth_token,
+            start_oauth_flow,
+            // Message management commands
+            messages_get_page,
+            messages_get_messages_before,
+            messages_upsert_many,
+            messages_upsert,
+            messages_delete,
+            messages_delete_all_for_session,
+            messages_search,
+            // Agent workflow commands
+            agent_create_session,
+            agent_resume_session,
+            agent_open_session,
+            agent_init_session_with_messages,
+            agent_send_message,
+            agent_execute_ui_tauri_action,
+            agent_handle_llm_response,
+            agent_handle_llm_error,
+            agent_report_llm_streaming_issue,
+            agent_handle_tool_result,
+            agent_get_session,
+            agent_get_tools,
+            agent_get_all_sessions,
+            agent_list_sessions,
+            agent_list_attention_sessions,
+            agent_list_plugin_commands,
+            agent_delete_session,
+            agent_delete_session_only,
+            agent_execute_command,
+            agent_get_available_tools,
+            agent_get_child_session_ids,
+            agent_get_child_sessions,
+            agent_get_descendant_session_ids,
+            agent_pause_workflow,
+            agent_resume_workflow,
+            agent_regenerate_last_turn,
+            agent_terminate_workflow,
+            agent_cancel_workflow,
+            agent_call_builtin_tool,
+            agent_add_attachment,
+            agent_delete_attachment,
+            agent_get_service_contexts,
+            agent_inject_messages,
+            agent_append_tool_messages,
+            agent_get_pending_queue,
+            agent_cancel_pending_prompt,
+            agent_inject_channel_message,
+            agent_inject_channel_message_auto,
+            agent_respond_channel_permission,
+            agent_submit_user_prompt,
+            agent_cancel_user_prompt,
+            agent_get_user_prompt,
+            agent_clear_all_sessions,
+            agent_factory_reset,
+            agent_update_session_config,
+            agent_create_session_with_initial_message,
+            agent_toggle_session_bookmark,
+            agent_update_session_name,
+            agent_mark_session_viewed,
+            agent_set_execution_mode,
+            agent_respond_tool_approval,
+            agent_get_pending_approval_counts,
+            agent_get_compact_context,
+            agent_handle_compact_response,
+            agent_handle_compact_error,
+            // CRUD Commands
+            create_assistant,
+            update_assistant,
+            delete_assistant,
+            list_assistants,
+            list_assistant_summaries,
+            get_assistant,
+            search_assistants,
+            batch_upsert_assistants,
+            create_mcp_server_config,
+            update_mcp_server_config,
+            delete_mcp_server_config,
+            list_mcp_server_configs,
+            list_mcp_server_presets,
+            create_playbook,
+            update_playbook,
+            delete_playbook,
+            get_playbook,
+            list_playbooks,
+            toggle_playbook_bookmark,
+            create_scheduled_task,
+            list_scheduled_tasks,
+            get_scheduled_task,
+            update_scheduled_task,
+            toggle_scheduled_task,
+            delete_scheduled_task,
+            list_session_scheduled_tasks,
+            toggle_session_scheduled_task,
+            cancel_session_scheduled_task,
+            set_setting,
+            update_settings,
+            get_setting,
+            delete_setting,
+            list_settings,
+            get_advanced_settings,
+            get_display_settings,
+            get_experimental_settings,
+            get_system_settings,
+            get_pending_session_api_pairing,
+            approve_session_api_pairing,
+            reject_session_api_pairing,
+            list_session_api_keys,
+            revoke_session_api_key,
+            export_migration,
+            import_migration,
+            inspect_migration,
+            reverify_mcp_servers,
+            export_org_bundle,
+            import_org_bundle,
+            inspect_org_bundle,
+            scan_skills_directory,
+            get_default_skills_directory,
+            open_skills_directory_in_explorer,
+            get_aggregated_skills,
+            get_managed_skills_overview,
+            get_skill_content,
+            list_workspace_file_paths,
+            list_workspace_file_paths_for_path,
+            copy_global_to_assistant,
+            delete_assistant_skill,
+            import_assistant_skills,
+            preview_user_skill_import,
+            import_user_skills,
+            preview_github_skill_install,
+            install_github_skills,
+            list_plugin_sources,
+            delete_plugin_source,
+            preview_session_plugin_install,
+            install_session_plugin,
+            list_session_plugins,
+            set_plugin_source_enabled,
+            check_plugin_source_updates,
+            resolve_plugin_target,
+            delete_user_skill,
+            reset_user_skills,
+            reset_assistant_skills,
+        ])
+}
+
 /// Configures and runs the main Tauri application.
 ///
 /// This function is the entry point for the application GUI. It sets up:
@@ -185,12 +435,24 @@ fn prevent_browser_reload_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 /// - The Tauri application builder with all necessary plugins (dialog, logging, opener).
 /// - The full list of invoke handlers (Tauri commands) available to the frontend.
 /// - A setup hook to initialize managed state like `SecureFileManager` and `InteractiveBrowserServer`.
-/// - Linux-specific environment variables and checks for WebKit compatibility.
+/// - Linux-specific environment variables and checks for WebKit compatibility
+///   (e.g. the NVIDIA DMA-BUF renderer workaround, #2964, applied before the
+///   WebView exists and reported once the logger is up).
 /// - Graceful error handling for panics that may occur during application startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Set up custom panic handler for better error reporting
-    std::panic::set_hook(Box::new(|panic_info| {
+    run_with_visibility(true);
+}
+
+/// Run the application; `show_windows = false` creates the WebView windows
+/// invisible. That is the `libragent --tui` form (#2761): no GUI window is
+/// presented, while the hidden WebView keeps answering LLM calls (the
+/// phase-1 allowance) exactly like the GUI and `liblet` paths do.
+fn run_with_visibility(show_windows: bool) {
+    // Set up custom panic handler for better error reporting. It chains the
+    // previous hook, which in TUI mode restores the terminal.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
         error!("🚨 PANIC: {panic_info}");
         if let Some(location) = panic_info.location() {
             error!(
@@ -203,7 +465,14 @@ pub fn run() {
 
         // Attempt graceful shutdown
         error!("🔄 Attempting graceful shutdown...");
+        previous_hook(panic_info);
     }));
+
+    // WebKitGTK's DMA-BUF renderer hangs on the NVIDIA proprietary driver
+    // (#2964). Must run before any WebView is created, so this is here rather
+    // than in the setup hook; covers both the GUI and the hidden-WebView TUI.
+    #[cfg(target_os = "linux")]
+    utils::platform::apply_webkit_dmabuf_workaround();
 
     // Configure Tauri builder with error handling
     let result = std::panic::catch_unwind(|| {
@@ -213,222 +482,8 @@ pub fn run() {
         let builder = builder.plugin(tauri_plugin_mcp_bridge::init_with_config(
             tauri_plugin_mcp_bridge::Config::localhost_only(),
         ));
-        builder
-            .plugin(tauri_plugin_http::init())
-            .plugin(tauri_plugin_dialog::init())
-            .plugin(tauri_plugin_opener::init())
-            .plugin(tauri_plugin_updater::Builder::new().build())
-            .plugin(prevent_browser_reload_plugin())
-            .invoke_handler(tauri::generate_handler![
-                greet,
-                restart_app,
-                list_workspace_files,
-                probe_mcp_server,
-                retry_session_mcp_server,
-                validate_tool_schema,
-                list_builtin_servers,
-                list_builtin_tools,
-                list_builtin_servers_with_metadata,
-                list_available_builtin_server_definitions,
-                // Download commands
-                download_media_file,
-                download_text_file,
-                download_binary_file,
-                download_text_pdf,
-                download_workspace_file,
-                export_and_download_zip,
-                // Session management commands (still needed for workspace isolation)
-                remove_session,
-                export_dataset,
-                export_session_file,
-                delete_attachments,
-                get_app_data_dir,
-                get_app_logs_dir,
-                get_update_install_capability,
-                media_assist_plugin_status,
-                media_assist_run_plugin,
-                backup_current_log,
-                clear_current_log,
-                list_log_files,
-                get_launch_log_level,
-                log_trace,
-                log_debug,
-                log_info,
-                log_warn,
-                log_error_from_frontend,
-                log_batch,
-                register_dropped_files,
-                check_dropped_path_type,
-                read_dropped_file,
-                write_file,
-                workspace_write_file,
-                list_global_knowledge,
-                get_global_knowledge_detail,
-                get_global_knowledge_graph,
-                delete_global_knowledge,
-                open_external_url,
-                open_path_with_default_app,
-                open_workspace_file_with_default_app,
-                read_workspace_file_content,
-                open_workspace_in_explorer,
-                open_workspace_in_terminal,
-                get_workspace_override,
-                set_workspace_override,
-                cancel_workspace_override,
-                get_workspace_dir,
-                read_local_file_as_base64,
-                start_docker_desktop,
-                docker_desktop_launch_supported,
-                check_docker_health,
-                probe_runtime_binaries,
-                // Interactive Browser commands
-                create_browser_session,
-                close_browser_session,
-                list_browser_sessions,
-                navigate_to_url,
-                execute_script,
-                navigate_back,
-                navigate_forward,
-                clear_agent_browser_data,
-                get_extension_bridge_status,
-                get_extension_unpacked_path,
-                // OAuth 2.1 Authentication commands
-                has_oauth_token,
-                get_oauth_token,
-                revoke_oauth_token,
-                start_oauth_flow,
-                // Message management commands
-                messages_get_page,
-                messages_get_messages_before,
-                messages_upsert_many,
-                messages_upsert,
-                messages_delete,
-                messages_delete_all_for_session,
-                messages_search,
-                // Agent workflow commands
-                agent_create_session,
-                agent_resume_session,
-                agent_open_session,
-                agent_init_session_with_messages,
-                agent_send_message,
-                agent_execute_ui_tauri_action,
-                agent_handle_llm_response,
-                agent_handle_llm_error,
-                agent_report_llm_streaming_issue,
-                agent_handle_tool_result,
-                agent_get_session,
-                agent_get_tools,
-                agent_get_all_sessions,
-                agent_list_sessions,
-                agent_list_attention_sessions,
-                agent_delete_session,
-                agent_delete_session_only,
-                agent_execute_command,
-                agent_get_available_tools,
-                agent_get_child_session_ids,
-                agent_get_child_sessions,
-                agent_get_descendant_session_ids,
-                agent_pause_workflow,
-                agent_resume_workflow,
-                agent_regenerate_last_turn,
-                agent_terminate_workflow,
-                agent_cancel_workflow,
-                agent_call_builtin_tool,
-                agent_add_attachment,
-                agent_delete_attachment,
-                agent_get_service_contexts,
-                agent_inject_messages,
-                agent_append_tool_messages,
-                agent_get_pending_queue,
-                agent_cancel_pending_prompt,
-                agent_inject_channel_message,
-                agent_inject_channel_message_auto,
-                agent_respond_channel_permission,
-                agent_submit_user_prompt,
-                agent_cancel_user_prompt,
-                agent_get_user_prompt,
-                agent_clear_all_sessions,
-                agent_factory_reset,
-                agent_update_session_config,
-                agent_create_session_with_initial_message,
-                agent_toggle_session_bookmark,
-                agent_update_session_name,
-                agent_mark_session_viewed,
-                agent_set_execution_mode,
-                agent_respond_tool_approval,
-                agent_get_compact_context,
-                agent_handle_compact_response,
-                agent_handle_compact_error,
-                // CRUD Commands
-                create_assistant,
-                update_assistant,
-                delete_assistant,
-                list_assistants,
-                list_assistant_summaries,
-                get_assistant,
-                search_assistants,
-                batch_upsert_assistants,
-                create_mcp_server_config,
-                update_mcp_server_config,
-                delete_mcp_server_config,
-                list_mcp_server_configs,
-                list_mcp_server_presets,
-                create_playbook,
-                update_playbook,
-                delete_playbook,
-                get_playbook,
-                list_playbooks,
-                toggle_playbook_bookmark,
-                create_scheduled_task,
-                list_scheduled_tasks,
-                get_scheduled_task,
-                update_scheduled_task,
-                toggle_scheduled_task,
-                delete_scheduled_task,
-                list_session_scheduled_tasks,
-                toggle_session_scheduled_task,
-                cancel_session_scheduled_task,
-                set_setting,
-                update_settings,
-                get_setting,
-                delete_setting,
-                list_settings,
-                get_advanced_settings,
-                get_display_settings,
-                get_experimental_settings,
-                get_system_settings,
-                get_pending_session_api_pairing,
-                approve_session_api_pairing,
-                reject_session_api_pairing,
-                list_session_api_keys,
-                revoke_session_api_key,
-                export_migration,
-                import_migration,
-                inspect_migration,
-                reverify_mcp_servers,
-                export_org_bundle,
-                import_org_bundle,
-                inspect_org_bundle,
-                scan_skills_directory,
-                get_default_skills_directory,
-                open_skills_directory_in_explorer,
-                get_aggregated_skills,
-                get_managed_skills_overview,
-                get_skill_content,
-                list_workspace_file_paths,
-                list_workspace_file_paths_for_path,
-                copy_global_to_assistant,
-                delete_assistant_skill,
-                import_assistant_skills,
-                preview_user_skill_import,
-                import_user_skills,
-                preview_github_skill_install,
-                install_github_skills,
-                delete_user_skill,
-                reset_user_skills,
-                reset_assistant_skills,
-            ])
-            .setup(|app| lifecycle::app_setup::setup_app(app))
+        configure_tauri_builder(builder)
+            .setup(lifecycle::app_setup::setup_app)
             .on_window_event(|window, event| {
                 // Re-assert taskbar membership around minimize/focus changes on Windows.
                 // Native minimize can transiently drop the shell taskbar button when a
@@ -459,10 +514,38 @@ pub fn run() {
                     let _ = (window, event);
                 }
             })
-            .build(tauri::generate_context!())
+            .build({
+                let mut context = create_tauri_context();
+                if !show_windows {
+                    // Keep a WebView HWND that page JS will actually run in.
+                    // On Windows, `visible=false` from creation often leaves
+                    // WebView2 without a document (#2784): no `frontend-ready`,
+                    // no LLM listener. Use an off-screen 1x1 window instead —
+                    // skip_taskbar + no focus so it is not a user-facing GUI.
+                    for window_config in &mut context.config_mut().app.windows {
+                        #[cfg(windows)]
+                        {
+                            window_config.visible = true;
+                            window_config.width = 1.0;
+                            window_config.height = 1.0;
+                            window_config.x = Some(-32_000.0);
+                            window_config.y = Some(-32_000.0);
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            window_config.visible = false;
+                        }
+                        window_config.skip_taskbar = true;
+                        window_config.focus = false;
+                    }
+                }
+                context
+            })
             .expect("error while building tauri application")
             .run(|app_handle, event| {
                 if let tauri::RunEvent::Exit = event {
+                    crate::tui::restore_terminal();
+                    crate::server::backend_descriptor::unpublish();
                     crate::utils::keep_awake::shutdown();
                     let app_handle_clone = app_handle.clone();
                     tauri::async_runtime::block_on(async move {

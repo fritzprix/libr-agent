@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -54,6 +55,8 @@ except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
 from benchmarks.harbor.session_e2e.automation import (
+    MOCK_KEYCHAIN_MODE_ENV,
+    SessionE2eAutomationSpec,
     load_session_e2e_spec,
     resolve_pending_interactions,
 )
@@ -338,7 +341,20 @@ WORKSPACE_MODE_ENV = "LIBRAGENT_HARBOR_WORKSPACE_MODE"
 WORKSPACE_MODES = ("managed", "host")
 
 
-def resolve_workspace_mode(env_map: dict[str, str]) -> str:
+def resolve_workspace_mode(env_map: dict[str, str], *, platform_name: str = sys.platform) -> str:
+    """Resolve the workspace mode, enforcing the host-mode safety contract.
+
+    host mode runs task commands on the machine that hosts the instance, so
+    it is accepted only with ``LIBRAGENT_BENCH_INSTANCE_SANDBOX=1``, which the
+    isolated launcher sets: on Linux the instance then runs inside a bubblewrap
+    filesystem sandbox and the task workspace is the run dir's ``app/`` (host
+    side of the sandbox's ``/app``); on Windows there is no bubblewrap and the
+    isolated instance itself is the safety condition (named job object +
+    redirected profiles), with the run dir's ``app/`` staged as the task
+    workspace. A plain (non-isolated) host run stays refused, and on Windows
+    host mode is additionally refused outside CI runners (``CI=true``), which
+    are disposable machines.
+    """
     mode = env_map.get(WORKSPACE_MODE_ENV, "").strip().lower() or "host"
     if mode not in WORKSPACE_MODES:
         raise RuntimeError(
@@ -350,12 +366,43 @@ def resolve_workspace_mode(env_map: dict[str, str]) -> str:
             "use `run-harbor-bench.cjs --isolated --workspace-mode host` so the bench "
             "instance runs in a filesystem sandbox, or pass `--workspace-mode managed`."
         )
+    if (
+        mode == "host"
+        and platform_name == "win32"
+        and env_map.get("CI", "").strip().lower() not in ("1", "true")
+    ):
+        raise RuntimeError(
+            f"{WORKSPACE_MODE_ENV}=host on Windows runs task commands directly on this "
+            "machine; allow it only on a disposable CI runner (CI=true), or pass "
+            "`--workspace-mode managed`."
+        )
     return mode
 
 
 def workspace_mode_name(mode: str) -> str:
     """Harbor-facing workspace mode label matching completed-trial metadata."""
     return "host-sync" if mode == "host" else mode
+
+
+def host_session_workspace_path(
+    sandbox_app_dir: Path | None,
+    local_workspace_str: str,
+    *,
+    platform_name: str = sys.platform,
+) -> str:
+    """The ``workspacePath`` sent to the app in host workspace mode.
+
+    Linux: the isolated instance runs inside bubblewrap, which mounts the run
+    dir's ``app/`` (``sandbox_app_dir``) at ``SANDBOX_WORKDIR`` inside the
+    sandbox, so the session must address the in-sandbox path. Windows: there
+    is no bubblewrap mount, so the app reads and writes the host run dir's
+    ``app/`` directly — send the host path (where files are staged and
+    harvested). A plain (non-isolated) host run has no ``sandbox_app_dir`` and
+    always uses the local path.
+    """
+    if sandbox_app_dir is not None and platform_name != "win32":
+        return SANDBOX_WORKDIR
+    return local_workspace_str
 
 
 def _environment_value(name: str) -> str | None:
@@ -1550,6 +1597,33 @@ class LibrAgentHarborAdapter(BaseAgent):
             )
 
         trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        # G1.2: tasks whose fakes live in the task image (privileged paths)
+        # declare requires_workspace_mode; running them in another mode would
+        # silently exercise the host instead, so fail fast before any work.
+        trial_spec = load_session_e2e_spec(self.logs_dir)
+        if trial_spec is not None and trial_spec.requires_workspace_mode:
+            current_mode = resolve_workspace_mode(dict(os.environ))
+            if current_mode != trial_spec.requires_workspace_mode:
+                raise RuntimeError(
+                    f"This task declares requires_workspace_mode="
+                    f'"{trial_spec.requires_workspace_mode}" but the bench runs '
+                    f"{current_mode!r}. Privileged-path tasks need the task "
+                    "image's fake pkexec/askpass, which only exists in the "
+                    "managed container. Run: node scripts/run-harbor-bench.cjs "
+                    "--isolated --debug-app-bin --workspace-mode managed "
+                    "--preset path --path <task-dir>"
+                )
+        # G1.4: a task may pin the instance's mock keychain mode. Apply it
+        # before the per-trial relaunch (and clear it for every other task)
+        # so the env var exists only for trials that observe the mock.
+        if trial_spec is not None and trial_spec.mock_keychain_mode:
+            os.environ[MOCK_KEYCHAIN_MODE_ENV] = trial_spec.mock_keychain_mode
+            safe_print(
+                f"[{self.name()}] Mock keychain mode override: "
+                f"{trial_spec.mock_keychain_mode}"
+            )
+        else:
+            os.environ.pop(MOCK_KEYCHAIN_MODE_ENV, None)
         if trial_reset is not None:
             await asyncio.to_thread(relaunch, trial_reset.layout, trial_reset.app_bin)
             try:
@@ -1692,6 +1766,11 @@ class LibrAgentHarborAdapter(BaseAgent):
                     "Host workspace mode needs the isolated bench instance (--isolated)."
                 )
             if container_workdir.rstrip("/") != SANDBOX_WORKDIR:
+                # Platform-agnostic precondition: host mode stages the task
+                # workspace at the run dir's app/, which bubblewrap mounts at
+                # SANDBOX_WORKDIR on Linux and which the Windows host session
+                # addresses directly (see host_session_workspace_path). Tasks
+                # pinned to another container workdir do not fit this contract.
                 raise RuntimeError(
                     f"Host workspace mode mounts the task workspace at {SANDBOX_WORKDIR}; "
                     f"this task uses {container_workdir}."
@@ -1725,11 +1804,22 @@ class LibrAgentHarborAdapter(BaseAgent):
         inferred_task_id, _ = _task_identity_from_logs_dir(self.logs_dir)
         task_id = context_task_id or inferred_task_id or "bench"
         max_input_context = resolve_max_input_context(task_id)
+        # A task may pin its own execution mode (e.g. the tool-approval task
+        # needs `normal` so approvals actually open); the session-e2e spec is
+        # loaded before the payload for exactly this reason. Validation goes
+        # through resolve_execution_mode so an invalid value fails fast.
+        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
+        execution_mode = self.execution_mode
+        if session_e2e_spec is not None and session_e2e_spec.execution_mode:
+            execution_mode = resolve_execution_mode(session_e2e_spec.execution_mode)
+            safe_print(
+                f"[{self.name()}] Task executionMode override: {execution_mode}"
+            )
         payload: dict[str, Any] = {
             "assistantId": self.assistant_id,
             "name": f"Harbor Benchmark Task: {task_id}",
             "request": instruction,
-            "executionMode": self.execution_mode,
+            "executionMode": execution_mode,
         }
         if max_input_context is not None:
             payload["maxInputContext"] = max_input_context
@@ -1747,13 +1837,12 @@ class LibrAgentHarborAdapter(BaseAgent):
                 "manageLifecycle": True,
             }
         else:
-            payload["workspacePath"] = (
-                SANDBOX_WORKDIR if sandbox_app_dir is not None else local_workspace_str
+            payload["workspacePath"] = host_session_workspace_path(
+                sandbox_app_dir, local_workspace_str
             )
             payload["workspaceIsolation"] = "host"
 
         post_idle_event = load_post_idle_event(self.logs_dir)
-        session_e2e_spec = load_session_e2e_spec(self.logs_dir)
 
         async with httpx.AsyncClient(headers=self._api_headers(), timeout=600.0) as client:
             if managed_image is not None:
@@ -1806,6 +1895,7 @@ class LibrAgentHarborAdapter(BaseAgent):
             poll_interval = self.poll_interval_sec
             bench_instance = resolve_trial_instance_reset(dict(os.environ))
             session_e2e_actions: list[dict[str, Any]] = []
+            restarted_during_prompt = False
             e2e_control_warned = False
             seen_non_idle = False
             completed = False
@@ -1930,20 +2020,73 @@ class LibrAgentHarborAdapter(BaseAgent):
                                 )
                         else:
                             try:
-                                session_e2e_actions.extend(
-                                    await resolve_pending_interactions(
-                                        client,
-                                        api_url=self.api_url,
-                                        session_id=session_id,
-                                        data_dir=bench_instance.layout.data_dir,
-                                        spec=session_e2e_spec,
-                                    )
+                                child_ids: list[str] = []
+                                if session_e2e_spec.resolve_child_interactions:
+                                    # 2565 X-2: child sessions of this session
+                                    # are resolved before it, so a companion's
+                                    # waiting prompt is answered first. A
+                                    # failed children fetch must not skip the
+                                    # primary's own prompt for this cycle, so
+                                    # it is handled on its own.
+                                    try:
+                                        children_res = await client.get(
+                                            f"{self.api_url}/sessions/{session_id}/children",
+                                            timeout=10.0,
+                                        )
+                                        children_res.raise_for_status()
+                                        raw_children = children_res.json().get("children") or []
+                                        child_ids = [str(c) for c in raw_children if c]
+                                    except Exception as child_exc:
+                                        safe_print(
+                                            f"[{self.name()}] Warning: session E2E "
+                                            f"children fetch failed; resolving the "
+                                            f"primary session only: {child_exc}"
+                                        )
+                                resolved = await resolve_pending_interactions(
+                                    client,
+                                    api_url=self.api_url,
+                                    session_id=session_id,
+                                    data_dir=bench_instance.layout.data_dir,
+                                    spec=session_e2e_spec,
+                                    child_session_ids=child_ids,
+                                    prior_actions=session_e2e_actions,
                                 )
+                                session_e2e_actions.extend(resolved)
                             except Exception as exc:
                                 safe_print(
                                     f"[{self.name()}] Warning: session E2E control "
                                     f"action failed: {exc}"
                                 )
+                            else:
+                                if any(
+                                    isinstance(a, dict)
+                                    and a.get("kind") == "restartOnPrompt"
+                                    for a in resolved
+                                ):
+                                    # 2565 P-8 / 2672 A-4: restart the isolated
+                                    # instance in place while the prompt is
+                                    # waiting, then refresh client auth headers
+                                    # for post-restart message harvest.
+                                    await self._write_session_e2e_restart_evidence_best_effort(
+                                        spec=session_e2e_spec,
+                                        session_id=session_id,
+                                    )
+                                    client.headers.update(self._api_headers())
+                                    restarted_during_prompt = True
+                                    completed = True
+                                    break
+                                if any(
+                                    isinstance(a, dict)
+                                    and a.get("kind") == "circuitBreakResume"
+                                    for a in resolved
+                                ):
+                                    # Circuit-breaker Resume (#2901): the break
+                                    # settled the session to idle and the status
+                                    # read above is pre-resume; the injected
+                                    # ui__resumeCircuitBreak re-enters the
+                                    # workflow, so this poll must not complete
+                                    # the session.
+                                    continue
 
                     if current_status == "paused":
                         safe_print(
@@ -2086,6 +2229,19 @@ class LibrAgentHarborAdapter(BaseAgent):
                     session_id=session_id,
                     messages=messages,
                     resolved_interactions=session_e2e_actions,
+                    spec=session_e2e_spec,
+                )
+                self._copy_mock_keychain_artifacts(bench_instance)
+            if (
+                session_e2e_spec is not None
+                and session_e2e_spec.restart_after_completion
+                and not restarted_during_prompt
+            ):
+                # Restart-dependent rows (#2903): restart the same bench
+                # instance in place and record the post-restart probes.
+                await self._write_session_e2e_restart_evidence_best_effort(
+                    spec=session_e2e_spec,
+                    session_id=session_id,
                 )
 
             if telemetry.tool_calls_count == 0:
@@ -2263,6 +2419,18 @@ class LibrAgentHarborAdapter(BaseAgent):
         except BenchAuthError as exc:
             raise RuntimeError(f"{exc} {API_KEY_HINT}") from exc
 
+    def _copy_mock_keychain_artifacts(self, bench_instance: Any) -> None:
+        """Copy the instance's mock keychain log/store into this trial's
+        /logs/agent so the verifier can observe the mock directly (G1.4)."""
+        if bench_instance is None or not os.environ.get(MOCK_KEYCHAIN_MODE_ENV):
+            return
+        data_dir = bench_instance.layout.data_dir
+        for name in ("e2e_mock_keychain.log", "e2e_mock_keychain.json"):
+            src = data_dir / name
+            if src.is_file():
+                with contextlib.suppress(OSError):
+                    shutil.copy2(src, self.logs_dir / name)
+
     async def _write_session_e2e_evidence_best_effort(
         self,
         client: httpx.AsyncClient,
@@ -2270,6 +2438,7 @@ class LibrAgentHarborAdapter(BaseAgent):
         session_id: str,
         messages: list[Any],
         resolved_interactions: list[dict[str, Any]],
+        spec: SessionE2eAutomationSpec | None = None,
     ) -> None:
         """Persist session E2E evidence for the task verifier.
 
@@ -2303,13 +2472,31 @@ class LibrAgentHarborAdapter(BaseAgent):
             else None
         )
         if control_configured and token is not None:
+            control = E2eControlClient(self.api_url, token=token)
             try:
-                control = E2eControlClient(self.api_url, token=token)
                 payload["interactions"] = await control.interactions(
                     client, session_id
                 )
             except Exception as exc:
                 payload["interactionsError"] = str(exc)
+            if spec is not None and spec.probe_picker_control:
+                try:
+                    path_res = await control.arm_picker(
+                        client, path="/tmp/e2e-picker-probe.txt"
+                    )
+                    path_taken = await control.take_picker(client)
+                    cancel_res = await control.arm_picker(client, cancel=True)
+                    cancel_taken = await control.take_picker(client)
+                    after_taken = await control.take_picker(client)
+                    payload["pickerProbe"] = {
+                        "pathArmed": path_res,
+                        "pathTaken": path_taken,
+                        "cancelArmed": cancel_res,
+                        "cancelTaken": cancel_taken,
+                        "afterTaken": after_taken,
+                    }
+                except Exception as exc:
+                    payload["pickerProbeError"] = str(exc)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -2317,6 +2504,46 @@ class LibrAgentHarborAdapter(BaseAgent):
             safe_print(
                 f"[{self.name()}] Warning: failed to write session E2E evidence: {exc}"
             )
+
+    async def _write_session_e2e_restart_evidence_best_effort(
+        self,
+        *,
+        spec: SessionE2eAutomationSpec,
+        session_id: str | None = None,
+    ) -> None:
+        """Restart the bench instance in place and record the probe snapshot.
+
+        Restart-dependent tasks (#2903) grade persistence from
+        ``session_e2e_restart_evidence.json``; a failed restart is recorded
+        as ``restartExecuted: false`` with the error so the verifier fails
+        the row with evidence instead of the trial crashing.
+        """
+        trial_reset = resolve_trial_instance_reset(dict(os.environ))
+        from benchmarks.harbor.session_e2e.restart import (
+            restart_and_snapshot,
+            write_restart_evidence,
+        )
+
+        if trial_reset is None:
+            record: dict[str, Any] = {
+                "restartExecuted": False,
+                "error": "no isolated bench instance (LIBRAGENT_BENCH_INSTANCE_APP_BIN unset)",
+            }
+        else:
+            record = await restart_and_snapshot(
+                trial_reset.layout,
+                trial_reset.app_bin,
+                api_url=self.api_url,
+                http_probes=spec.post_restart_http_probes,
+                sql_probes=spec.post_restart_sql_probes,
+                pre_restart_http_puts=spec.pre_restart_http_puts,
+                session_id=session_id,
+            )
+        path = write_restart_evidence(self.logs_dir, record)
+        safe_print(
+            f"[{self.name()}] Restart evidence written to {path} "
+            f"(restartExecuted={record.get('restartExecuted')})"
+        )
 
     async def _fetch_session_messages_best_effort(self, session_id: str) -> list[Any]:
         """GET session messages on a short-lived client; never raise."""

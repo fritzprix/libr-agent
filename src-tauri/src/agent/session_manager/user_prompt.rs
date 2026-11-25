@@ -10,12 +10,13 @@
 
 use super::AgentSessionManager;
 use crate::agent::events::AgentEvent;
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::{
     admit_user_prompt, pending_user_prompt_summary, take_pending_user_prompt, wait_for_user_prompt,
     PendingUserPromptSummary, UserPromptAnswer, UserPromptOutcome, UserPromptPayload,
     WaitingToolCallRecord,
 };
-use crate::agent::tauri_events::emit_agent_event;
+use crate::agent::tauri_events::TauriEventDispatcher;
 
 /// Per-session slot lookup shared by the query commands.
 async fn prompt_slot(
@@ -65,8 +66,7 @@ impl AgentSessionManager {
             .map(|repo| repo as &dyn crate::repositories::SettingsRepository);
         let waiting_record = WaitingToolCallRecord::open(settings, session_id).await;
 
-        if let Err(error) = emit_agent_event(
-            &self.app_handle,
+        if let Err(error) = TauriEventDispatcher::from_handle(&self.app_handle).emit_agent_event(
             AgentEvent::UserPromptRequested {
                 session_id: session_id.to_string(),
                 request_id: request_id.clone(),
@@ -96,8 +96,7 @@ impl AgentSessionManager {
         );
 
         // Single emitter for every outcome, including Stop and timeout.
-        let _ = emit_agent_event(
-            &self.app_handle,
+        let _ = TauriEventDispatcher::from_handle(&self.app_handle).emit_agent_event(
             AgentEvent::UserPromptResolved {
                 session_id: session_id.to_string(),
                 request_id,

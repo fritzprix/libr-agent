@@ -8,6 +8,14 @@ def main():
         with open(cwd_capture_file, "w", encoding="utf-8") as capture_file:
             capture_file.write(os.getcwd())
 
+    # Two backends on one profile must each own a child; the pid file lets the
+    # test check that the children are distinct and that stopping one backend
+    # leaves the other's child running (#2858 S6).
+    pid_capture_file = os.environ.get("MOCK_SERVER_PID_FILE")
+    if pid_capture_file:
+        with open(pid_capture_file, "w", encoding="utf-8") as capture_file:
+            capture_file.write(str(os.getpid()))
+
     while True:
         try:
             line = sys.stdin.readline()
@@ -35,11 +43,18 @@ def main():
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
             elif request.get("method") == "tools/list":
+                tools = []
+                if os.environ.get("MOCK_SERVER_EMIT_TOOLS") == "1":
+                    tools = [{
+                        "name": "mock_echo",
+                        "description": "Static tool proving this child answers tools/list",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    }]
                 response = {
                     "jsonrpc": "2.0",
                     "id": request.get("id"),
                     "result": {
-                        "tools": []
+                        "tools": tools
                     }
                 }
                 sys.stdout.write(json.dumps(response) + "\n")

@@ -27,7 +27,18 @@ INCLUDE=""
 N_TASKS=0
 N_ATTEMPTS="${LIBRAGENT_N_ATTEMPTS:-1}"
 CONCURRENT=1
-ACTIVE_HTTP_PORT="$(cat "$HOME/.libragent/http_port" 2>/dev/null || echo "3030")"
+# Resolve the port from per-process records ~/.libragent/http_port.<pid>;
+# several backends may coexist, so pick the first that answers health.
+resolve_libragent_port() {
+  local f p
+  for f in "$HOME"/.libragent/http_port.*; do
+    p=$(cat "$f" 2>/dev/null) || continue
+    curl -sf -m 1 "http://127.0.0.1:$p/api/health" >/dev/null 2>&1 && { echo "$p"; return 0; }
+  done
+  echo 3030
+}
+
+ACTIVE_HTTP_PORT="$(resolve_libragent_port)"
 API_URL="${LIBRAGENT_API_URL:-http://localhost:${ACTIVE_HTTP_PORT}/api}"
 ASSISTANT_ID="${LIBRAGENT_ASSISTANT_ID:-}"
 # Harbor -m. Prefer explicit CLI/env; otherwise read global preferredModel from LibrAgent.
@@ -80,6 +91,27 @@ append_host_os_excludes() {
     [[ -z "$_want" || "$_want" == "$_host_os" ]] && continue
     _name=$(basename "$(dirname "$_toml")")
     echo "==> Excluding $_name (requires_host_os=$_want, host=$_host_os)"
+    ARGS+=(-x "$_name")
+  done < <(find "$root" -mindepth 2 -maxdepth 2 -name task.toml 2>/dev/null | sort)
+}
+
+# Auto-exclude tasks whose task.toml declares requires_workspace_mode (under
+# [metadata.libragent_session_e2e]) but does not match the selected workspace
+# mode. The Harbor adapter raises in setup() on a mismatch, so a host-mode
+# run must skip the managed-only privileged tasks (e2e-sudo-*, e2e-asroot-*)
+# instead of failing every trial (PR #2917 G2.1). The mode comes from
+# LIBRAGENT_HARBOR_WORKSPACE_MODE, set by run-harbor-bench.cjs.
+append_workspace_mode_excludes() {
+  local root="$1"
+  local _mode _toml _want _name
+  _mode="${LIBRAGENT_HARBOR_WORKSPACE_MODE:-host}"
+  _mode="${_mode,,}"
+  _mode="${_mode//[[:space:]]/}"
+  while IFS= read -r _toml; do
+    _want=$(sed -n 's/^[[:space:]]*requires_workspace_mode[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$_toml" | head -n 1)
+    [[ -z "$_want" || "$_want" == "$_mode" ]] && continue
+    _name=$(basename "$(dirname "$_toml")")
+    echo "==> Excluding $_name (requires_workspace_mode=$_want, mode=$_mode)"
     ARGS+=(-x "$_name")
   done < <(find "$root" -mindepth 2 -maxdepth 2 -name task.toml 2>/dev/null | sort)
 }
@@ -522,6 +554,7 @@ case "$PRESET" in
     [[ -n "$PATH_ARG" ]] || { echo "--path required for preset=path" >&2; exit 1; }
     ARGS+=(-p "$PATH_ARG")
     append_host_os_excludes "$PATH_ARG"
+    append_workspace_mode_excludes "$PATH_ARG"
     append_include_globs "$INCLUDE"
     [[ "$N_TASKS" -gt 0 ]] && ARGS+=(-l "$N_TASKS")
     ;;
