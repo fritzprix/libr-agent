@@ -376,6 +376,56 @@ class OwnerQuestionAndCiAttemptsTest(unittest.TestCase):
             merge_state="BEHIND", base_ahead_by=1, base_files=[], pr_files=[],
         ))
 
+    def test_subprocess_http_403_through_real_gh_sets_report_lookup_error_and_continues(self):
+        import json
+        import subprocess
+        from unittest.mock import patch
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                number = int(cmd[3])
+                payload = {
+                    "number": number,
+                    "title": f"Test PR {number}",
+                    "body": f"Fixes #{number}",
+                    "url": f"https://github.com/fritzprix/libr-agent/pull/{number}",
+                    "headRefName": f"skills/test-{number}",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "mergeStateStatus": "CLEAN",
+                    "reviewDecision": "",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "commits": [{"committedDate": "2026-11-19T00:00:00Z"}],
+                    "comments": [],
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                }
+                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            if cmd[:2] == ["gh", "api"] and "compare/" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 0, stdout='{"ahead_by":0,"files":[]}', stderr="")
+            if cmd[:3] == ["gh", "api", "graphql"]:
+                return subprocess.CompletedProcess(
+                    cmd, 0,
+                    stdout='{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}',
+                    stderr="",
+                )
+            if cmd[:2] == ["gh", "api"] and "/issues/3026/dependencies/blocked_by" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="gh: HTTP 403 (Forbidden)")
+            if cmd[:2] == ["gh", "api"] and "/dependencies/blocked_by" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(pr_status.subprocess, "run", fake_run):
+            broken = pr_status.summarize(3026, "fritzprix", "libr-agent", "fritzprix")
+            healthy = pr_status.summarize(3027, "fritzprix", "libr-agent", "fritzprix")
+
+        self.assertIn("403", broken["blockerLookupError"])
+        self.assertEqual(broken["nextAction"], "report-lookup-error")
+        self.assertIsNone(healthy["blockerLookupError"])
+        self.assertEqual(healthy["nextAction"], "wait-gatekeeper")
+
 
 if __name__ == "__main__":
     unittest.main()

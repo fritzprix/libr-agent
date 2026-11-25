@@ -63,12 +63,12 @@ def _default_gh(*args: str) -> str:
 
 
 def _call(run_gh: Callable[..., str], *args: str) -> str:
-    """Run the injected `gh`, wrapping foreign errors (`GhError` etc.) as `DepsError`."""
+    """Run the injected `gh`, wrapping foreign errors (`GhError`, `SystemExit`, etc.) as `DepsError`."""
     try:
         return run_gh(*args)
     except DepsError:
         raise
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         raise DepsError(str(e)) from e
 
 

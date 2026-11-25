@@ -930,6 +930,45 @@ class BlockedStatusTests(unittest.TestCase):
         self.assertIsNone(healthy["blockerLookupError"])
         self.assertEqual(healthy["status"], "review")
 
+    def test_subprocess_http_403_through_real_gh_sets_blocked_unknown_and_continues(self):
+        import subprocess
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                number = int(cmd[3])
+                payload = {
+                    "number": number,
+                    "title": f"Test PR {number}",
+                    "body": f"Fixes #{number}",
+                    "url": f"https://github.com/fritzprix/libr-agent/pull/{number}",
+                    "headRefName": f"skills/test-{number}",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "comments": [],
+                    "labels": [{"name": "gatekeeper:approved"}] if number == 3026 else [],
+                    "files": [{"path": "src/app.ts"}],
+                }
+                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            if cmd[:2] == ["gh", "api"] and "/issues/3026/dependencies/blocked_by" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="gh: HTTP 403 (Forbidden)")
+            if cmd[:2] == ["gh", "api"] and "/dependencies/blocked_by" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(review_queue.subprocess, "run", fake_run):
+            broken = summarize(3026, "fritzprix")
+            healthy = summarize(3027, "fritzprix")
+
+        self.assertIn("403", broken["blockerLookupError"])
+        self.assertEqual(broken["status"], "blocked-unknown")
+        self.assertFalse(broken["staleApprovedLabel"])
+        self.assertIsNone(healthy["blockerLookupError"])
+        self.assertEqual(healthy["status"], "review")
+
 
 if __name__ == "__main__":
     unittest.main()

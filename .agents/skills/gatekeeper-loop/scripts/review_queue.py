@@ -491,7 +491,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "securitySensitiveBehaviorHints": sensitive_info["securitySensitiveBehaviorHints"],
         "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
-        "staleApprovedLabel": "gatekeeper:approved" in labels and status != "approved",
+        "staleApprovedLabel": "gatekeeper:approved" in labels and status not in ("approved", "blocked-unknown"),
         "url": pr["url"],
         "base": base,
         "draft": pr["isDraft"],
