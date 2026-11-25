@@ -329,10 +329,31 @@ export const ServerCard = React.memo(
                 )}
                 {verificationStatus === 'error' && (
                   <div className="space-y-1">
-                    <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium">
-                      <XCircle className="w-3.5 h-3.5" />
-                      {t('mcpServer.verificationFailed', 'Connection failed')}
-                    </span>
+                    {/* Retry belongs next to the failed status line, not in the
+                        action row, so every card keeps the same Tools / Edit /
+                        Delete slots (#3000 G3.2). */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium">
+                        <XCircle className="w-3.5 h-3.5" />
+                        {t('mcpServer.verificationFailed', 'Connection failed')}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isRetryingVerify}
+                        onClick={() => void handleRetryVerify()}
+                        className="h-6 px-2 text-xs"
+                        aria-label={t('mcpServer.retryVerify', {
+                          name: serverName,
+                          defaultValue: 'Retry verification for {{name}}',
+                        })}
+                      >
+                        {isRetryingVerify ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : null}
+                        {t('mcpServer.retryVerifyShort', 'Retry')}
+                      </Button>
+                    </div>
                     {humanizedError ? (
                       <>
                         <p
@@ -419,22 +440,21 @@ export const ServerCard = React.memo(
         <CardContent className="mt-auto">
           <div className="flex w-full items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              {server.toolCount !== undefined &&
-                server.toolCount !== null &&
-                server.toolCount > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsToolsOpen(true)}
-                    aria-label={t('mcpServer.browseTools', {
-                      name: serverName,
-                      defaultValue: 'Browse tools for {{name}}',
-                    })}
-                  >
-                    <Wrench className="h-3 w-3 mr-1" />
-                    {t('mcpServer.tools', 'Tools')}
-                  </Button>
-                )}
+              {/* Every card shows Tools / Edit / Delete in the same slots
+                  (#3000 G3.1); Tools is disabled when there are no tools. */}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!server.toolCount}
+                onClick={() => setIsToolsOpen(true)}
+                aria-label={t('mcpServer.browseTools', {
+                  name: serverName,
+                  defaultValue: 'Browse tools for {{name}}',
+                })}
+              >
+                <Wrench className="h-3 w-3 mr-1" />
+                {t('mcpServer.tools', 'Tools')}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -455,24 +475,6 @@ export const ServerCard = React.memo(
               >
                 {t('mcpServer.edit', 'Edit')}
               </Button>
-
-              {verificationStatus === 'error' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isRetryingVerify}
-                  onClick={() => void handleRetryVerify()}
-                  aria-label={t('mcpServer.retryVerify', {
-                    name: serverName,
-                    defaultValue: 'Retry verification for {{name}}',
-                  })}
-                >
-                  {isRetryingVerify ? (
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                  ) : null}
-                  {t('mcpServer.retryVerifyShort', 'Retry')}
-                </Button>
-              )}
             </div>
             <Button
               variant="destructive"

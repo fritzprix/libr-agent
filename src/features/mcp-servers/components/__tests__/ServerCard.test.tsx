@@ -72,7 +72,7 @@ describe('ServerCard', () => {
     expect(screen.getByText('test-server')).toBeInTheDocument();
   });
 
-  it('does NOT show Browse Tools button when toolCount is null/undefined', () => {
+  it('shows the Tools button disabled when toolCount is null/undefined (#3000 G3.1)', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: undefined }}
@@ -81,10 +81,10 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.queryByText('Tools')).not.toBeInTheDocument();
+    expect(screen.getByText('Tools')).toBeDisabled();
   });
 
-  it('does NOT show Browse Tools button when toolCount is 0', () => {
+  it('shows the Tools button disabled when toolCount is 0 (#3000 G3.1)', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 0 }}
@@ -93,10 +93,10 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.queryByText('Tools')).not.toBeInTheDocument();
+    expect(screen.getByText('Tools')).toBeDisabled();
   });
 
-  it('shows Browse Tools button when toolCount > 0', () => {
+  it('shows Browse Tools button enabled when toolCount > 0', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 5 }}
@@ -106,6 +106,7 @@ describe('ServerCard', () => {
       />,
     );
     expect(screen.getByText('Tools')).toBeInTheDocument();
+    expect(screen.getByText('Tools')).toBeEnabled();
   });
 
   it('opens ServerToolsModal when Browse Tools is clicked', () => {
@@ -185,7 +186,20 @@ describe('ServerCard', () => {
       screen.getByText('A required command was not found on this machine.'),
     ).toBeInTheDocument();
     expect(screen.getByText('Open App Wizard')).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
+
+    // #3000 G3.2: Retry sits next to the failed status line, not in the
+    // action row, so the row keeps the same Tools / Edit / Delete slots.
+    const failedStatus = screen.getByText('Connection failed');
+    const retryButton = screen.getByText('Retry').closest('button')!;
+    expect(failedStatus.parentElement).toBe(retryButton.parentElement);
+
+    const deleteButton = screen.getByText('Delete').closest('button')!;
+    const actionRow = deleteButton.parentElement!;
+    expect(actionRow).not.toContainElement(retryButton);
+    const buttonsInActionRow = Array.from(
+      actionRow.querySelectorAll('button'),
+    ).map((b) => b.textContent?.trim());
+    expect(buttonsInActionRow).toEqual(['Tools', 'Edit', 'Delete']);
   });
 
   it('shows verifying state for pending verification', () => {
