@@ -500,7 +500,6 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "verdictHeadSha": turn.verdictHead,
         "atVerdictHead": turn.atVerdictHead,
         "labelMismatch": turn.labelMismatch,
-        "noOwnerError": turn.noOwner,
         "turnReport": format_turn_report(turn, pr_number=pr["number"]),
         "reason": reason,
         "priority": priority,

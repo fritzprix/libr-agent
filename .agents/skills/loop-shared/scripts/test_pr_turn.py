@@ -110,5 +110,96 @@ class PrTurnTests(unittest.TestCase):
         self.assertEqual(turn.turn, "worker")
 
 
+class FixedMarkerKindsTests(unittest.TestCase):
+    """Issue #2994: unknown markers are ignored; no turn is ever a stall state."""
+
+    def test_unknown_verdict_marker_does_not_change_the_turn(self) -> None:
+        """A marker with a verdict outside the fixed list is not a verdict at all."""
+        turn = decide_pr_turn(
+            head_sha="sha1",
+            mergeable="MERGEABLE",
+            comments=[{"author": {"login": "me"}, "createdAt": "t1",
+                       "body": "<!-- gatekeeper-loop: verdict=ci-report head=sha1 -->"}],
+            me="me",
+        )
+        self.assertEqual(turn.turn, "gatekeeper")
+        self.assertEqual(turn.currentVerdict, None)
+        self.assertEqual(turn.reason, "not reviewed yet")
+
+    def test_unknown_verdict_does_not_supersede_the_real_verdict(self) -> None:
+        turn = decide_pr_turn(
+            head_sha="sha1",
+            mergeable="MERGEABLE",
+            comments=[
+                gk("changes-requested", "sha1"),
+                {"author": {"login": "me"}, "createdAt": "t2",
+                 "body": "<!-- gatekeeper-loop: verdict=ci-report head=sha1 -->"},
+            ],
+            me="me",
+        )
+        self.assertEqual(turn.turn, "worker")
+        self.assertEqual(turn.currentVerdict, "changes-requested")
+
+    def test_unknown_worker_kind_does_not_answer_a_round(self) -> None:
+        turn = decide_pr_turn(
+            head_sha="sha1",
+            mergeable="MERGEABLE",
+            comments=[
+                gk("changes-requested", "sha1"),
+                {"author": {"login": "me"}, "createdAt": "t2",
+                 "body": "<!-- worker-loop: ci-report round=1 head=sha1 -->"},
+            ],
+            me="me",
+        )
+        self.assertEqual(turn.turn, "worker")
+
+    def test_reply_marker_does_not_answer_a_round(self) -> None:
+        """`reply` answers a triage comment, not the gatekeeper round."""
+        turn = decide_pr_turn(
+            head_sha="sha1",
+            mergeable="MERGEABLE",
+            comments=[
+                gk("changes-requested", "sha1"),
+                {"author": {"login": "me"}, "createdAt": "t2",
+                 "body": "<!-- worker-loop: reply reply-to=42 -->"},
+            ],
+            me="me",
+        )
+        self.assertEqual(turn.turn, "worker")
+
+    def test_every_fixed_verdict_combination_has_the_exact_owner(self) -> None:
+        """G1.2: assert the expected owner for each verdict, head, and response."""
+        expected = {
+            # (verdict, verdict head, worker response?): turn
+            ("changes-requested", "sha1", None): "gatekeeper",
+            ("changes-requested", "sha1", "response"): "gatekeeper",
+            ("changes-requested", "sha2", None): "worker",
+            ("changes-requested", "sha2", "response"): "gatekeeper",
+            ("approve", "sha1", None): "gatekeeper",
+            ("approve", "sha1", "response"): "gatekeeper",
+            ("approve", "sha2", None): "human",
+            ("approve", "sha2", "response"): "human",
+            ("clean", "sha1", None): "gatekeeper",
+            ("clean", "sha1", "response"): "gatekeeper",
+            ("clean", "sha2", None): "gatekeeper",
+            ("clean", "sha2", "response"): "gatekeeper",
+            ("escalate", "sha1", None): "gatekeeper",
+            ("escalate", "sha1", "response"): "gatekeeper",
+            ("escalate", "sha2", None): "human",
+            ("escalate", "sha2", "response"): "human",
+        }
+        for (verdict, head, response), expected_turn in expected.items():
+            comments = [gk(verdict, head)]
+            if response:
+                comments.append(wr("1", head, "t2"))
+            turn = decide_pr_turn(
+                head_sha="sha2", mergeable="MERGEABLE", comments=comments, me="me"
+            )
+            self.assertEqual(
+                turn.turn, expected_turn,
+                f"verdict={verdict} verdictHead={head} response={response}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

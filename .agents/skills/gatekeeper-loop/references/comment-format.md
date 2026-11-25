@@ -2,6 +2,15 @@
 
 Worker and gatekeeper share one GitHub account, and GitHub rejects Approve / Request changes on your own PR. The protocol therefore uses plain PR comments with a hidden marker on the first line. `review_queue.py` (gatekeeper) and `pr_status.py` (worker) only trust markers on comments authored by the authenticated user.
 
+## Fixed marker kinds
+
+One fixed kind list governs every loop comment (code: `loop-shared/scripts/comment_markers.py`). A marker whose kind or verdict is outside the list is ignored: not a verdict, not a worker response, not an owner comment.
+
+- Gatekeeper verdicts (`verdict=` on a `<!-- gatekeeper-loop: ... -->` marker): `changes-requested`, `approve`, `clean`, `escalate`. The `clean` marker carries no `blocked-by` field; a blocked PR is recorded only as a blocked-by link.
+- Worker kinds (first word after `<!-- worker-loop:`): `response`, `needs-owner`, `ci-attempt`, `reply`.
+
+`reply` carries `reply-to=<comment id>`: the worker posts it when it answers a triage comment without a push. A comment targeted by a later `reply` is not a triage item.
+
 ## Gatekeeper verdict
 
 `head` = full SHA of the PR head that was reviewed. `base` = the PR's base branch at review time (a later change forces re-review). `round` starts at 1 and increments per verdict (`clean` markers do not count).

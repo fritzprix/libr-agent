@@ -9,7 +9,7 @@ from comment_markers import (
     parse_markers,
 )
 
-Turn = Literal["worker", "gatekeeper", "human", "none", "error"]
+Turn = Literal["worker", "gatekeeper", "human", "none"]
 
 VERDICT_LABELS: dict[str, str] = {
     "changes-requested": "gatekeeper:changes-requested",
@@ -29,10 +29,6 @@ class PrTurn:
     atVerdictHead: bool
     labelMismatch: list[str]
     reason: str
-
-    @property
-    def noOwner(self) -> bool:
-        return self.turn == "error"
 
 
 def label_mismatches(
@@ -162,25 +158,16 @@ def decide_pr_turn(
             reason="clean at head; gatekeeper posts approve when CI is green",
         )
 
-    if not at_head:
-        return PrTurn(
-            turn="gatekeeper",
-            currentVerdict=verdict,
-            verdictHead=verdict_head,
-            currentHead=head_sha,
-            atVerdictHead=False,
-            labelMismatch=[],
-            reason="new head since last verdict",
-        )
-
+    # Every fixed verdict at the current head is handled above, so the only
+    # case left is a verdict at an older head: the gatekeeper re-reviews.
     return PrTurn(
-        turn="error",
+        turn="gatekeeper",
         currentVerdict=verdict,
         verdictHead=verdict_head,
         currentHead=head_sha,
-        atVerdictHead=at_head,
-        labelMismatch=mismatches,
-        reason=f"no turn owner for verdict={verdict!r}",
+        atVerdictHead=False,
+        labelMismatch=[],
+        reason="new head since last verdict",
     )
 
 
@@ -196,6 +183,4 @@ def format_turn_report(turn: PrTurn, *, pr_number: int | None = None) -> str:
     )
     if turn.labelMismatch:
         line += f" labelFix={'; '.join(turn.labelMismatch)}"
-    if turn.noOwner:
-        line += " ERROR=no-owner"
     return line

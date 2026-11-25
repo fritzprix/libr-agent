@@ -75,7 +75,7 @@ Rust builds take a machine-wide slot, so a command may wait behind another workt
    - Base moved (`rebase-base`): the base has enough new commits, or new commits on files this PR changes, that CI on the head is out of date. Do the same rebase and push as for a conflict.
    - `mergeableUnknown` true: GitHub still computes mergeability after the retries in `pr_status.py`. Do not treat the PR as clean; list it in the report and check it again next tick.
    - Gatekeeper changes requested: fix or decline each item (with a reason from code). Push. Post a `<!-- worker-loop: response -->` comment with the round and the new head SHA.
-   - Review comments: fix the valid ones, reply to the others. Resolve a thread only after its fix is pushed.
+   - Review comments: fix the valid ones, reply to the others. Resolve a thread only after its fix is pushed. When a plain comment needs an answer without a push, post `<!-- worker-loop: reply reply-to=<comment id> -->`; that comment then stops being a triage item (see [Loop markers](#loop-markers)). `<comment id>` is the `id` field of the `newComments` entry, not the number in the comment URL — the wrong one silently matches nothing.
    - CI failed: **first** run `gh run view <id> --log-failed` (or open each failing check's job log) and identify the root cause from that output. Do not push or post `<!-- worker-loop: response -->` until you have read the log for every failing check on the current head. Reproduce locally when possible, fix it, rerun the check that failed, and push only when it passes. There is no attempt limit. If you cannot reproduce it because the local environment differs (for example, CI fails only on another OS): try a fix grounded in the log, and start your PR comment for it with `<!-- worker-loop: ci-attempt n=K -->`, where K is the PR's `ciAttempts` from `pr_status.py` plus 1. When `ciAttempts` is already 3, do not try again: ask the owner on the PR (see [Owner questions](#owner-questions)) and say what passed locally, what the CI log shows, and what fails only on CI. Skipping local Rust/tests because of a build-slot wait **does not** waive this — CI is then the proof you must read. If the log shows a clear, fixable cause in this PR's diff while a gatekeeper round is also awaiting a response, fix CI and address the gatekeeper items in the **same** push and `<!-- worker-loop: response -->` (do not leave the round unanswered). If the failure is unrelated to this PR's diff, report the failing job and log line in the PR comment and leave filing a follow-up issue to the gatekeeper (do not open the issue yourself; link an existing gatekeeper-filed issue if one already exists).
    - `ownerAnswer` set (the PR has `needs-owner` and the owner answered): `gh pr edit M --remove-label needs-owner`, then do what the answer says.
 
@@ -120,6 +120,15 @@ The running GUI on the default profile is the user's app (#2824). These rules bi
 5. Evidence for a specific code path must force that path and assert it. A default path that happens to succeed is not evidence for the path under test.
 6. Prefer a debug or incremental build. Another release rebuild that adds no new information is a stop signal.
 7. An owner stop or no-push note ends that item immediately.
+
+## Loop markers
+
+One fixed kind list governs every loop comment (code: `loop-shared/scripts/comment_markers.py`). A marker whose kind or verdict is outside the list is ignored: not a verdict, not a worker response, not an owner comment.
+
+- Gatekeeper verdicts (`verdict=` on a `<!-- gatekeeper-loop: ... -->` marker): `changes-requested`, `approve`, `clean`, `escalate`. The `clean` marker carries no `blocked-by` field; a blocked PR is recorded only as a blocked-by link.
+- Worker kinds (first word after `<!-- worker-loop:`): `response`, `needs-owner`, `ci-attempt`, `reply`.
+
+`reply` carries `reply-to=<comment id>`: post it when you answer a triage comment without a push. A comment targeted by a later `reply` is not a triage item.
 
 ## Hard rules
 
