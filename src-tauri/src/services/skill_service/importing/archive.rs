@@ -201,11 +201,10 @@ fn find_archive_root(extract_dir: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// Hook config files for a plugin root, in load order: the auto-loaded
-/// `hooks/hooks.json` / `hooks-cursor.json` plus the files the manifest's
-/// `hooks` field declares (spec plugins-reference add-semantics). A manifest
-/// entry duplicating the default or missing on disk is an error (S1.1).
-/// Install persists these paths (relative to the root) so dispatch and the
+/// The commit GitHub put in a zipball root name (`<owner>-<repo>-<sha>`),
+/// when the archive carries one (#2927). A branch archive is named
+/// `<repo>-<branch>` and yields `None`. The plugin root is often the zipball
+/// root itself, so its own name is checked before its ancestors.
 pub(super) fn commit_from_archive_root(scan_root: &Path) -> Option<String> {
     for ancestor in scan_root.ancestors().take(3) {
         let Some(name) = ancestor.file_name().and_then(|name| name.to_str()) else {

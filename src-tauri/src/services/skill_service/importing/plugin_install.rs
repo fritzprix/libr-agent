@@ -15,6 +15,15 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Re-sync one plugin source's rows in the global MCP server store after an
+/// install/update (D2). Reads back the persisted source record, so it must
+/// run after `install_plugin_source`.
+///
+/// Existing rows owned by this source are ALWAYS removed first — even when
+/// the new snapshot is empty or unapproved — so an update that drops servers
+/// or a re-install without approval cannot leave stale rows running
+/// (gatekeeper G1.1). Returns per-server warnings for approved servers that
+/// could not be installed (gatekeeper G1.2).
 pub(super) async fn sync_installed_plugin_mcp_servers(
     source_key: &str,
 ) -> Result<Vec<String>, String> {
@@ -75,6 +84,12 @@ pub(in crate::services::skill_service) async fn sync_plugin_mcp_rows_from_record
     .await
 }
 
+/// Hook config files for a plugin root, in load order: the auto-loaded
+/// `hooks/hooks.json` / `hooks-cursor.json` plus the files the manifest's
+/// `hooks` field declares (spec plugins-reference add-semantics). A manifest
+/// entry duplicating the default or missing on disk is an error (S1.1).
+/// Install persists these paths (relative to the root) so dispatch and the
+/// Skills overview load exactly what the user approved (gatekeeper G2.2).
 pub(super) fn collect_plugin_hook_files(
     scan_root: &Path,
     manifest: Option<&PluginManifest>,

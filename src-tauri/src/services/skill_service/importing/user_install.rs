@@ -154,6 +154,7 @@ impl Drop for SkillCacheInvalidationGuard {
     }
 }
 
+/// Where an import lands: skills directory + plugin-source store.
 pub(in crate::services::skill_service) struct ImportTarget {
     pub(in crate::services::skill_service) skills_dir: PathBuf,
     pub(in crate::services::skill_service) plugins_dir: PathBuf,
@@ -267,14 +268,6 @@ async fn install_user_prepared_skills(
     }
 }
 
-/// Re-sync one plugin source's rows in the global MCP server store after an
-/// install/update (D2). Reads back the persisted source record, so it must
-/// run after `install_plugin_source`.
-///
-/// Existing rows owned by this source are ALWAYS removed first — even when
-/// the new snapshot is empty or unapproved — so an update that drops servers
-/// or a re-install without approval cannot leave stale rows running
-/// (gatekeeper G1.1). Returns per-server warnings for approved servers that
 pub(in crate::services::skill_service) fn install_prepared_import(
     prepared: PreparedSkillImport,
     preview: SkillImportPreview,
