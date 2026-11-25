@@ -84,7 +84,7 @@ describe('ServerCard', () => {
     expect(screen.getByText('Tools')).toBeDisabled();
   });
 
-  it('shows the Tools button disabled when toolCount is 0 (#3000 G3.1)', () => {
+  it('shows the Tools button disabled with an explanatory title when toolCount is 0 (#3000 G3.1/S4.1)', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 0 }}
@@ -93,10 +93,16 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.getByText('Tools')).toBeDisabled();
+    const tools = screen.getByText('Tools').closest('button');
+    expect(tools).toBeDisabled();
+    // S4.1: a disabled button must say why, like the plugin-owned Edit/Delete.
+    expect(tools).toHaveAttribute(
+      'title',
+      'Tool count unknown (not yet verified)',
+    );
   });
 
-  it('shows Browse Tools button enabled when toolCount > 0', () => {
+  it('shows Browse Tools button enabled and untitled when toolCount > 0', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 5 }}
@@ -105,8 +111,10 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.getByText('Tools')).toBeInTheDocument();
-    expect(screen.getByText('Tools')).toBeEnabled();
+    const tools = screen.getByText('Tools').closest('button');
+    expect(tools).toBeInTheDocument();
+    expect(tools).toBeEnabled();
+    expect(tools).not.toHaveAttribute('title');
   });
 
   it('opens ServerToolsModal when Browse Tools is clicked', () => {

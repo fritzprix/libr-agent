@@ -446,6 +446,14 @@ export const ServerCard = React.memo(
                 variant="outline"
                 size="sm"
                 disabled={!server.toolCount}
+                title={
+                  server.toolCount
+                    ? undefined
+                    : t(
+                        'mcpServer.toolCountUnknown',
+                        'Tool count unknown (not yet verified)',
+                      )
+                }
                 onClick={() => setIsToolsOpen(true)}
                 aria-label={t('mcpServer.browseTools', {
                   name: serverName,
