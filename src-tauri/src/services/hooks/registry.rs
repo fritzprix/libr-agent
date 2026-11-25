@@ -668,16 +668,34 @@ pub fn compute_handler_approval_hashes(
 }
 
 pub fn approval_hash_key(event: HookEvent, matcher: Option<&str>, handler: &HookHandler) -> String {
-    let digest = Sha256::digest(
-        format!(
-            "{}|{}|{}|{}",
-            event.as_str(),
-            matcher.unwrap_or("*"),
-            handler.command,
-            handler.powershell.as_deref().unwrap_or("")
-        )
-        .as_bytes(),
+    let mut key = format!(
+        "{}|{}|{}|{}",
+        event.as_str(),
+        matcher.unwrap_or("*"),
+        handler.command,
+        handler.powershell.as_deref().unwrap_or("")
     );
+    // HTTP handlers carry no command, so the target URL distinguishes them
+    // (#3009). Appended only when present, so keys of command handlers stay
+    // byte-identical to earlier installs. Headers and allowed env-var names
+    // are part of what the handler sends, so they must distinguish the key
+    // too — otherwise two handlers that differ only by headers share one
+    // key and one is skipped as "unapproved or modified" (#3041 G1.4).
+    if let Some(http) = &handler.http {
+        key.push_str("|url=");
+        key.push_str(&http.url);
+        for (name, value) in &http.headers {
+            key.push_str("|header=");
+            key.push_str(name);
+            key.push('=');
+            key.push_str(value);
+        }
+        for name in &http.allowed_env_vars {
+            key.push_str("|env=");
+            key.push_str(name);
+        }
+    }
+    let digest = Sha256::digest(key.as_bytes());
     format!("{:x}", digest)
 }
 
@@ -691,6 +709,22 @@ pub fn approval_hash_value(plugin_root: &Path, handler: &HookHandler) -> String 
     hasher.update(b"\0");
     if let Some(shell) = &handler.shell {
         hasher.update(shell.as_bytes());
+    }
+    // The URL, header names, and allowed env-var names are part of what an
+    // HTTP handler does, so they are part of what the user approved (#3009).
+    if let Some(http) = &handler.http {
+        hasher.update(b"\0url=");
+        hasher.update(http.url.as_bytes());
+        for (name, value) in &http.headers {
+            hasher.update(b"\0header\0");
+            hasher.update(name.as_bytes());
+            hasher.update(b"=");
+            hasher.update(value.as_bytes());
+        }
+        for var in &http.allowed_env_vars {
+            hasher.update(b"\0env\0");
+            hasher.update(var.as_bytes());
+        }
     }
     for (rel, file_hash) in collect_referenced_script_hashes(plugin_root, handler) {
         hasher.update(b"\0");

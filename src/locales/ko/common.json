@@ -906,6 +906,8 @@
       "skillsToInstall": "설치할 스킬",
       "hooksToInstall": "플러그인 훅",
       "hookStatusExecuted": "실행됨",
+      "hookHttpHeaders": "헤더",
+      "hookHttpEnvVars": "읽을 수 있는 환경 변수",
       "hookStatusStubbed": "지원되지 않음",
       "approveHooksLabel": "훅 실행 허용",
       "approveHooksHint": "지원되는 훅 이벤트는 승인 후 세션 중 자동으로 실행됩니다. 지원되지 않는 이벤트는 건너뜁니다.",

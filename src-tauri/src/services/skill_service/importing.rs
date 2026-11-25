@@ -1342,13 +1342,29 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
         };
         for group in groups {
             for handler in &group.handlers {
+                // HTTP handlers run too; show their POST target where a
+                // command hook shows its command (#3009). The header names
+                // with their raw `$VAR` templates and the allowed env-var
+                // names must also be visible — the allowlist is written by
+                // the plugin, so the user approves exactly which variables
+                // may leave the machine (#3041 G1.1).
+                let (command, http_headers, http_allowed_env_vars) = match &handler.http {
+                    Some(http) => (
+                        http.url.clone(),
+                        (!http.headers.is_empty()).then(|| http.headers.clone()),
+                        (!http.allowed_env_vars.is_empty()).then(|| http.allowed_env_vars.clone()),
+                    ),
+                    None => (handler.command.clone(), None, None),
+                };
                 entries.push(HookPreviewEntry {
                     event: event.as_str().to_string(),
                     matcher: group.matcher.clone(),
-                    command: handler.command.clone(),
+                    command,
                     powershell: handler.powershell.clone(),
                     script_body: None,
                     execution_status,
+                    http_headers,
+                    http_allowed_env_vars,
                 });
             }
         }
@@ -1362,6 +1378,24 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
                 powershell: None,
                 script_body: None,
                 execution_status: HookPreviewExecutionStatus::Stubbed,
+                http_headers: None,
+                http_allowed_env_vars: None,
+            });
+        }
+    }
+    // Handler types LibrAgent does not run yet are marked unsupported in the
+    // preview instead of failing the install (#3009).
+    for (event_name, unsupported) in &config.unsupported_handlers {
+        for item in unsupported {
+            entries.push(HookPreviewEntry {
+                event: event_name.clone(),
+                matcher: item.matcher.clone(),
+                command: item.command.clone(),
+                powershell: None,
+                script_body: None,
+                execution_status: HookPreviewExecutionStatus::Stubbed,
+                http_headers: None,
+                http_allowed_env_vars: None,
             });
         }
     }
@@ -1868,6 +1902,57 @@ mod hook_preview_tests {
             entries[0].execution_status,
             HookPreviewExecutionStatus::Executed
         );
+    }
+
+    /// #3009: `http` handlers install and preview as executed (their POST
+    /// target is shown); other handler types preview as not supported
+    /// instead of failing the load.
+    #[test]
+    fn plugin_preview_shows_http_executed_and_other_types_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        write_valid_skill(dir.path(), "alpha");
+        let hooks_dir = dir.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        fs::write(
+            hooks_dir.join("hooks.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"workspace__runShell","hooks":[
+                {"type":"http","url":"http://127.0.0.1:9/hook","headers":{"Authorization":"Bearer $API_KEY"},"allowedEnvVars":["API_KEY"]},
+                {"type":"prompt","prompt":"check"}
+            ]}]}}"#,
+        )
+        .unwrap();
+        let cfg = try_load_plugin_hooks(dir.path(), None)
+            .unwrap()
+            .expect("hooks");
+        let entries = build_hook_preview_entries(&cfg);
+        assert_eq!(entries.len(), 2);
+        let http = entries
+            .iter()
+            .find(|e| e.command.contains("127.0.0.1:9"))
+            .expect("http entry shows its url");
+        assert_eq!(http.execution_status, HookPreviewExecutionStatus::Executed);
+        // #3041 G1.1: the preview must show the declared header names with
+        // their raw templates and the env-var names the plugin may read —
+        // the allowlist is written by the plugin itself, so the user has to
+        // see it before approving.
+        assert_eq!(
+            http.http_headers
+                .as_ref()
+                .and_then(|h| h.get("Authorization"))
+                .map(String::as_str),
+            Some("Bearer $API_KEY"),
+            "header name with its raw $VAR template must be visible"
+        );
+        assert_eq!(
+            http.http_allowed_env_vars.as_deref(),
+            Some(&["API_KEY".to_string()][..]),
+            "allowed env-var names must be visible"
+        );
+        let prompt = entries
+            .iter()
+            .find(|e| e.command.contains("prompt"))
+            .expect("prompt entry is recorded");
+        assert_eq!(prompt.execution_status, HookPreviewExecutionStatus::Stubbed);
     }
 
     #[test]

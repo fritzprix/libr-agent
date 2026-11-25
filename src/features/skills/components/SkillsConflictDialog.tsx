@@ -229,6 +229,23 @@ export function SkillsConflictDialog({
                       <p className="text-xs text-muted-foreground break-all font-mono">
                         {hook.command}
                       </p>
+                      {hook.httpHeaders ? (
+                        <p className="whitespace-pre-line text-xs text-muted-foreground break-all font-mono">
+                          {t('settings.skills.hookHttpHeaders', 'Headers')}:{'\n'}
+                          {Object.entries(hook.httpHeaders)
+                            .map(([name, value]) => `${name}: ${value}`)
+                            .join('\n')}
+                        </p>
+                      ) : null}
+                      {hook.httpAllowedEnvVars?.length ? (
+                        <p className="text-xs text-muted-foreground break-all font-mono">
+                          {t(
+                            'settings.skills.hookHttpEnvVars',
+                            'May read environment variables',
+                          )}
+                          : {hook.httpAllowedEnvVars.join(', ')}
+                        </p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

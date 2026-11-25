@@ -88,6 +88,10 @@ export interface HookPreviewEntry {
   powershell?: string;
   scriptBody?: string;
   executionStatus: HookPreviewExecutionStatus;
+  /** HTTP hook headers as declared (name → raw `$VAR` template) (#3041 G1.1). */
+  httpHeaders?: Record<string, string>;
+  /** Env-var NAMES an HTTP hook may read for header interpolation (#3041 G1.1). */
+  httpAllowedEnvVars?: string[];
 }
 
 /** `.claude-plugin/plugin.json` summary shown in the install preview (#2921). */

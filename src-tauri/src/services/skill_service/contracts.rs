@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -140,6 +141,15 @@ pub struct HookPreviewEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub script_body: Option<String>,
     pub execution_status: HookPreviewExecutionStatus,
+    /// HTTP hook headers as declared (name → raw `$VAR` template, never a
+    /// resolved secret), so the approval dialog shows what the plugin will
+    /// send (#3041 G1.1).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub http_headers: Option<BTreeMap<String, String>>,
+    /// Environment variable names the plugin allows an HTTP hook to read for
+    /// header interpolation — names only, values are never shown (#3041 G1.1).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub http_allowed_env_vars: Option<Vec<String>>,
 }
 
 /// Manifest fields shown in the install preview (#2921).
