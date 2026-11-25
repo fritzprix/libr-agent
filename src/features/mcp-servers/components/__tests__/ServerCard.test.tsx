@@ -319,8 +319,8 @@ describe('ServerCard', () => {
     });
   });
 
-  describe('card layout and action row wrapping', () => {
-    it('uses equal-height flex column, top-aligned header, bottom-pinned wrapping action row with four buttons', () => {
+  describe('card layout and action row alignment', () => {
+    it('places Authorize inline next to Authorization Required and keeps Tools, Edit, Delete on one bottom-pinned row', () => {
       const oauthServer: MCPServerEntity = {
         ...baseServer,
         id: 'srv-oauth',
@@ -339,17 +339,10 @@ describe('ServerCard', () => {
         />,
       );
 
-      // All four action buttons are rendered
-      expect(screen.getByText('Tools')).toBeInTheDocument();
-      expect(screen.getByText('Edit')).toBeInTheDocument();
-      expect(screen.getByText('Authorize')).toBeInTheDocument();
-      expect(screen.getByText('Delete')).toBeInTheDocument();
-
-      // Root card uses full-height flex column for equal grid row heights
       const card = container.firstElementChild as HTMLElement;
       expect(card).toHaveClass('flex', 'h-full', 'flex-col');
 
-      // Header aligns Active toggle to the top consistently (assert on CardHeader itself, not inner div)
+      // Header aligns Active toggle to the top consistently
       const header = Array.from(card.children).find((el) =>
         el.contains(screen.getByText('Active')),
       );
@@ -357,15 +350,23 @@ describe('ServerCard', () => {
       expect(header).toHaveClass('items-start', 'gap-2');
       expect(header).not.toHaveClass('items-center');
 
-      // Action row container is pinned to bottom and wraps to prevent button clipping
-      const deleteButton = screen.getByText('Delete').closest('button')!;
-      expect(deleteButton).toHaveClass('ml-auto');
-      const actionRow = deleteButton.parentElement!;
-      expect(actionRow).toHaveClass('flex', 'flex-wrap', 'gap-2');
-      expect(actionRow.parentElement).toHaveClass('mt-auto');
+      // Authorize sits inline next to the "Authorization Required" status line, NOT in the action row
+      const authStatus = screen.getByText('Authorization Required');
+      const authorizeButton = screen.getByText('Authorize').closest('button')!;
+      expect(authStatus.parentElement).toBe(authorizeButton.parentElement);
 
-      const leftGroup = screen.getByText('Tools').closest('button')!.parentElement!;
-      expect(leftGroup).toHaveClass('flex', 'flex-wrap', 'gap-2');
+      // Action row is pinned to bottom and contains Tools, Edit, Delete in one single row
+      const deleteButton = screen.getByText('Delete').closest('button')!;
+      const actionRow = deleteButton.parentElement!;
+      expect(actionRow).toHaveClass('flex', 'items-center', 'justify-between', 'gap-2');
+      expect(actionRow).not.toHaveClass('flex-wrap');
+      expect(actionRow.parentElement).toHaveClass('mt-auto');
+      expect(actionRow).not.toContainElement(authorizeButton);
+
+      const buttonsInActionRow = Array.from(actionRow.querySelectorAll('button')).map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(buttonsInActionRow).toEqual(['Tools', 'Edit', 'Delete']);
     });
   });
 });

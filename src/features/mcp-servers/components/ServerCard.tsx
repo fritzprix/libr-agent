@@ -256,24 +256,49 @@ export const ServerCard = React.memo(
               {/* Tool count / verification status — mutually exclusive display */}
               <div className="mt-1 flex flex-col gap-1">
                 {server.authentication?.type === 'oauth2.1' && (
-                  <span
-                    className={`inline-flex items-center gap-1 text-xs font-semibold ${hasToken ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-500'}`}
-                  >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-semibold ${hasToken ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-500'}`}
+                    >
+                      {hasToken ? (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          {t('mcpServer.authorizedStatus', 'Authorized')}
+                        </>
+                      ) : (
+                        <>
+                          <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                          {t(
+                            'mcpServer.unauthorizedStatus',
+                            'Authorization Required',
+                          )}
+                        </>
+                      )}
+                    </span>
                     {hasToken ? (
-                      <>
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        {t('mcpServer.authorizedStatus', 'Authorized')}
-                      </>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDisconnect}
+                        className="h-6 px-2 text-xs text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                      >
+                        {t('mcpServer.disconnect', 'Disconnect')}
+                      </Button>
                     ) : (
-                      <>
-                        <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                        {t(
-                          'mcpServer.unauthorizedStatus',
-                          'Authorization Required',
+                      <Button
+                        variant="default"
+                        size="sm"
+                        disabled={isAuthorizing}
+                        onClick={handleAuthorize}
+                        className="h-6 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                      >
+                        {isAuthorizing && (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                         )}
-                      </>
+                        {t('mcpServer.authorize', 'Authorize')}
+                      </Button>
                     )}
-                  </span>
+                  </div>
                 )}
                 {verificationStatus === 'pending' && (
                   <div className="space-y-1">
@@ -392,8 +417,8 @@ export const ServerCard = React.memo(
           </div>
         </CardHeader>
         <CardContent className="mt-auto">
-          <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
               {server.toolCount !== undefined &&
                 server.toolCount !== null &&
                 server.toolCount > 0 && (
@@ -448,36 +473,11 @@ export const ServerCard = React.memo(
                   {t('mcpServer.retryVerifyShort', 'Retry')}
                 </Button>
               )}
-
-              {server.authentication?.type === 'oauth2.1' &&
-                (hasToken ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDisconnect}
-                    className="text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/20"
-                  >
-                    {t('mcpServer.disconnect', 'Disconnect')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={isAuthorizing}
-                    onClick={handleAuthorize}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                  >
-                    {isAuthorizing && (
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                    )}
-                    {t('mcpServer.authorize', 'Authorize')}
-                  </Button>
-                ))}
             </div>
             <Button
               variant="destructive"
               size="sm"
-              className="ml-auto"
+              className="shrink-0"
               disabled={Boolean(server.pluginSource)}
               onClick={() => onDelete(server)}
               title={
