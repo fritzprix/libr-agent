@@ -2,11 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   collectInspectableElements,
   dispatchDomInput,
+  handleInspect,
   labelOf,
   pointerButton,
   rectOf,
   resolveTarget,
 } from '../e2e-ui-bridge';
+import { invoke } from '@tauri-apps/api/core';
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(() => Promise.resolve(undefined)),
+}));
 
 describe('e2e-ui-bridge helpers (#2902)', () => {
   afterEach(() => {
@@ -134,5 +140,30 @@ describe('e2e-ui-bridge helpers (#2902)', () => {
 
     expect(pointerButton('middle_click')).toBe(1);
     expect(pointerButton('click')).toBe(0);
+  });
+
+  it('reports the cached uiScale in the inspect payload (#2972 review G1.3)', async () => {
+    // The Rust control plane rejects a report without a valid uiScale, so
+    // the sending side must always include the webview zoom the app applied.
+    document.body.innerHTML = '<button id="go">Go</button>';
+    window.localStorage.setItem('libragent.uiScale', '1.25');
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockClear();
+
+    await handleInspect({ requestId: 'req-7', selector: '#go' });
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'e2e_ui_report',
+      expect.objectContaining({
+        requestId: 'req-7',
+        payload: expect.objectContaining({ uiScale: 1.25 }),
+      }),
+    );
+    const payload = invokeMock.mock.calls[0][1] as {
+      payload: { elements: unknown[]; uiScale: number };
+    };
+    expect(payload.payload.elements).toHaveLength(1);
+
+    window.localStorage.removeItem('libragent.uiScale');
   });
 });

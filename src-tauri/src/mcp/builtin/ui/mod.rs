@@ -301,12 +301,7 @@ impl UiServer {
                                         ),
                                         ToolGroup::UI,
                                     )
-                                    .with_guidance(vec![
-                                        "Retry after the attach container is reachable (docker cp / sync)."
-                                            .to_string(),
-                                        "Do not claim status=success until export_paths can be synced from the container."
-                                            .to_string(),
-                                    ])
+                                    .with_guidance(attach_sync_failure_guidance(&err))
                                     .to_mcp_result_with_data(Some(json!({
                                         "attach_sync_failed_path": path_str,
                                         "error": err,
@@ -372,12 +367,16 @@ impl UiServer {
         // parent checkSession (#2044) promote a hollow deliverable.
         if status == "success" && !missing_export_paths.is_empty() {
             let missing_list = missing_export_paths.join(", ");
-            // #2972 item 5 (#2731 2697 D-1): in a Docker session a missing host
-            // file usually means the container→host sync never ran because the
-            // daemon is unreachable. Say so instead of blaming the disk alone.
+            // #2731 2697 D-1, #2972 review G1.1: this branch is only reached
+            // after any attach sync succeeded (or none was needed), so daemon
+            // unreachability cannot be claimed here — the attach-sync-failure
+            // path above names it when a Docker call actually failed. What is
+            // known: a Docker session can hold files inside the container,
+            // outside the mounted workspace, where no sync can see them.
             let docker_suffix = if docker_session {
-                " This session is Docker-isolated: the file may exist only inside \
-                 the container while the Docker daemon is unreachable on the host."
+                " This session is Docker-isolated: files written inside the \
+                 container outside the mounted workspace stay there and never \
+                 appear on the host."
             } else {
                 ""
             };
@@ -389,8 +388,8 @@ impl UiServer {
             ];
             if docker_session {
                 guidance.push(
-                    "If the Docker daemon is unreachable, start it (or Docker Desktop) so the \
-                     container file can be synced, then retry."
+                    "Write deliverables inside the session's mounted workspace so they \
+                     can be synced to the host."
                         .to_string(),
                 );
             }
@@ -528,9 +527,53 @@ impl BuiltinMCPServer for UiServer {
     }
 }
 
+/// Guidance for a failed attach sync in `reportResult`: name the Docker
+/// daemon only when the error actually reports one unreachable — a missing
+/// or stopped container needs a different fix than a stopped daemon
+/// (#2972 review G1.1).
+pub(crate) fn attach_sync_failure_guidance(err: &str) -> Vec<String> {
+    let first = if crate::services::container_attach_fs::is_daemon_unreachable_error(err) {
+        "The Docker daemon is unreachable — start Docker (or Docker Desktop) so the \
+         container file can be synced, then retry."
+            .to_string()
+    } else {
+        "Retry after the attach container is reachable (docker cp / sync).".to_string()
+    };
+    vec![
+        first,
+        "Do not claim status=success until export_paths can be synced from the container."
+            .to_string(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attach_sync_guidance_names_daemon_only_when_observed() {
+        // #2972 review G1.1: "daemon unreachable" must come from the actual
+        // Docker error, never just from the session being Docker-isolated.
+        let daemon_err = "docker cp abc123:/app/work/task.txt /tmp/task.txt failed: \
+                          Cannot connect to the Docker daemon at unix:///var/run/docker.sock. \
+                          Is the docker daemon running?";
+        let guidance = attach_sync_failure_guidance(daemon_err);
+        assert!(
+            guidance[0].contains("Docker daemon is unreachable"),
+            "observed daemon failure must name the daemon: {guidance:?}"
+        );
+
+        let container_err = "docker cp failed: Error response from daemon: No such container: xyz";
+        let guidance = attach_sync_failure_guidance(container_err);
+        assert!(
+            !guidance[0].contains("daemon is unreachable"),
+            "a missing container must not be reported as a dead daemon: {guidance:?}"
+        );
+        assert!(
+            guidance[0].contains("attach container is reachable"),
+            "{guidance:?}"
+        );
+    }
 
     fn first_text(result: MCPResult) -> String {
         result

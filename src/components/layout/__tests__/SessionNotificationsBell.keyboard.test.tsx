@@ -154,40 +154,64 @@ describe('SessionNotificationsBell keyboard access (#2537)', () => {
   });
 
   it('keeps focus on the next row after a keyboard dismiss (#2972)', async () => {
-    const originalRaf = global.requestAnimationFrame;
-    global.requestAnimationFrame = ((callback: FrameRequestCallback) =>
-      setTimeout(callback, 0)) as typeof requestAnimationFrame;
-    try {
-      const { rerender } = render(<SessionNotificationsBell />);
-      rerenderBell = () => rerender(<SessionNotificationsBell />);
-      await openWithKeyboard();
+    const { rerender } = render(<SessionNotificationsBell />);
+    rerenderBell = () => rerender(<SessionNotificationsBell />);
+    await openWithKeyboard();
 
-      const dismiss = await arrowTo('notifications.dismiss');
-      await act(async () => {
-        fireEvent.keyDown(dismiss, { key: 'Enter' });
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
+    const dismiss = await arrowTo('notifications.dismiss');
+    await act(async () => {
+      fireEvent.keyDown(dismiss, { key: 'Enter' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
 
-      // Alpha's row left the menu; focus must land on Beta's dismiss, not on
-      // "Mark all read" (the first item Radix falls back to, #2731 2565 N-2).
-      const remaining = screen.getAllByRole('menuitem', {
-        name: 'notifications.dismiss',
-      });
-      expect(remaining).toHaveLength(1);
-      await waitFor(() => expect(remaining[0]).toHaveFocus(), {
-        timeout: 2000,
-      });
-      expect(remaining[0]).not.toBe(markAllItemOrNull());
-    } finally {
-      global.requestAnimationFrame = originalRaf;
-    }
+    // Alpha's row left the menu; focus must land on Beta's dismiss, not on
+    // "Mark all read" (the first item Radix falls back to, #2731 2565 N-2).
+    const remaining = screen.getAllByRole('menuitem', {
+      name: 'notifications.dismiss',
+    });
+    expect(remaining).toHaveLength(1);
+    await waitFor(() => expect(remaining[0]).toHaveFocus(), {
+      timeout: 2000,
+    });
+  });
+
+  it('restores focus when the backend removes the row late (#2972 review G1.2)', async () => {
+    // The old implementation gave up after ~10 animation frames (~167 ms);
+    // a slower backend then dropped focus back to "Mark all read" anyway.
+    // Removal now waits for the real disconnection, whatever the delay.
+    mockMarkSessionViewed.mockImplementationOnce(
+      async (id: string) => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        notificationSessions = notificationSessions.filter((s) => s.id !== id);
+        rerenderBell?.();
+      },
+    );
+
+    const { rerender } = render(<SessionNotificationsBell />);
+    rerenderBell = () => rerender(<SessionNotificationsBell />);
+    await openWithKeyboard();
+
+    const dismiss = await arrowTo('notifications.dismiss');
+    await act(async () => {
+      fireEvent.keyDown(dismiss, { key: 'Enter' });
+    });
+
+    // The row is still in the menu (backend busy) and focus must not have
+    // been yanked to the first item behind the user's back.
+    expect(
+      screen.getAllByRole('menuitem', { name: 'notifications.dismiss' }),
+    ).toHaveLength(2);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+
+    const remaining = screen.getAllByRole('menuitem', {
+      name: 'notifications.dismiss',
+    });
+    expect(remaining).toHaveLength(1);
+    await waitFor(() => expect(remaining[0]).toHaveFocus(), {
+      timeout: 2000,
+    });
   });
 });
-
-function markAllItemOrNull(): HTMLElement | null {
-  return (
-    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
-      (item) => item.textContent === 'notifications.markAllRead',
-    ) ?? null
-  );
-}

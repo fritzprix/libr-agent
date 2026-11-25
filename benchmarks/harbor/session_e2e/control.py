@@ -48,7 +48,7 @@ Endpoints (all require the ``X-LibrAgent-E2E-Control`` capability header;
   → ``{elements, count, scaleFactor}`` where each element carries ``{role,
   tag, label, id?, testId?, inputType?, disabled, bounds, rect, visible}``
   (#2902). Bounds are CSS pixels; multiply by ``scaleFactor`` to get the
-  window pixels ``ui/input`` ``x``/``y`` expect (#2972).
+  logical window pixels ``ui/input`` ``x``/``y`` expect (#2972).
 - ``POST /api/e2e-control/ui/input`` — body ``{action, selector?, testId?,
   x?, y?, text?, key?, modifiers?, scrollAmount?, axis?, button?}`` →
   ``{ok, delivery, ...}``. Element targets (``selector``/``testId``) are

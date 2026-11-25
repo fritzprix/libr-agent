@@ -206,6 +206,22 @@ pub async fn pull_container_file_to_host(
     }
 }
 
+/// Docker CLI errors that mean the daemon itself could not be reached (e.g.
+/// Docker Desktop stopped), as opposed to a missing path or container lookup.
+///
+/// Newer CLIs report "failed to connect to the docker API at
+/// unix:///…/docker.sock … connect: no such file or directory", older
+/// Linux/macOS CLIs "Cannot connect to the Docker daemon at
+/// unix:///var/run/docker.sock", and older Windows CLIs "error during
+/// connect: … open //./pipe/docker_engine: The system cannot find the file
+/// specified."
+pub fn is_daemon_unreachable_error(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("failed to connect to the docker api")
+        || lower.contains("cannot connect to the docker daemon")
+        || lower.contains("error during connect")
+}
+
 pub(crate) fn is_missing_container_path_error(err: &str) -> bool {
     // Spawn failures look like "Failed to run docker cp …: No such file or directory
     // (os error 2)" when the docker binary is absent (macOS CI). That is not a
@@ -218,18 +234,11 @@ pub(crate) fn is_missing_container_path_error(err: &str) -> bool {
     if lower.contains("no such container") {
         return false;
     }
-    // Daemon unreachable (e.g. Docker Desktop stopped): newer CLIs report
-    // "failed to connect to the docker API at unix:///…/docker.sock … connect:
-    // no such file or directory", older Linux/macOS CLIs "Cannot connect to the
-    // Docker daemon at unix:///var/run/docker.sock", and older Windows CLIs
-    // "error during connect: … open //./pipe/docker_engine: The system cannot
-    // find the file specified." The "no such file"/"cannot find the file" there
-    // refers to the socket or named pipe, not a path inside the container;
-    // treating it as soft-ok lets a stale staging copy pass an exists() probe.
-    if lower.contains("failed to connect to the docker api")
-        || lower.contains("cannot connect to the docker daemon")
-        || lower.contains("error during connect")
-    {
+    // Daemon unreachable (e.g. Docker Desktop stopped): the "no such file"
+    // /"cannot find the file" in those errors refers to the socket or named
+    // pipe, not a path inside the container; treating it as soft-ok lets a
+    // stale staging copy pass an exists() probe.
+    if is_daemon_unreachable_error(err) {
         return false;
     }
     lower.contains("no such file")
@@ -613,6 +622,31 @@ drwxr-xr-x 2 root root 4096 Jan  1 00:00 src
         // path — must not be soft-ok either.
         assert!(!is_missing_container_path_error(
             "docker cp abc123:/app/work/task.txt C:\\task.txt failed: error during connect: this error may indicate that the docker daemon is not running: Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/containers/abc123/json\": open //./pipe/docker_engine: The system cannot find the file specified."
+        ));
+    }
+
+    #[test]
+    fn daemon_unreachable_errors_are_detected() {
+        // #2972 review G1.1: callers name the Docker daemon only when the
+        // error actually reports one unreachable.
+        assert!(is_daemon_unreachable_error(
+            "docker cp abc123:/app/work/task.txt /tmp/task.txt failed: failed to connect to the docker API at unix:///Users/dev/.docker/run/docker.sock: connect: no such file or directory"
+        ));
+        assert!(is_daemon_unreachable_error(
+            "docker cp abc123:/app/work/task.txt /tmp/task.txt failed: Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"
+        ));
+        assert!(is_daemon_unreachable_error(
+            "docker cp abc123:/app/work/task.txt C:\\task.txt failed: error during connect: this error may indicate that the docker daemon is not running: Get \"http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/containers/abc123/json\": open //./pipe/docker_engine: The system cannot find the file specified."
+        ));
+        // Path / container lookups are not daemon failures.
+        assert!(!is_daemon_unreachable_error(
+            "docker cp failed: Error response from daemon: Could not find the file /app/work/task.txt in container abc"
+        ));
+        assert!(!is_daemon_unreachable_error(
+            "docker cp failed: Error response from daemon: No such container: xyz"
+        ));
+        assert!(!is_daemon_unreachable_error(
+            "Failed to run docker cp nosuch:/app/work/task.txt /tmp/task.txt: No such file or directory (os error 2)"
         ));
     }
 }

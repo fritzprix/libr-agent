@@ -571,8 +571,12 @@ async fn report_result_attach_container_missing_export_path_rejects() {
         "error must name missing export_paths: {text}"
     );
     assert!(
-        text.contains("Docker-isolated") && text.contains("Docker daemon"),
-        "Docker-session error must name the unreachable Docker daemon (#2972): {text}"
+        text.contains("Docker-isolated") && text.contains("mounted workspace"),
+        "Docker-session error must explain that files outside the mounted workspace stay in the container (#2972 review G1.1): {text}"
+    );
+    assert!(
+        !text.to_ascii_lowercase().contains("daemon"),
+        "this branch is only reached after the attach sync succeeded (or was unnecessary), so it must not claim daemon unreachability: {text}"
     );
     assert!(
         !text.contains("STOP: Do not call any more tools"),

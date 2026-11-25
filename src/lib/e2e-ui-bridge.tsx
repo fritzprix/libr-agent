@@ -190,7 +190,7 @@ function reportRejection(error: unknown): void {
   console.warn('[e2e-ui-bridge] e2e_ui_report rejected:', error);
 }
 
-async function handleInspect(detail: InspectEvent): Promise<void> {
+export async function handleInspect(detail: InspectEvent): Promise<void> {
   const elements = collectInspectableElements(detail.selector);
   await invoke('e2e_ui_report', {
     requestId: detail.requestId,
