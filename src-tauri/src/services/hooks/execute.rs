@@ -655,11 +655,6 @@ fn interpolate_http_header(value: &str, allowed: &[String]) -> String {
     out
 }
 
-/// Run a `type: "http"` hook: POST the event envelope as JSON to `url` and
-/// apply the response body per the Hooks reference HTTP response handling
-/// (2xx + empty body = success with no output, 2xx + JSON object = the same
-/// JSON output schema as command hooks, anything else = non-blocking error)
-/// (#3009).
 /// Hard bound on the body an `http` hook response may deliver (#3041 G1.3):
 /// hook output is a small JSON decision document, and an unbounded read lets
 /// a hostile or broken server grow memory without limit.
@@ -676,6 +671,11 @@ impl From<reqwest::Error> for HttpHookError {
     }
 }
 
+/// Run a `type: "http"` hook: POST the event envelope as JSON to `url` and
+/// apply the response body per the Hooks reference HTTP response handling
+/// (2xx + empty body = success with no output, 2xx + JSON object = the same
+/// JSON output schema as command hooks, anything else = non-blocking error)
+/// (#3009).
 async fn run_http_hook(
     event: HookEvent,
     http: &HookHttpConfig,
@@ -1671,12 +1671,18 @@ mod tests {
             .expect("bind loopback");
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let (mut conn, _) = listener.accept().await.expect("accept");
             let mut buf = [0u8; 1024];
             let _ = conn.read(&mut buf).await;
-            // Respond with nothing; outlive the handler timeout so the
-            // client must give up on its own.
+            // Send the headers, then stall before any body byte: the
+            // original failure mode was `response.text()` waiting forever
+            // after `send()` had already succeeded (#3041 S2.2).
+            let _ = conn
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\n\r\n")
+                .await;
+            // Outlive the handler timeout so the client must give up on
+            // its own.
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             drop(conn);
         });
@@ -1712,10 +1718,22 @@ mod tests {
         clear_hook_context(&sid);
     }
 
-    /// #3041 G1.3: an oversized response body is rejected rather than
-    /// slurped into memory.
-    #[tokio::test]
-    async fn http_handler_rejects_oversized_body() {
+    /// #3041 G2.1: a valid deny decision padded with `reason_bytes` of `a`
+    /// to reach the requested size. Removing the size bound would let this
+    /// decision apply, so every oversized-body test below fails without the
+    /// bound — unlike a non-JSON body, which is skipped anyway.
+    fn padded_deny_json(reason_bytes: usize) -> String {
+        format!(
+            r#"{{"hookSpecificOutput":{{"permissionDecision":"deny","permissionDecisionReason":"{}"}}}}"#,
+            "a".repeat(reason_bytes)
+        )
+    }
+
+    /// #3041 G2.1: dispatch one PreToolUse against a loopback server that
+    /// replies 200 with `body`, served with (`with_length`) or without a
+    /// `content-length` header — without it, the chunked read loop is the
+    /// only thing enforcing the bound.
+    async fn dispatch_body_size(body: String, with_length: bool) -> HookDispatchResult {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind loopback");
@@ -1723,28 +1741,36 @@ mod tests {
         let server = tokio::spawn(async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let (mut conn, _) = listener.accept().await.expect("accept");
-            let mut buf = [0u8; 1024];
+            let mut buf = [0u8; 4096];
             let _ = conn.read(&mut buf).await;
-            let big = "a".repeat(2 * 1024 * 1024);
-            let response = format!(
-                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{big}",
-                big.len()
-            );
-            let _ = conn.write_all(response.as_bytes()).await;
+            let headers = if with_length {
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                )
+            } else {
+                "HTTP/1.1 200 OK\r\nconnection: close\r\n\r\n".to_string()
+            };
+            let _ = conn.write_all(headers.as_bytes()).await;
+            // The client stops reading once the bound is crossed, so these
+            // writes may fail with a broken pipe; that is expected.
+            let _ = conn.write_all(body.as_bytes()).await;
+            let _ = conn.flush().await;
+            drop(conn);
         });
 
         let hooks_json = serde_json::json!({
             "hooks": {
                 "PreToolUse": [{
                     "matcher": "workspace__runShell",
-                    "hooks": [{ "type": "http", "url": format!("http://{addr}/big") }]
+                    "hooks": [{ "type": "http", "url": format!("http://{addr}/body-size") }]
                 }]
             }
         })
         .to_string();
         let (temp, root) = setup_approved_plugin(&hooks_json);
 
-        let sid = format!("http-hook-big-{}", uuid::Uuid::new_v4());
+        let sid = format!("http-hook-size-{}", uuid::Uuid::new_v4());
         let params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
         let outcome = dispatch_hook_event_in(
             temp.path(),
@@ -1754,9 +1780,48 @@ mod tests {
             &sid,
         )
         .await;
-        assert_eq!(outcome.decision, None, "oversized body must not block");
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), server).await;
         clear_hook_context(&sid);
+        outcome
+    }
+
+    /// #3041 G2.1: with `content-length`, a valid deny decision padded past
+    /// the bound must be rejected by the header pre-check, not applied.
+    #[tokio::test]
+    async fn http_handler_rejects_oversized_body_with_content_length() {
+        let outcome = dispatch_body_size(padded_deny_json(2 * 1024 * 1024), true).await;
+        assert_eq!(
+            outcome.decision, None,
+            "oversized deny decision must not be applied"
+        );
+    }
+
+    /// #3041 G2.1: without `content-length`, the same oversized decision
+    /// must be rejected by the chunked read loop, not applied.
+    #[tokio::test]
+    async fn http_handler_rejects_oversized_body_chunked() {
+        let outcome = dispatch_body_size(padded_deny_json(2 * 1024 * 1024), false).await;
+        assert_eq!(
+            outcome.decision, None,
+            "oversized streamed deny decision must not be applied"
+        );
+    }
+
+    /// #3041 G2.1 control: the same decision shape under the bound is
+    /// applied, proving the oversized tests fail because of the size, not
+    /// because http decisions never work.
+    #[tokio::test]
+    async fn http_handler_applies_decision_under_body_limit() {
+        let outcome = dispatch_body_size(padded_deny_json(64 * 1024), true).await;
+        assert_eq!(
+            outcome.decision,
+            Some(HookDecision::Block),
+            "under-limit deny decision must apply"
+        );
+        assert!(outcome
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.starts_with('a')));
     }
 
     /// #3041 G1.5: an invalid header value must skip the hook with a
