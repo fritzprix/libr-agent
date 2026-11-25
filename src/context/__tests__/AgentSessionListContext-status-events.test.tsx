@@ -1,0 +1,316 @@
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+    __resetAgentSessionListStartupCacheForTests,
+    AgentSessionListProvider,
+    useAgentSessionListState,
+} from '../AgentSessionListContext';
+import { safeInvoke } from '@/lib/backend/core';
+import { listen } from '@tauri-apps/api/event';
+import { MemoryRouter } from 'react-router-dom';
+
+vi.mock('@/lib/backend/assistants', () => ({
+    getAssistant: vi.fn(),
+    listAssistants: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock Tauri APIs
+vi.mock('@/lib/backend/core', () => ({
+    safeInvoke: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+    listen: vi.fn(),
+}));
+
+// Mock logger
+vi.mock('@/lib/logger', () => ({
+    getLogger: () => ({
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+    }),
+}));
+
+// Mock ModelProvider
+vi.mock('../ModelProvider', () => ({
+    useModelOptions: () => ({
+        modelId: 'test-model',
+        provider: 'test-provider',
+    }),
+}));
+
+// Mock GlobalEventContext
+vi.mock('../GlobalEventContext', () => ({
+    useBackendResource: vi.fn(),
+}));
+
+vi.mock('@/context/SettingsContext', () => ({
+    useSettings: () => ({
+        value: {
+            advanced: {
+                defaultSessionMaxDepth: 0,
+                defaultSessionMaxFanout: 0,
+            },
+        },
+    }),
+}));
+
+vi.mock('../LLMServiceContext', () => ({
+    useLLMService: () => ({
+        clearSessionState: vi.fn(),
+        clearAllCompactState: vi.fn(),
+    }),
+}));
+
+function TestWrapperWithEvent({ children }: { children: React.ReactNode }) {
+    return (
+        <MemoryRouter>
+            <AgentSessionListProvider>{children}</AgentSessionListProvider>
+        </MemoryRouter>
+    );
+}
+
+
+// ---------------------------------------------------------------------------
+// Crash-recovery: statusChanged event patches session list in-place
+// ---------------------------------------------------------------------------
+describe('AgentSessionListContext – statusChanged event (crash recovery)', () => {
+    const mockUnlisten = vi.fn();
+
+    // Capture the agent:event handler registered by the useEffect listen() call
+    let agentEventHandler: ((event: { payload: unknown }) => void) | undefined;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        __resetAgentSessionListStartupCacheForTests();
+        agentEventHandler = undefined;
+
+        (listen as ReturnType<typeof vi.fn>).mockImplementation(
+            async (eventName: string, handler: (event: { payload: unknown }) => void) => {
+                if (eventName === 'agent:event') {
+                    agentEventHandler = handler;
+                }
+                return mockUnlisten;
+            },
+        );
+
+        // Return a single existing session (paused – simulates crash-recovered child)
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                id: 'session-child',
+                name: 'Child Session',
+                status: 'paused',
+                model: 'gpt-4o',
+                provider: 'openai',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            },
+        ]);
+    });
+
+    it('registers an agent:event listener on mount', async () => {
+        renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(listen).toHaveBeenCalledWith('agent:event', expect.any(Function));
+        });
+    });
+
+    it('patches session status to "busy" in-place when statusChanged fires', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        // Wait for initial load (sessions=[paused child])
+        await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(result.current.sessions[0].status).toBe('paused');
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        // Simulate Rust emitting StatusChanged { sessionId: 'session-child', status: 'busy' }
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'busy',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('busy');
+        });
+    });
+
+    it('patches "busy" → "paused" correctly (e.g. intentional pause)', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([
+            {
+                id: 'session-x',
+                name: 'Running Session',
+                status: 'busy',
+                model: 'gpt-4o',
+                provider: 'openai',
+                createdAt: Date.now(),
+            },
+        ]);
+
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('busy');
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: { type: 'statusChanged', sessionId: 'session-x', status: 'paused' },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('paused');
+        });
+    });
+
+    it('keeps the status reason of statusChanged and clears it on the next change', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'error',
+                    statusReason: "Attach container 'dev-box' was not found",
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('error');
+            expect(result.current.sessions[0].statusReason).toBe(
+                "Attach container 'dev-box' was not found",
+            );
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-child',
+                    status: 'idle',
+                    statusReason: null,
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0].status).toBe('idle');
+            expect(result.current.sessions[0].statusReason).toBeUndefined();
+        });
+    });
+
+    it('does NOT reload sessions (invoke) when statusChanged fires', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        const invokeCallsBefore = (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length;
+
+        act(() => {
+            agentEventHandler?.({
+                payload: { type: 'statusChanged', sessionId: 'session-child', status: 'busy' },
+            });
+        });
+
+        // Flush microtasks – no new invoke calls expected
+        await act(async () => {
+            await new Promise((r) => setTimeout(r, 50));
+        });
+
+        expect((safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length).toBe(invokeCallsBefore);
+
+        // Status IS updated without a reload
+        expect(result.current.sessions[0].status).toBe('busy');
+    });
+
+    it('ignores statusChanged for an unknown session ID', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'statusChanged',
+                    sessionId: 'session-UNKNOWN',
+                    status: 'busy',
+                },
+            });
+        });
+
+        // Original session status must remain unchanged
+        expect(result.current.sessions[0].status).toBe('paused');
+        expect(result.current.sessions[0].id).toBe('session-child');
+    });
+
+    it('ignores non-statusChanged event types', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(result.current.sessions[0].status).toBe('paused');
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: { type: 'workflowStarted', sessionId: 'session-child' },
+            });
+        });
+
+        expect(result.current.sessions[0].status).toBe('paused');
+    });
+
+
+    it('unregisters the listener on unmount', async () => {
+        const { unmount } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        unmount();
+
+        // The unlisten function returned by listen() must have been called
+        expect(mockUnlisten).toHaveBeenCalled();
+    });
+});
