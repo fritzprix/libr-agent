@@ -59,6 +59,11 @@ def ci_attempts(comments: list[dict], me: str) -> int:
     return sum(1 for comment in comments if _worker_marker_kind(comment, me) == "ci-attempt")
 
 
+def _marker_fields(marker_text: str) -> dict[str, str]:
+    """Parse `key=value` fields from the inside of a loop marker comment."""
+    return dict(kv.split("=", 1) for kv in marker_text.split() if "=" in kv)
+
+
 def parse_markers(
     comments: list[dict], me: str
 ) -> tuple[list[dict], list[dict]]:
@@ -78,9 +83,7 @@ def parse_markers(
         match = START_MARKER.match(comment.get("body") or "")
         if not match:
             continue
-        fields = dict(
-            kv.split("=", 1) for kv in match.group(2).split() if "=" in kv
-        )
+        fields = _marker_fields(match.group(2))
         entry = {**fields, "createdAt": comment["createdAt"], "url": comment.get("url")}
         if match.group(1) == "gatekeeper-loop":
             if entry.get("verdict") not in GATEKEEPER_VERDICTS:
@@ -113,9 +116,7 @@ def reply_targets(comments: list[dict], me: str) -> set[str]:
         match = START_MARKER.match(comment.get("body") or "")
         if not match:
             continue
-        fields = dict(
-            kv.split("=", 1) for kv in match.group(2).split() if "=" in kv
-        )
+        fields = _marker_fields(match.group(2))
         if fields.get("reply-to"):
             targets.add(str(fields["reply-to"]))
     return targets

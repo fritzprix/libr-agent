@@ -30,11 +30,12 @@ if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
 from comment_markers import (  # noqa: E402
-    GATEKEEPER_VERDICTS,
     NEEDS_OWNER_LABEL,
     START_MARKER,
     ci_attempts,
+    latest_worker_response,
     owner_answer,
+    parse_markers,
     reply_targets,
 )
 from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
@@ -88,29 +89,21 @@ def check_state(check: dict) -> str:
 
 
 def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | None:
-    """Latest gatekeeper verdict (own comments only) and whether it awaits the worker."""
-    verdict, responded_rounds = None, set()
-    for c in comments:
-        if (c.get("author") or {}).get("login") != me:
-            continue
-        match = START_MARKER.match(c.get("body") or "")
-        if not match:
-            continue
-        fields = dict(kv.split("=", 1) for kv in match.group(2).split() if "=" in kv)
-        if match.group(1) == "gatekeeper-loop":
-            if fields.get("verdict") not in GATEKEEPER_VERDICTS:
-                continue
-            if fields.get("verdict") == "clean":
-                fields.pop("blocked-by", None)
-            verdict = {**fields, "url": c.get("url"), "createdAt": c["createdAt"]}
-        elif verdict and c["createdAt"] > verdict["createdAt"] and "round" in fields:
-            responded_rounds.add(fields["round"])
-    if verdict is None:
+    """Latest gatekeeper verdict (own comments only) and whether it awaits the worker.
+
+    Built on `comment_markers.parse_markers` and `latest_worker_response` so the
+    fixed-kind filtering lives in one place: only a `response` marker settles a
+    round (issue #2994, gatekeeper G1.1). Unknown kinds, `reply`, and
+    `ci-attempt` markers never settle a round.
+    """
+    verdicts, responses = parse_markers(comments, me)
+    if not verdicts:
         return None
+    verdict = verdicts[-1]
     verdict["awaitingWorker"] = (
         verdict.get("verdict") == "changes-requested"
         and verdict.get("head") == head_sha
-        and verdict.get("round") not in responded_rounds
+        and latest_worker_response(verdict, responses) is None
     )
     return verdict
 

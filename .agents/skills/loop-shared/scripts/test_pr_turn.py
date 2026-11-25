@@ -167,19 +167,38 @@ class FixedMarkerKindsTests(unittest.TestCase):
         )
         self.assertEqual(turn.turn, "worker")
 
-    def test_every_fixed_verdict_maps_to_a_turn_owner(self) -> None:
-        """No combination of verdict, head, and response yields a stall turn."""
-        allowed = {"worker", "gatekeeper", "human", "none"}
-        for verdict in ("changes-requested", "approve", "clean", "escalate"):
-            for head in ("sha1", "sha2"):
-                for response in (None, wr("1", head, "t2")):
-                    comments = [gk(verdict, head)]
-                    if response:
-                        comments.append(response)
-                    turn = decide_pr_turn(
-                        head_sha="sha2", mergeable="MERGEABLE", comments=comments, me="me"
-                    )
-                    self.assertIn(turn.turn, allowed)
+    def test_every_fixed_verdict_combination_has_the_exact_owner(self) -> None:
+        """G1.2: assert the expected owner for each verdict, head, and response."""
+        expected = {
+            # (verdict, verdict head, worker response?): turn
+            ("changes-requested", "sha1", None): "gatekeeper",
+            ("changes-requested", "sha1", "response"): "gatekeeper",
+            ("changes-requested", "sha2", None): "worker",
+            ("changes-requested", "sha2", "response"): "gatekeeper",
+            ("approve", "sha1", None): "gatekeeper",
+            ("approve", "sha1", "response"): "gatekeeper",
+            ("approve", "sha2", None): "human",
+            ("approve", "sha2", "response"): "human",
+            ("clean", "sha1", None): "gatekeeper",
+            ("clean", "sha1", "response"): "gatekeeper",
+            ("clean", "sha2", None): "gatekeeper",
+            ("clean", "sha2", "response"): "gatekeeper",
+            ("escalate", "sha1", None): "gatekeeper",
+            ("escalate", "sha1", "response"): "gatekeeper",
+            ("escalate", "sha2", None): "human",
+            ("escalate", "sha2", "response"): "human",
+        }
+        for (verdict, head, response), expected_turn in expected.items():
+            comments = [gk(verdict, head)]
+            if response:
+                comments.append(wr("1", head, "t2"))
+            turn = decide_pr_turn(
+                head_sha="sha2", mergeable="MERGEABLE", comments=comments, me="me"
+            )
+            self.assertEqual(
+                turn.turn, expected_turn,
+                f"verdict={verdict} verdictHead={head} response={response}",
+            )
 
 
 if __name__ == "__main__":

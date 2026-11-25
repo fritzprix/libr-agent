@@ -158,28 +158,16 @@ def decide_pr_turn(
             reason="clean at head; gatekeeper posts approve when CI is green",
         )
 
-    if not at_head:
-        return PrTurn(
-            turn="gatekeeper",
-            currentVerdict=verdict,
-            verdictHead=verdict_head,
-            currentHead=head_sha,
-            atVerdictHead=False,
-            labelMismatch=[],
-            reason="new head since last verdict",
-        )
-
-    # Unreachable for markers parsed by comment_markers.parse_markers: verdicts
-    # outside GATEKEEPER_VERDICTS are filtered there, and every fixed verdict is
-    # handled above. Kept as a total-function fallback, never as a stall state.
+    # Every fixed verdict at the current head is handled above, so the only
+    # case left is a verdict at an older head: the gatekeeper re-reviews.
     return PrTurn(
-        turn="none",
+        turn="gatekeeper",
         currentVerdict=verdict,
         verdictHead=verdict_head,
         currentHead=head_sha,
-        atVerdictHead=at_head,
-        labelMismatch=mismatches,
-        reason=f"no turn owner for verdict={verdict!r}",
+        atVerdictHead=False,
+        labelMismatch=[],
+        reason="new head since last verdict",
     )
 
 
