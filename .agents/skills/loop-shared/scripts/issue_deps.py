@@ -31,14 +31,22 @@ CLOSING_PATTERN = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\
 BRANCH_REF_PATTERN = re.compile(r"-(\d{3,})\b")
 
 
+def closing_keyword_refs(pr: dict) -> set[int]:
+    """Issues closed by `Fixes #N` / `Closes #N` / `Resolves #N` keywords in title/body.
+
+    Used for dependency lookups (`pr_blockers`) so arbitrary numbers in branch
+    names (such as `chore/bump-deps-2026`) are never queried as issue numbers.
+    """
+    text = f"{pr.get('title') or ''} {pr.get('body') or ''}"
+    return {int(n) for n in CLOSING_PATTERN.findall(text)}
+
+
 def closing_refs(pr: dict) -> set[int]:
     """Issues this PR closes: `Fixes #N` style keywords in title/body, plus the branch number.
 
-    Single source of truth shared by `issue_candidates.py`, `tick_gate.py`,
-    `pr_status.py`, and `review_queue.py`.
+    Single source of truth shared by `issue_candidates.py` and `tick_gate.py`.
     """
-    text = f"{pr.get('title') or ''} {pr.get('body') or ''}"
-    refs = {int(n) for n in CLOSING_PATTERN.findall(text)}
+    refs = closing_keyword_refs(pr)
     refs |= {int(n) for n in BRANCH_REF_PATTERN.findall(pr.get("headRefName") or "")}
     return refs
 
@@ -82,10 +90,13 @@ def blocked_by(number: int, run_gh: Callable[..., str] = _default_gh) -> list[di
                 f"#{number} not found; a missing item is an error, not an empty blocker list"
             ) from e
         raise
-    return [
-        {"number": int(b["number"]), "state": b.get("state") or ""}
-        for b in json.loads(out or "[]")
-    ]
+    entries = []
+    for b in json.loads(out or "[]"):
+        entry: dict = {"number": int(b["number"]), "state": b.get("state") or ""}
+        if b.get("closed_at"):
+            entry["closed_at"] = b["closed_at"]
+        entries.append(entry)
+    return entries
 
 
 def open_blockers(number: int, run_gh: Callable[..., str] = _default_gh) -> list[int]:
@@ -94,9 +105,9 @@ def open_blockers(number: int, run_gh: Callable[..., str] = _default_gh) -> list
 
 
 def pr_blockers(pr: dict, run_gh: Callable[..., str] = _default_gh) -> list[dict]:
-    """Deduplicated blockers across all closing issues of `pr`."""
+    """Deduplicated blockers across all keyword-linked closing issues of `pr`."""
     seen: dict[int, dict] = {}
-    for issue_num in sorted(closing_refs(pr)):
+    for issue_num in sorted(closing_keyword_refs(pr)):
         for b in blocked_by(issue_num, run_gh):
             prev = seen.get(b["number"])
             if prev is None or b["state"] == "open":

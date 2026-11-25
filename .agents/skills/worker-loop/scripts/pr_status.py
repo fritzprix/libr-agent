@@ -39,7 +39,7 @@ from comment_markers import (  # noqa: E402
     parse_markers,
     reply_targets,
 )
-from issue_deps import pr_blockers  # noqa: E402
+from issue_deps import DepsError, pr_blockers  # noqa: E402
 from pr_turn import (  # noqa: E402
     decide_pr_turn,
     format_turn_report,
@@ -245,7 +245,12 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
     head_sha = pr["headRefOid"]
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     gatekeeper = gatekeeper_state(comments, me, head_sha)
-    blockers = pr_blockers(pr, run_gh=gh)  # DepsError on missing item is fatal for this tick
+    blocker_error: str | None = None
+    try:
+        blockers = pr_blockers(pr, run_gh=gh)
+    except DepsError as e:
+        blockers = []
+        blocker_error = str(e)
     open_dep = [b["number"] for b in blockers if b["state"] == "open"]
     ready_to_rebase = rebase_ready(blockers, comments, me, head_sha)
     turn = decide_pr_turn(
@@ -335,6 +340,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
         "openBlockers": open_dep,
+        "blockerLookupError": blocker_error,
         "whoseTurn": turn.turn,
         "currentVerdict": turn.currentVerdict,
         "verdictHeadSha": turn.verdictHead,

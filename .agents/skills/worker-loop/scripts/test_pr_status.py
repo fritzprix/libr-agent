@@ -98,12 +98,21 @@ class RebaseReadyTest(unittest.TestCase):
         return [self.marker(v, h, f"2026-11-25T0{i}:00:00Z")
                 for i, (v, h) in enumerate(bodies_verdicts_heads, start=1)]
 
-    def blockers(self, *states):
-        return [{"number": i + 1, "state": s} for i, s in enumerate(states)]
+    def blockers(self, *states, closed_at="2026-11-25T09:00:00Z"):
+        return [
+            {"number": i + 1, "state": s, **({"closed_at": closed_at} if s == "closed" else {})}
+            for i, s in enumerate(states)
+        ]
 
     def test_all_closed_blockers_with_clean_at_head_is_ready(self):
         comments = self.comments(("clean", "sha1"))
         self.assertTrue(pr_status.rebase_ready(self.blockers("closed"), comments, "me", "sha1"))
+
+    def test_old_closed_blocker_before_clean_marker_is_not_ready(self):
+        comments = self.comments(("clean", "sha1"))
+        self.assertFalse(pr_status.rebase_ready(
+            self.blockers("closed", closed_at="2026-11-25T00:30:00Z"), comments, "me", "sha1"
+        ))
 
     def test_pr_without_blocker_link_is_never_ready(self):
         comments = self.comments(("clean", "sha1"))

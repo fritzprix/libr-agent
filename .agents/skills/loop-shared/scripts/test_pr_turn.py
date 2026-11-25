@@ -264,9 +264,19 @@ class OverlapRankTest(unittest.TestCase):
         )
         self.assertEqual(blocked_turn.turn, "none")
 
-        self.assertTrue(rebase_ready([{"number": 99, "state": "closed"}], [gk("clean", "sha2")], "me", "sha2"))
+        clean_comment = {**gk("clean", "sha2"), "createdAt": "2026-11-25T12:00:00Z"}
+        # Old closed dependency (closed before clean marker) must NOT trigger rebase_ready.
+        self.assertFalse(rebase_ready(
+            [{"number": 98, "state": "closed", "closed_at": "2026-11-25T10:00:00Z"}],
+            [clean_comment], "me", "sha2",
+        ))
+        # Blocker closed after clean marker DOES trigger rebase_ready.
+        self.assertTrue(rebase_ready(
+            [{"number": 99, "state": "closed", "closed_at": "2026-11-25T13:00:00Z"}],
+            [clean_comment], "me", "sha2",
+        ))
         rebase_turn = decide_pr_turn(
-            head_sha="sha2", mergeable="MERGEABLE", comments=[gk("clean", "sha2")], me="me",
+            head_sha="sha2", mergeable="MERGEABLE", comments=[clean_comment], me="me",
             rebase_ready=True,
         )
         self.assertEqual(rebase_turn.turn, "worker")

@@ -351,12 +351,16 @@ def determine_status(**kwargs) -> str:
     return classify(**kwargs)[0]
 
 
-def gh_blocked_by(pr: dict) -> list[dict]:
-    """Blockers of a PR's closing issues, via the shared helper (issue #2995)."""
+def gh_blocked_by(pr: dict) -> tuple[list[dict], str | None]:
+    """Blockers of a PR's closing issues, via the shared helper (issue #2995).
+
+    Returns `(blockers, error)`: a lookup failure is reported on this PR
+    without aborting the rest of the queue.
+    """
     try:
-        return pr_blockers(pr, run_gh=gh)
+        return pr_blockers(pr, run_gh=gh), None
     except DepsError as e:
-        sys.exit(f"review_queue: {e}")
+        return [], str(e)
 
 
 def summarize(number: int, me: str, state: dict | None = None) -> dict:
@@ -406,7 +410,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     human_only = touches_human_only_paths(paths)
     sensitive_info = classify_sensitive_paths(paths)
 
-    blockers = gh_blocked_by(pr)
+    blockers, blocker_error = gh_blocked_by(pr)
     open_dep = [b["number"] for b in blockers if b["state"] == "open"]
     ready_to_rebase = is_rebase_ready(blockers, comments, me, head)
 
@@ -483,6 +487,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "createdAt": pr["createdAt"],
         "ciPending": pending,
         "ciFailing": failing,
+        "blockerLookupError": blocker_error,
     }
 
 

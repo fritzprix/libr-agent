@@ -42,20 +42,25 @@ def highest_overlap_state(states: Iterable[str]) -> str | None:
 
 
 def rebase_ready(blockers: list[dict], comments: list[dict], me: str, head_sha: str) -> bool:
-    """True when every blocker is closed and the head matches the latest clean marker.
+    """True when a blocker closed after the latest clean marker at the current head.
 
     Shared by `pr_status.py` and `review_queue.py` (issue #2995). `blockers` is
     the full blocked-by list from `issue_deps.pr_blockers` / `blocked_by`. The
-    PR must carry at least one blocker link; the latest gatekeeper marker
-    (verdicts including clean) must be a `clean` at the current head. After the
-    push the head is new, so this is false until the gatekeeper reviews again.
+    PR must carry at least one blocker link, have zero open blockers, have a
+    `clean` marker as the latest gatekeeper verdict at `head_sha`, and have at
+    least one blocker whose `closed_at` is newer than that `clean` marker's
+    `createdAt` (so old closed dependencies on the closing issue never trigger
+    an endless rebase loop).
     """
     if not blockers:
         return False
     if any(b["state"] == "open" for b in blockers):
         return False
     verdicts, _ = parse_markers(comments, me)
-    return bool(verdicts) and verdicts[-1].get("verdict") == "clean" and verdicts[-1].get("head") == head_sha
+    if not verdicts or verdicts[-1].get("verdict") != "clean" or verdicts[-1].get("head") != head_sha:
+        return False
+    clean_at = verdicts[-1].get("createdAt") or ""
+    return any((b.get("closed_at") or "") > clean_at for b in blockers)
 
 
 @dataclass(frozen=True)

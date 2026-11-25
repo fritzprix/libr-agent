@@ -145,9 +145,16 @@ class PrBlockersTest(unittest.TestCase):
 
     def test_pr_without_closing_issue_returns_empty_without_calling_gh(self):
         called = []
-        pr = {"number": 3026, "title": "Chore", "body": "", "headRefName": "chore/cleanup"}
+        pr = {"number": 3026, "title": "Chore", "body": "", "headRefName": "chore/bump-deps-2026"}
         self.assertEqual(issue_deps.pr_blockers(pr, lambda *a: called.append(a) or "[]"), [])
         self.assertEqual(called, [])
+
+    def test_blocked_by_preserves_closed_at_when_present(self):
+        gh = fake_gh(blockers=[{"number": 9, "state": "closed", "closed_at": "2026-11-25T15:00:00Z"}])
+        self.assertEqual(
+            issue_deps.blocked_by(5, gh),
+            [{"number": 9, "state": "closed", "closed_at": "2026-11-25T15:00:00Z"}],
+        )
 
 
 if __name__ == "__main__":

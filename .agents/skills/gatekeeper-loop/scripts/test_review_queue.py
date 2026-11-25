@@ -850,6 +850,63 @@ class BlockedStatusTests(unittest.TestCase):
         self.assertEqual(entry["whoseTurn"], "none")
         self.assertEqual(seen_api, [("api", "repos/{owner}/{repo}/issues/2995/dependencies/blocked_by")])
 
+    def test_old_closed_dependency_does_not_trigger_rebase_on_green_or_failing_ci(self):
+        for conclusion in ("SUCCESS", "FAILURE"):
+            def fake_gh(*args, conclusion=conclusion):
+                if args[:2] == ("pr", "view"):
+                    return json.dumps({
+                        "number": 3026,
+                        "title": "Test PR",
+                        "body": "Fixes #2995",
+                        "url": "https://github.com/fritzprix/libr-agent/pull/3026",
+                        "headRefName": "skills/test-2995",
+                        "headRefOid": "h1",
+                        "baseRefName": "dev/0.9.x",
+                        "isDraft": False,
+                        "mergeable": "MERGEABLE",
+                        "createdAt": "2026-11-19T00:00:00Z",
+                        "statusCheckRollup": [{"name": "Test", "conclusion": conclusion}],
+                        "comments": [{
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-19T12:00:00Z",
+                            "body": "<!-- gatekeeper-loop: round=1 verdict=clean head=h1 base=dev/0.9.x -->",
+                        }],
+                        "labels": [],
+                        "files": [{"path": "src/app.ts"}],
+                    })
+                return json.dumps([{"number": 2994, "state": "closed", "closed_at": "2026-11-19T08:00:00Z"}])
+
+            with patch.object(review_queue, "gh", fake_gh):
+                entry = summarize(3026, "fritzprix")
+            self.assertEqual(entry["status"], "review")
+            self.assertEqual(entry["whoseTurn"], "gatekeeper")
+
+    def test_blocker_lookup_error_does_not_exit_queue(self):
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3026,
+                    "title": "Test PR",
+                    "body": "Fixes #99999",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3026",
+                    "headRefName": "skills/test-99999",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "comments": [],
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                })
+            raise RuntimeError("HTTP 404 Not Found")
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3026, "fritzprix")
+        self.assertIsNotNone(entry["blockerLookupError"])
+        self.assertEqual(entry["status"], "review")
+
 
 if __name__ == "__main__":
     unittest.main()
