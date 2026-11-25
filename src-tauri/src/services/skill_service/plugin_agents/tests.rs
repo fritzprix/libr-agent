@@ -1,4 +1,14 @@
-use super::*;
+use super::discovery::discover_agent_files;
+use super::ids::{
+    is_plugin_agent_id, parse_plugin_agent_id, plugin_agent_id, reject_plugin_agent_mutation,
+    PLUGIN_SOURCE_KEY,
+};
+use super::mapping::{map_plugin_tools, plugin_model_to_complexity};
+use super::preview::{agent_config_json, plugin_agent_previews, synth_assistant_model};
+use super::session::{
+    declared_plugin_agent_model, infos_from_records, resolve_session_plugin_assistant_from_records,
+};
+use super::sync::{remove_global_plugin_agents, sync_global_plugin_agents};
 use crate::services::hooks::registry::PluginSourceRecord;
 use crate::services::skill_service::plugin_manifest::PLUGIN_MANIFEST_FILE;
 use std::fs;

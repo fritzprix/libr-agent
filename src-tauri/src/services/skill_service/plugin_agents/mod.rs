@@ -35,24 +35,14 @@ mod sync;
 #[cfg(test)]
 mod tests;
 
-#[allow(unused_imports)]
-pub use discovery::{discover_agent_files, DiscoveredAgent};
-#[allow(unused_imports)]
 pub use ids::{
-    is_plugin_agent_id, parse_plugin_agent_id, plugin_agent_id, plugin_source_marker,
-    plugin_source_of_config, reject_plugin_agent_mutation, PLUGIN_AGENT_ID_PREFIX,
-    PLUGIN_SOURCE_KEY,
+    is_plugin_agent_id, parse_plugin_agent_id, plugin_agent_id, plugin_source_of_config,
+    reject_plugin_agent_mutation,
 };
-#[allow(unused_imports)]
-pub use mapping::{map_plugin_tools, plugin_model_to_complexity};
-#[allow(unused_imports)]
-pub use preview::{
-    agent_config_json, plugin_agent_previews, synth_assistant_model, PluginAgentPreview,
-};
-#[allow(unused_imports)]
+pub use mapping::plugin_model_to_complexity;
+pub use preview::{plugin_agent_previews, PluginAgentPreview};
 pub use session::{
-    declared_plugin_agent_model, infos_from_records, resolve_session_plugin_assistant,
-    resolve_session_plugin_assistant_from_records, session_plugin_agent_infos,
-    session_plugin_agents_from_records, session_store_source_ids, PluginAgentListInfo,
+    declared_plugin_agent_model, resolve_session_plugin_assistant, session_plugin_agent_infos,
+    session_store_source_ids, PluginAgentListInfo,
 };
 pub use sync::{remove_global_plugin_agents, sync_global_plugin_agents};
