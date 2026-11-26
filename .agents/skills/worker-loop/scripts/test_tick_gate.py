@@ -318,6 +318,22 @@ class TickGateTest(unittest.TestCase):
             fp_released = tick_gate.compute_fingerprint()
         self.assertNotEqual(fp_claimed, fp_released)
 
+        # G2.1: manually closing a body-dependency issue outside the 30-issue window
+        # changes `issues.totalCount` and moves the fingerprint.
+        p_before_close = {"data": {"search": {"nodes": []}, "repository": {
+            "issues": {"totalCount": 42, "nodes": [{"number": 999, "updatedAt": "2026-01-01T00:00:00Z"}]},
+            "approvedIssues": {"nodes": [approved_old]},
+        }}}
+        p_after_close = {"data": {"search": {"nodes": []}, "repository": {
+            "issues": {"totalCount": 41, "nodes": [{"number": 999, "updatedAt": "2026-01-01T00:00:00Z"}]},
+            "approvedIssues": {"nodes": [approved_old]},
+        }}}
+        with patch.object(tick_gate, "gh", side_effect=self._create_mock_gh([p_before_close, p_after_close])), \
+             patch.object(tick_gate.worker_claims, "load_claims", return_value={}):
+            fp_before = tick_gate.compute_fingerprint()
+            fp_after = tick_gate.compute_fingerprint()
+        self.assertNotEqual(fp_before, fp_after)
+
     def _hold_with_state(self, state):
         """Take the lease, then set state as the tick would."""
         with patch.object(tick_gate, "gh", side_effect=self._create_mock_gh([self.IDLE])):

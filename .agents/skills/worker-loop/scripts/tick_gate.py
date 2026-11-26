@@ -103,56 +103,40 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
   }
   repository(owner: $owner, name: $name) {
     issues(first: $issueLimit, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      totalCount
       nodes {
-        number
-        updatedAt
-        labels(first: 20) {
-          nodes {
-            name
-          }
-        }
-        comments(last: 1) {
-          nodes {
-            createdAt
-          }
-        }
-        subIssuesSummary {
-          total
-          completed
-        }
-        blockedBy(first: 20) {
-          nodes {
-            number
-            state
-          }
-        }
+        ...IssueGateFields
       }
     }
     approvedIssues: issues(first: 100, states: [OPEN], labels: ["approved"], orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
-        number
-        updatedAt
-        labels(first: 20) {
-          nodes {
-            name
-          }
-        }
-        comments(last: 1) {
-          nodes {
-            createdAt
-          }
-        }
-        subIssuesSummary {
-          total
-          completed
-        }
-        blockedBy(first: 20) {
-          nodes {
-            number
-            state
-          }
-        }
+        ...IssueGateFields
       }
+    }
+  }
+}
+
+fragment IssueGateFields on Issue {
+  number
+  updatedAt
+  labels(first: 20) {
+    nodes {
+      name
+    }
+  }
+  comments(last: 1) {
+    nodes {
+      createdAt
+    }
+  }
+  subIssuesSummary {
+    total
+    completed
+  }
+  blockedBy(first: 20) {
+    nodes {
+      number
+      state
     }
   }
 }
@@ -316,10 +300,17 @@ def compute_fingerprint() -> str:
         for ref, info in worker_claims.load_claims().items()
     )
 
+    open_issues_total = (repo_data.get("issues") or {}).get("totalCount")
+
     hasher = hashlib.sha256()
     hasher.update(
         json.dumps(
-            {"prs": prs_fingerprint, "issues": issues_fingerprint, "claims": claims_fingerprint}
+            {
+                "prs": prs_fingerprint,
+                "issues": issues_fingerprint,
+                "openIssuesTotal": open_issues_total,
+                "claims": claims_fingerprint,
+            }
         ).encode("utf-8")
     )
     return hasher.hexdigest()
