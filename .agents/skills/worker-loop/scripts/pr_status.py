@@ -70,7 +70,7 @@ FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STAR
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PR_FIELDS = (
     "number,title,body,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
-    "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels,files"
+    "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels"
 )
 UNKNOWN_RETRY_DELAYS = (2.0, 4.0, 8.0)
 

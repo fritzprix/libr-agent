@@ -389,11 +389,8 @@ class OwnerQuestionAndCiAttemptsTest(unittest.TestCase):
                     "commits": [{"committedDate": "2026-11-19T00:00:00Z"}],
                     "comments": [],
                     "labels": [],
-                    "files": [{"path": "src/app.ts"}],
                 }
                 return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
-            if cmd[:2] == ["gh", "api"] and "compare/" in cmd[2]:
-                return subprocess.CompletedProcess(cmd, 0, stdout='{"ahead_by":0,"files":[]}', stderr="")
             if cmd[:3] == ["gh", "api", "graphql"]:
                 return subprocess.CompletedProcess(
                     cmd, 0,
