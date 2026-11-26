@@ -323,14 +323,20 @@ pub(super) async fn apply_hook_input_rewrite(
     }
 }
 
-async fn dispatch_pre_tool_hook_and_gate(
+struct PreToolHookStage {
+    args: serde_json::Value,
+    args_json: String,
+    guards: PreExecutionGuards,
+    outcome: crate::services::hooks::HookDispatchResult,
+}
+
+async fn dispatch_pre_tool_hook_and_rewrite(
     context: &ToolExecutionContext<'_>,
     tool_call: &ToolCall,
     args: serde_json::Value,
     guards: PreExecutionGuards,
     unsafe_enabled: bool,
-    remaining_calls: &[ToolCall],
-) -> PreparedCall {
+) -> Option<PreToolHookStage> {
     let tool_call_id = tool_call.id.as_str();
     let tool_name = tool_call.function.name.as_str();
     let args_str = tool_call.function.arguments.as_str();
@@ -368,21 +374,41 @@ async fn dispatch_pre_tool_hook_and_gate(
         guards,
     )
     .await;
-    let (args, guards, effective_args_json) = match rewrite {
+    let (args, guards, args_json) = match rewrite {
         HookInputRewrite::Unchanged(guards) => (args, guards, args_str.to_string()),
         HookInputRewrite::Refused((refusal, reason)) => {
             context
                 .continue_after_tool(tool_call_id, refusal, reason)
                 .await;
-            return PreparedCall::NextCall;
+            return None;
         }
         HookInputRewrite::Applied(effective) => {
             (effective.args, effective.guards, effective.args_json)
         }
     };
-    let effective_args_str = effective_args_json.as_str();
-    let policy_decision = &guards.policy_decision;
+    Some(PreToolHookStage {
+        args,
+        args_json,
+        guards,
+        outcome: pre_tool_outcome,
+    })
+}
 
+async fn dispatch_pre_tool_hook_and_gate(
+    context: &ToolExecutionContext<'_>,
+    tool_call: &ToolCall,
+    args: serde_json::Value,
+    guards: PreExecutionGuards,
+    unsafe_enabled: bool,
+    remaining_calls: &[ToolCall],
+) -> PreparedCall {
+    let Some(stage) =
+        dispatch_pre_tool_hook_and_rewrite(context, tool_call, args, guards, unsafe_enabled).await
+    else {
+        return PreparedCall::NextCall;
+    };
+
+    let policy_decision = &stage.guards.policy_decision;
     let yolo_enabled = context.current_yolo_mode().await;
     let is_hard_approval = matches!(
         policy_decision,
@@ -396,17 +422,17 @@ async fn dispatch_pre_tool_hook_and_gate(
     .cloned();
 
     let call = ToolCallInput {
-        id: tool_call_id,
-        name: tool_name,
-        args_str: effective_args_str,
+        id: tool_call.id.as_str(),
+        name: tool_call.function.name.as_str(),
+        args_str: stage.args_json.as_str(),
     };
     match apply_pre_tool_hook_decision(
         call.name,
         call.args_str,
         base_approval_request,
         is_hard_approval,
-        pre_tool_outcome.decision,
-        pre_tool_outcome.reason,
+        stage.outcome.decision,
+        stage.outcome.reason,
     ) {
         PreToolHookResolution::Block { reason } => {
             context
@@ -414,7 +440,7 @@ async fn dispatch_pre_tool_hook_and_gate(
                 .await;
             PreparedCall::NextCall
         }
-        PreToolHookResolution::Execute => PreparedCall::Execute(args),
+        PreToolHookResolution::Execute => PreparedCall::Execute(stage.args),
         PreToolHookResolution::RequestApproval {
             request: approval_request,
             kind: approval_kind,
@@ -428,7 +454,7 @@ async fn dispatch_pre_tool_hook_and_gate(
             )
             .await
             {
-                GateStep::Execute => PreparedCall::Execute(args),
+                GateStep::Execute => PreparedCall::Execute(stage.args),
                 GateStep::NextCall => PreparedCall::NextCall,
                 GateStep::StopBatch => PreparedCall::StopBatch,
             }

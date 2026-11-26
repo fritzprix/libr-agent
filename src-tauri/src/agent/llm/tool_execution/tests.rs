@@ -291,6 +291,10 @@ mod hook_input_rewrite_tests {
         }
     }
 
+    /// #3005 (first acceptance criterion, gatekeeper G1.5): the rewrite from
+    /// `updatedInput` is the argument object the tool call runs with — same
+    /// production step `execute_tool_calls` uses, and the same JSON string
+    /// the approval and history paths carry.
     #[tokio::test]
     async fn rewritten_arguments_are_what_the_tool_receives() {
         let outcome = allow_rewrite(json!({"path": "rewritten.txt", "offset": 3}));
@@ -327,6 +331,9 @@ mod hook_input_rewrite_tests {
         );
     }
 
+    /// A rewrite that replaces the call with a destructive shell command is
+    /// refused by the same policy guard that refuses the model's own
+    /// `rm -rf /` — the hook cannot walk the command around it (G1.5).
     #[tokio::test]
     async fn rewrite_into_a_blocked_command_is_refused() {
         let outcome = allow_rewrite(json!({"command": "rm -rf /"}));
@@ -348,6 +355,8 @@ mod hook_input_rewrite_tests {
         );
     }
 
+    /// A rewrite that asks for root execution is refused for a host session
+    /// (G1.5), exactly like a model-originated root call.
     #[tokio::test]
     async fn rewrite_into_root_execution_is_refused() {
         let outcome = allow_rewrite(json!({"command": "id", "asRoot": true}));
@@ -369,6 +378,8 @@ mod hook_input_rewrite_tests {
         );
     }
 
+    /// A `Block` decision ignores any rewrite: the call never runs, and the
+    /// original arguments and guards stand.
     #[tokio::test]
     async fn block_decision_drops_the_rewrite() {
         let outcome = HookDispatchResult {
@@ -392,6 +403,9 @@ mod hook_input_rewrite_tests {
         assert!(matches!(rewrite, HookInputRewrite::Unchanged(_)));
     }
 
+    /// The approval card shows the rewritten arguments, not the model's:
+    /// the applied `args_json` is what the loop hands to the pending-approval
+    /// record and event (#3005, gatekeeper G1.5).
     #[tokio::test]
     async fn approval_request_shows_the_rewritten_arguments() {
         let outcome = allow_rewrite(json!({"command": "echo rewritten"}));
