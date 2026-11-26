@@ -104,6 +104,7 @@ fn manifest(source_url: &str, source_id: &str) -> PluginSourceManifest {
         mcp_approved: false,
         enabled: true,
         installed_commit: None,
+        inline_hooks: vec![],
     }
 }
 

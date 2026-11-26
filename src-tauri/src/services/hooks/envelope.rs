@@ -32,12 +32,34 @@ pub enum SessionStartSource {
     Compact,
 }
 
+/// Why a session ended, using the Claude Code `reason` values (#3005).
+///
+/// Claude Code sends `clear`, `resume`, `logout`, `prompt_input_exit`, and
+/// `other`. LibrAgent has no login session (`logout`), no interactive session
+/// switch (`resume`), and no prompt-input exit path of its own, so only two
+/// reasons fire today:
+///
+/// - `clear` — `/clear` wiped the transcript and context, the session stays.
+/// - `other` — the session row was deleted, either for one session or by
+///   "clear all sessions" / "reset all data". Claude Code has no per-session
+///   delete, so these map to `other`.
+///
+/// <https://code.claude.com/docs/en/hooks#sessionend>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionEndReason {
-    Delete,
-    ClearAll,
-    FactoryReset,
+    Clear,
+    Other,
+}
+
+impl SessionEndReason {
+    /// The value a `SessionEnd` matcher is compared against.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Clear => "clear",
+            Self::Other => "other",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -217,10 +239,27 @@ mod tests {
     }
 
     #[test]
+    fn session_end_reasons_use_the_claude_code_values() {
+        let mut params =
+            HookEnvelopeParams::new("s1", PathBuf::from("/tmp"), HookEvent::SessionEnd);
+        params.session_end_reason = Some(SessionEndReason::Clear);
+        let value = build_envelope_value(&params);
+        assert_eq!(value["reason"], "clear");
+
+        params.session_end_reason = Some(SessionEndReason::Other);
+        let value = build_envelope_value(&params);
+        assert_eq!(value["reason"], "other");
+
+        // The matcher value a plugin filters on is the same string.
+        assert_eq!(SessionEndReason::Clear.as_str(), "clear");
+        assert_eq!(SessionEndReason::Other.as_str(), "other");
+    }
+
+    #[test]
     fn all_stub_events_include_extra_fields() {
         let cases: Vec<(HookEvent, fn(&mut HookEnvelopeParams))> = vec![
             (HookEvent::SessionEnd, |p| {
-                p.session_end_reason = Some(SessionEndReason::Delete)
+                p.session_end_reason = Some(SessionEndReason::Other)
             }),
             (HookEvent::UserPromptSubmit, |p| {
                 p.prompt = Some("hello".into());

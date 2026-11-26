@@ -85,6 +85,9 @@ export interface HookPreviewEntry {
   event: string;
   matcher?: string;
   command: string;
+  /** Exec-form argument vector (#3005): everything that runs must be visible,
+   *  because args can carry -c/-e and arbitrary code. */
+  args?: string[];
   powershell?: string;
   scriptBody?: string;
   executionStatus: HookPreviewExecutionStatus;

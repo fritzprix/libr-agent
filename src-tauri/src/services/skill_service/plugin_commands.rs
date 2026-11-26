@@ -506,6 +506,7 @@ mod tests {
             created_at: 0,
             plugin: None,
             hook_files: vec![],
+            inline_hooks: vec![],
             mcp_servers: vec![],
             mcp_approved: false,
             enabled: true,

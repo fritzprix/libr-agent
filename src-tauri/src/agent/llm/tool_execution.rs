@@ -17,6 +17,10 @@ use tauri::AppHandle;
 use tokio::sync::{oneshot, RwLock};
 use tokio_util::sync::CancellationToken;
 
+/// Claude Code's `Notification` type string for a tool-approval prompt (#3005).
+/// A plugin groups these with `"matcher": "permission_prompt"`.
+pub(crate) const NOTIFICATION_PERMISSION_PROMPT: &str = "permission_prompt";
+
 struct ToolExecutionContext<'a> {
     session_repo: &'a Arc<dyn SessionRepository>,
     active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -236,13 +240,16 @@ impl ToolExecutionContext<'_> {
             );
         }
 
-        // Notification hook (#2925): run approved Notification handlers; ignore decisions.
+        // Notification hook (#2925, #3005): run approved Notification handlers;
+        // ignore decisions. The type string is the Claude Code one for a tool
+        // approval prompt (`permission_prompt`), so a plugin's
+        // `"matcher": "permission_prompt"` group matches.
         let mut notification_params = crate::services::hooks::HookEnvelopeParams::new(
             self.session_id,
             std::path::PathBuf::from("."),
             crate::services::hooks::HookEvent::Notification,
         );
-        notification_params.notification_type = Some("permission".to_string());
+        notification_params.notification_type = Some(NOTIFICATION_PERMISSION_PROMPT.to_string());
         notification_params.notification_message = Some(format!(
             "Tool {} requires approval: {}",
             tool_name,
@@ -250,7 +257,7 @@ impl ToolExecutionContext<'_> {
         ));
         let _ = crate::services::hooks::dispatch_hook_event(
             crate::services::hooks::HookEvent::Notification,
-            "permission",
+            NOTIFICATION_PERMISSION_PROMPT,
             &notification_params,
             self.session_id,
         )
@@ -633,41 +640,18 @@ pub async fn execute_tool_calls(
             }
         };
 
-        let policy_decision =
-            crate::agent::tool_approvals::evaluate_tool_execution_policy(tool_name, &args).await;
-
         let unsafe_enabled = context.current_unsafe_mode().await;
-        if let Some(blocked) = crate::agent::tool_approvals::blocked_execution_for_runtime(
-            &policy_decision,
+        let mut guards = pre_execution_guards(
+            &active_sessions,
+            &session_id,
             unsafe_enabled,
-        ) {
+            tool_name,
+            &args,
+        )
+        .await;
+        if let Some((refusal, reason)) = guards.refusal.take() {
             context
-                .continue_after_tool(
-                    tool_call_id,
-                    error_result(blocked.message.clone()),
-                    "policy-blocked tool execution",
-                )
-                .await;
-            index += 1;
-            continue;
-        }
-
-        // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
-        let root_refusal = {
-            let active = active_sessions.read().await;
-            crate::agent::tool_approvals::root_execution_refusal(
-                tool_name,
-                &args,
-                active.get(&session_id).map(|session| &session.metadata),
-            )
-        };
-        if let Some(refusal) = root_refusal {
-            context
-                .continue_after_tool(
-                    tool_call_id,
-                    tool_result_from_mcp_result(refusal),
-                    "root execution unavailable",
-                )
+                .continue_after_tool(tool_call_id, refusal, reason)
                 .await;
             index += 1;
             continue;
@@ -693,6 +677,35 @@ pub async fn execute_tool_calls(
         if let Some(ctx) = pre_tool_outcome.joined_additional_context() {
             crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
         }
+
+        // `updatedInput` (#3005): apply the hook's rewrite through the
+        // production step `apply_hook_input_rewrite` — object-only, Block
+        // drops it, and the rewritten arguments re-run every guard.
+        let rewrite = apply_hook_input_rewrite(
+            &active_sessions,
+            &session_id,
+            unsafe_enabled,
+            tool_name,
+            &pre_tool_outcome,
+            args_str,
+            guards,
+        )
+        .await;
+        let (args, guards, effective_args_json) = match rewrite {
+            HookInputRewrite::Unchanged(guards) => (args, guards, args_str.clone()),
+            HookInputRewrite::Refused((refusal, reason)) => {
+                context
+                    .continue_after_tool(tool_call_id, refusal, reason)
+                    .await;
+                index += 1;
+                continue;
+            }
+            HookInputRewrite::Applied(effective) => {
+                (effective.args, effective.guards, effective.args_json)
+            }
+        };
+        let args_str = effective_args_json.as_str();
+        let policy_decision = guards.policy_decision;
 
         let yolo_enabled = context.current_yolo_mode().await;
         let is_hard_approval = matches!(
@@ -852,6 +865,130 @@ pub async fn execute_tool_calls(
             }
         }
         index += 1;
+    }
+}
+
+/// Pre-execution guards for one argument object (#3005).
+struct PreExecutionGuards {
+    policy_decision: ToolExecutionPolicyDecision,
+    /// The result to return instead of executing, plus its error context.
+    refusal: Option<(ToolExecutionResult, &'static str)>,
+}
+
+/// Policy block and root-execution refusal for `args`.
+///
+/// A `PreToolUse` hook may rewrite the arguments (`updatedInput`), so the same
+/// guards run again on the rewritten arguments: a hook rewrite must not walk
+/// around the policy block or the host root refusal.
+async fn pre_execution_guards(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    unsafe_enabled: bool,
+    tool_name: &str,
+    args: &serde_json::Value,
+) -> PreExecutionGuards {
+    let policy_decision =
+        crate::agent::tool_approvals::evaluate_tool_execution_policy(tool_name, args).await;
+
+    // Build the refusal before moving `policy_decision`: the borrow inside
+    // `blocked_execution_for_runtime` ends with this statement.
+    let blocked_refusal = crate::agent::tool_approvals::blocked_execution_for_runtime(
+        &policy_decision,
+        unsafe_enabled,
+    )
+    .map(|blocked| error_result(blocked.message.clone()));
+    if let Some(refusal) = blocked_refusal {
+        return PreExecutionGuards {
+            policy_decision,
+            refusal: Some((refusal, "policy-blocked tool execution")),
+        };
+    }
+
+    // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
+    let root_refusal = {
+        let active = active_sessions.read().await;
+        crate::agent::tool_approvals::root_execution_refusal(
+            tool_name,
+            args,
+            active.get(session_id).map(|session| &session.metadata),
+        )
+    };
+    PreExecutionGuards {
+        policy_decision,
+        refusal: root_refusal.map(|refusal| {
+            (
+                tool_result_from_mcp_result(refusal),
+                "root execution unavailable",
+            )
+        }),
+    }
+}
+
+/// The effective call inputs after the `PreToolUse` `updatedInput` step
+/// (#3005): what the guards checked, what the approval card shows, and what
+/// the tool receives.
+struct EffectiveCall {
+    args: serde_json::Value,
+    args_json: String,
+    guards: PreExecutionGuards,
+}
+
+/// Outcome of the `updatedInput` step of the tool loop. Every non-`Applied`
+/// outcome carries the original guards back so the loop keeps them.
+enum HookInputRewrite {
+    /// No usable rewrite: the model's arguments and their guards stand.
+    Unchanged(PreExecutionGuards),
+    /// The rewrite was applied and passed the guards; these are the arguments
+    /// the tool receives and the approval card shows.
+    Applied(EffectiveCall),
+    /// The rewrite was applied but the re-run guards refused it: the tool
+    /// must not run, and this result is returned instead.
+    Refused((ToolExecutionResult, &'static str)),
+}
+
+/// One step of the tool loop (#3005, gatekeeper G1.4/G1.5): apply the hook's
+/// `updatedInput`. Only a JSON object may replace the argument object — a
+/// string, number, or array would make every key-reading guard see nothing,
+/// so anything else is ignored with a visible warning and the original
+/// arguments stand. A `Block` decision ignores any rewrite: the call never
+/// runs. A usable rewrite re-runs the same policy and root guards, so a hook
+/// cannot walk a command around them that the model could not run.
+async fn apply_hook_input_rewrite(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    unsafe_enabled: bool,
+    tool_name: &str,
+    outcome: &crate::services::hooks::HookDispatchResult,
+    original_args_json: &str,
+    original_guards: PreExecutionGuards,
+) -> HookInputRewrite {
+    let rewrite = outcome
+        .updated_input
+        .clone()
+        .filter(|_| outcome.decision != Some(crate::services::hooks::HookDecision::Block));
+    let Some(rewritten) = rewrite else {
+        return HookInputRewrite::Unchanged(original_guards);
+    };
+    // Non-object rewrites are already rejected at parse time in
+    // `hooks/output.rs`, so `updated_input` is object-or-none by contract
+    // (#3005 G2.3): no second check here.
+    let args_json =
+        serde_json::to_string(&rewritten).unwrap_or_else(|_| original_args_json.to_string());
+    let guards = pre_execution_guards(
+        active_sessions,
+        session_id,
+        unsafe_enabled,
+        tool_name,
+        &rewritten,
+    )
+    .await;
+    match guards.refusal {
+        Some(refusal) => HookInputRewrite::Refused(refusal),
+        None => HookInputRewrite::Applied(EffectiveCall {
+            args: rewritten,
+            args_json,
+            guards,
+        }),
     }
 }
 
@@ -1054,6 +1191,26 @@ mod pre_tool_hook_tests {
             }
         );
     }
+
+    /// The `Notification` type string a tool-approval prompt emits is the
+    /// Claude Code one, so a plugin can match it by name (#3005).
+    #[test]
+    fn permission_prompt_is_the_claude_code_notification_type() {
+        assert_eq!(
+            super::NOTIFICATION_PERMISSION_PROMPT,
+            "permission_prompt",
+            "the emitted type string must stay the Claude Code value"
+        );
+        // Matchers are regexes, so an anchored pattern reaches it too.
+        assert!(crate::services::hooks::matcher_matches(
+            Some("permission_prompt"),
+            super::NOTIFICATION_PERMISSION_PROMPT
+        ));
+        assert!(crate::services::hooks::matcher_matches(
+            Some("^permission_.*$"),
+            super::NOTIFICATION_PERMISSION_PROMPT
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -1156,5 +1313,208 @@ mod pending_approval_tests {
         };
         assert_eq!(request_id.as_deref(), Some("req-9"));
         assert_eq!(*approval_kind, PendingApprovalKind::Standard);
+    }
+}
+
+#[cfg(test)]
+mod hook_input_rewrite_tests {
+    use super::{
+        apply_hook_input_rewrite, build_pending_approval, EffectiveCall, HookInputRewrite,
+        PreExecutionGuards, ToolCallRef,
+    };
+    use crate::agent::events::AgentEvent;
+    use crate::agent::state::{AgentSession, PendingApprovalKind};
+    use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
+    use crate::services::hooks::{HookDecision, HookDispatchResult};
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::{oneshot, RwLock};
+
+    fn empty_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
+        Arc::new(RwLock::new(HashMap::new()))
+    }
+
+    fn allow_rewrite(updated: serde_json::Value) -> HookDispatchResult {
+        HookDispatchResult {
+            decision: Some(HookDecision::Allow),
+            updated_input: Some(updated),
+            ..HookDispatchResult::default()
+        }
+    }
+
+    fn original_guards() -> PreExecutionGuards {
+        PreExecutionGuards {
+            policy_decision: ToolExecutionPolicyDecision::Allow,
+            refusal: None,
+        }
+    }
+
+    /// #3005 (first acceptance criterion, gatekeeper G1.5): the rewrite from
+    /// `updatedInput` is the argument object the tool call runs with — same
+    /// production step `execute_tool_calls` uses, and the same JSON string
+    /// the approval and history paths carry.
+    #[tokio::test]
+    async fn rewritten_arguments_are_what_the_tool_receives() {
+        let outcome = allow_rewrite(json!({"path": "rewritten.txt", "offset": 3}));
+        let original = json!({"path": "original.txt"});
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite",
+            false,
+            "workspace__readFile",
+            &outcome,
+            &original.to_string(),
+            original_guards(),
+        )
+        .await;
+
+        let EffectiveCall {
+            args, args_json, ..
+        } = match rewrite {
+            HookInputRewrite::Applied(effective) => effective,
+            other => panic!(
+                "expected Applied, got a {} variant",
+                match other {
+                    HookInputRewrite::Applied(_) => "Applied",
+                    HookInputRewrite::Unchanged(_) => "Unchanged",
+                    HookInputRewrite::Refused(_) => "Refused",
+                }
+            ),
+        };
+        assert_eq!(args, json!({"path": "rewritten.txt", "offset": 3}));
+        assert_eq!(
+            args_json,
+            json!({"path": "rewritten.txt", "offset": 3}).to_string()
+        );
+    }
+
+    /// A rewrite that replaces the call with a destructive shell command is
+    /// refused by the same policy guard that refuses the model's own
+    /// `rm -rf /` — the hook cannot walk the command around it (G1.5).
+    #[tokio::test]
+    async fn rewrite_into_a_blocked_command_is_refused() {
+        let outcome = allow_rewrite(json!({"command": "rm -rf /"}));
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-block",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo safe"}"#,
+            original_guards(),
+        )
+        .await;
+
+        assert!(
+            matches!(rewrite, HookInputRewrite::Refused(_)),
+            "rewriting runShell into a blocked command must be refused"
+        );
+    }
+
+    /// A rewrite that asks for root execution is refused for a host session
+    /// (G1.5), exactly like a model-originated root call.
+    #[tokio::test]
+    async fn rewrite_into_root_execution_is_refused() {
+        let outcome = allow_rewrite(json!({"command": "id", "asRoot": true}));
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-root",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"id"}"#,
+            original_guards(),
+        )
+        .await;
+
+        assert!(
+            matches!(rewrite, HookInputRewrite::Refused(_)),
+            "rewriting into an asRoot call on a host session must be refused"
+        );
+    }
+
+    /// A `Block` decision ignores any rewrite: the call never runs, and the
+    /// original arguments and guards stand.
+    #[tokio::test]
+    async fn block_decision_drops_the_rewrite() {
+        let outcome = HookDispatchResult {
+            decision: Some(HookDecision::Block),
+            reason: Some("denied".to_string()),
+            updated_input: Some(json!({"path": "evil.txt"})),
+            ..HookDispatchResult::default()
+        };
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-blocked-decision",
+            false,
+            "workspace__readFile",
+            &outcome,
+            r#"{"path":"original.txt"}"#,
+            original_guards(),
+        )
+        .await;
+
+        assert!(matches!(rewrite, HookInputRewrite::Unchanged(_)));
+    }
+
+    /// The approval card shows the rewritten arguments, not the model's:
+    /// the applied `args_json` is what the loop hands to the pending-approval
+    /// record and event (#3005, gatekeeper G1.5).
+    #[tokio::test]
+    async fn approval_request_shows_the_rewritten_arguments() {
+        let outcome = allow_rewrite(json!({"command": "echo rewritten"}));
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-approval",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo original"}"#,
+            original_guards(),
+        )
+        .await;
+        let HookInputRewrite::Applied(effective) = rewrite else {
+            panic!("expected the rewrite to apply");
+        };
+
+        let request = ToolApprovalRequest {
+            description: "run the thing".to_string(),
+            input_preview: "preview".to_string(),
+            masked_arguments: None,
+        };
+        let (tx, _rx) = oneshot::channel();
+        let (stored, event) = build_pending_approval(
+            &ToolCallRef {
+                session_id: "sess-rewrite-approval",
+                tool_call_id: "tc-rewrite",
+                tool_name: "workspace__runShell",
+            },
+            &effective.args_json,
+            &request,
+            PendingApprovalKind::Standard,
+            tx,
+            None,
+        );
+
+        assert!(
+            stored.arguments.contains("rewritten"),
+            "{:?}",
+            stored.arguments
+        );
+        assert!(
+            !stored.arguments.contains("original"),
+            "{:?}",
+            stored.arguments
+        );
+        let AgentEvent::ToolExecutionRequiresApproval { arguments, .. } = &event else {
+            panic!("expected a ToolExecutionRequiresApproval event");
+        };
+        assert!(arguments.contains("rewritten"), "{arguments}");
+        assert!(!arguments.contains("original"), "{arguments}");
     }
 }

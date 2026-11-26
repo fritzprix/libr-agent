@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 use std::time::Duration;
 
-use super::schema::DEFAULT_HOOK_TIMEOUT_SECS;
+use super::schema::{default_hook_timeout_ms, HookEvent};
 
 /// Stored hook context for one session.
 struct HookEntry {
@@ -269,9 +269,11 @@ pub async fn await_hook_run(session_id: &str) {
     if has_context || !hook_run_pending(session_id) {
         return;
     }
-    // The run itself is bounded by each handler's timeout (default
-    // DEFAULT_HOOK_TIMEOUT_SECS); a small slack absorbs process teardown.
-    let cap = Duration::from_secs(DEFAULT_HOOK_TIMEOUT_SECS + 5);
+    // The run itself is bounded by each handler's timeout (the per-event
+    // default in `default_hook_timeout_ms`); a small slack absorbs process
+    // teardown.
+    let cap = Duration::from_millis(default_hook_timeout_ms(HookEvent::SessionStart))
+        + Duration::from_secs(5);
     if !wait_for_hook_run(session_id, cap).await {
         log::warn!("hook run for session {session_id} outlived the prompt wait cap");
     }

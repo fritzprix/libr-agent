@@ -1,5 +1,6 @@
 use super::schema::{
-    load_hooks_from_config_files, load_hooks_from_root, HookEvent, HookHandler, HooksConfig,
+    load_hooks_from_config_files, load_hooks_from_root, merge_hooks_inline, HookEvent, HookHandler,
+    HooksConfig,
 };
 use crate::session::get_session_manager;
 use log::warn;
@@ -48,6 +49,12 @@ pub struct PluginSourceManifest {
     /// discovery, which is what those installs could only have had.
     #[serde(default)]
     pub hook_files: Vec<String>,
+    /// Inline hooks objects the manifest declared instead of, or alongside,
+    /// hook config files (#3005). Stored as the raw declared JSON so dispatch
+    /// loads exactly the config the user approved, and so a plugin without a
+    /// `hooks/` directory can still ship hooks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inline_hooks: Vec<serde_json::Value>,
     /// MCP servers the plugin declared (`.mcp.json` + manifest
     /// `mcpServers`, #2924), stored as the raw declared entries so session
     /// load can resolve `${CLAUDE_PLUGIN_ROOT}` against this record's
@@ -563,7 +570,8 @@ pub fn save_source_in(
 
     // Validate hooks on disk: exactly the persisted file list when present
     // (manifest-declared files included, gatekeeper G2.2), else the default
-    // `hooks/` discovery for legacy stores.
+    // `hooks/` discovery for legacy stores. Inline manifest hooks (#3005) are
+    // validated from the persisted JSON, not from disk.
     let hooks_snapshot = if !manifest.hook_files.is_empty() {
         let files: Vec<PathBuf> = manifest
             .hook_files
@@ -577,6 +585,17 @@ pub fn save_source_in(
         })
     } else if root_dir.join("hooks").is_dir() {
         let cfg = load_hooks_from_root(&root_dir)?;
+        Some(HooksConfigSnapshot {
+            version: cfg.version,
+            validated: true,
+        })
+    } else if !manifest.inline_hooks.is_empty() {
+        let mut cfg = HooksConfig::empty();
+        merge_hooks_inline(
+            &mut cfg,
+            &manifest.inline_hooks,
+            &format!("{} manifest hooks", manifest.source_id),
+        )?;
         Some(HooksConfigSnapshot {
             version: cfg.version,
             validated: true,
@@ -603,20 +622,32 @@ pub fn save_source_in(
 }
 
 /// Load a source's hook config exactly the way it was validated and approved
-/// at install: the persisted `hook_files` when present, falling back to the
-/// default `hooks/` discovery for stores recorded before the list existed
-/// (gatekeeper G2.2 — one loader for install, dispatch and overview).
+/// at install: the persisted `hook_files` when present, plus the inline hooks
+/// the manifest declared (#3005), falling back to the default `hooks/`
+/// discovery for stores recorded before the file list existed (gatekeeper
+/// G2.2 — one loader for install, dispatch and overview).
 pub fn hook_config_for_record(record: &PluginSourceRecord) -> Result<HooksConfig, String> {
-    if record.manifest.hook_files.is_empty() {
-        return load_hooks_from_root(&record.root_dir);
-    }
-    let files: Vec<PathBuf> = record
-        .manifest
-        .hook_files
-        .iter()
-        .map(|rel| record.root_dir.join(rel))
-        .collect();
-    load_hooks_from_config_files(&files)
+    let mut cfg = if record.manifest.hook_files.is_empty() {
+        if record.root_dir.join("hooks").is_dir() {
+            load_hooks_from_root(&record.root_dir)?
+        } else {
+            HooksConfig::empty()
+        }
+    } else {
+        let files: Vec<PathBuf> = record
+            .manifest
+            .hook_files
+            .iter()
+            .map(|rel| record.root_dir.join(rel))
+            .collect();
+        load_hooks_from_config_files(&files)?
+    };
+    merge_hooks_inline(
+        &mut cfg,
+        &record.manifest.inline_hooks,
+        &format!("{} manifest hooks", record.manifest.source_id),
+    )?;
+    Ok(cfg)
 }
 
 pub fn delete_source(source_id: &str) -> Result<(), String> {
@@ -668,12 +699,18 @@ pub fn compute_handler_approval_hashes(
 }
 
 pub fn approval_hash_key(event: HookEvent, matcher: Option<&str>, handler: &HookHandler) -> String {
+    let args_suffix = handler
+        .args
+        .as_ref()
+        .map(|args| format!("|args:{}", args.join("\u{1}")))
+        .unwrap_or_default();
     let mut key = format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}|{}{}",
         event.as_str(),
         matcher.unwrap_or("*"),
         handler.command,
-        handler.powershell.as_deref().unwrap_or("")
+        handler.powershell.as_deref().unwrap_or(""),
+        args_suffix
     );
     // HTTP handlers carry no command, so the target URL distinguishes them
     // (#3009). Appended only when present, so keys of command handlers stay
@@ -726,6 +763,16 @@ pub fn approval_hash_value(plugin_root: &Path, handler: &HookHandler) -> String 
             hasher.update(var.as_bytes());
         }
     }
+    // Exec-form arguments are part of what runs, so they are part of what the
+    // user approved (#3005). Only appended when present, so a handler without
+    // `args` keeps the hash an earlier install recorded.
+    if let Some(args) = &handler.args {
+        hasher.update(b"\0args\0");
+        for arg in args {
+            hasher.update(arg.as_bytes());
+            hasher.update(b"\0");
+        }
+    }
     for (rel, file_hash) in collect_referenced_script_hashes(plugin_root, handler) {
         hasher.update(b"\0");
         hasher.update(rel.as_bytes());
@@ -745,42 +792,72 @@ fn collect_referenced_script_hashes(
         .unwrap_or_else(|_| plugin_root.to_path_buf());
     let root_str = plugin_root.to_string_lossy();
 
+    let expand = |text: &str| {
+        text.replace("${LIBRAGENT_PLUGIN_ROOT}", root_str.as_ref())
+            .replace("${CLAUDE_PLUGIN_ROOT}", root_str.as_ref())
+            .replace("${CURSOR_PLUGIN_ROOT}", root_str.as_ref())
+            .replace("$LIBRAGENT_PLUGIN_ROOT", root_str.as_ref())
+            .replace("$CLAUDE_PLUGIN_ROOT", root_str.as_ref())
+            .replace("$CURSOR_PLUGIN_ROOT", root_str.as_ref())
+    };
+    let record_candidate = |hashes: &mut BTreeMap<String, String>, tok: &str| {
+        let candidate = if Path::new(tok).is_absolute() {
+            PathBuf::from(tok)
+        } else {
+            plugin_root.join(tok)
+        };
+        if !candidate.is_file() {
+            return;
+        }
+        let Ok(canonical_file) = candidate.canonicalize() else {
+            return;
+        };
+        let Ok(rel) = canonical_file.strip_prefix(&canonical_root) else {
+            return;
+        };
+        if let Ok(file_hash) = compute_script_hash(&canonical_file) {
+            let rel_key = rel.to_string_lossy().replace('\\', "/");
+            hashes.insert(rel_key, file_hash);
+        }
+    };
+
     let mut texts = vec![handler.command.as_str()];
     if let Some(ps) = handler.powershell.as_deref() {
         texts.push(ps);
     }
 
     for text in texts {
-        let expanded = text
-            .replace("${LIBRAGENT_PLUGIN_ROOT}", root_str.as_ref())
-            .replace("${CLAUDE_PLUGIN_ROOT}", root_str.as_ref())
-            .replace("${CURSOR_PLUGIN_ROOT}", root_str.as_ref())
-            .replace("$LIBRAGENT_PLUGIN_ROOT", root_str.as_ref())
-            .replace("$CLAUDE_PLUGIN_ROOT", root_str.as_ref())
-            .replace("$CURSOR_PLUGIN_ROOT", root_str.as_ref());
-
+        let expanded = expand(text);
         for raw_tok in expanded.split_whitespace() {
             let tok = raw_tok.trim_matches(|c| matches!(c, '"' | '\'' | ';' | ','));
             if tok.is_empty() {
                 continue;
             }
-            let candidate = if Path::new(tok).is_absolute() {
-                PathBuf::from(tok)
-            } else {
-                plugin_root.join(tok)
-            };
-            if !candidate.is_file() {
+            record_candidate(&mut hashes, tok);
+        }
+    }
+
+    // Exec form (`args` present, #3005): each argument is passed verbatim to
+    // the spawned command, so a script path in argv runs exactly as written —
+    // hash each element whole. Without this, `"command": "node",
+    // "args": ["${CLAUDE_PLUGIN_ROOT}/x.js"]` would leave x.js unhashed and
+    // editable after approval (gatekeeper G1.1). A whole argument is not
+    // enough either: `"bash", ["-c", "./hooks/x.sh --fix"]` runs a script
+    // wrapped inside a command string, so the path tokens inside each
+    // argument are hashed too, exactly as for shell-form text (G2.2).
+    if let Some(args) = handler.args.as_deref() {
+        for arg in args {
+            let expanded = expand(arg);
+            if expanded.trim().is_empty() {
                 continue;
             }
-            let Ok(canonical_file) = candidate.canonicalize() else {
-                continue;
-            };
-            let Ok(rel) = canonical_file.strip_prefix(&canonical_root) else {
-                continue;
-            };
-            if let Ok(file_hash) = compute_script_hash(&canonical_file) {
-                let rel_key = rel.to_string_lossy().replace('\\', "/");
-                hashes.insert(rel_key, file_hash);
+            record_candidate(&mut hashes, expanded.trim());
+            for raw_tok in expanded.split_whitespace() {
+                let tok = raw_tok.trim_matches(|c| matches!(c, '"' | '\'' | ';' | ','));
+                if tok.is_empty() {
+                    continue;
+                }
+                record_candidate(&mut hashes, tok);
             }
         }
     }
@@ -914,6 +991,7 @@ mod tests {
                 approval_hashes: BTreeMap::new(),
                 created_at: 0,
                 hook_files: vec!["./hooks/hooks.json".to_string()],
+                inline_hooks: vec![],
                 plugin: Some(PluginMetadata {
                     name: "superpowers".to_string(),
                     version: Some("1.2.3".to_string()),
@@ -950,6 +1028,75 @@ mod tests {
 
         let cfg = hook_config_for_record(&loaded).unwrap();
         assert!(cfg.events.contains_key(&HookEvent::SessionStart));
+    }
+
+    /// Inline manifest hooks (#3005): a plugin with no `hooks/` directory still
+    /// dispatches the hooks its manifest declares, and the stored JSON is what
+    /// dispatch reads.
+    #[test]
+    fn inline_manifest_hooks_load_for_a_plugin_without_a_hooks_dir() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "2".repeat(16));
+        let root_dir = base.path().join(&source_id);
+        fs::create_dir_all(&root_dir).unwrap();
+        let manifest = PluginSourceManifest {
+            source_url: "test://local".to_string(),
+            source_id: source_id.clone(),
+            skill_names: vec![],
+            hooks: None,
+            hooks_approved: true,
+            approval_hashes: BTreeMap::new(),
+            created_at: 0,
+            plugin: None,
+            hook_files: vec![],
+            inline_hooks: vec![serde_json::json!({
+                "PreToolUse": [{ "matcher": "Bash", "command": "echo inline" }],
+                "SessionEnd": [{ "command": "echo bye" }]
+            })],
+            mcp_servers: Vec::new(),
+            mcp_approved: false,
+            enabled: true,
+            installed_commit: None,
+        };
+        let record = save_source_in(base.path(), manifest).unwrap();
+        assert!(
+            record.manifest.hooks.as_ref().is_some_and(|h| h.validated),
+            "inline hooks must be validated at save time"
+        );
+
+        let cfg = hook_config_for_record(&record).unwrap();
+        assert_eq!(
+            cfg.events[&HookEvent::PreToolUse][0].handlers[0].command,
+            "echo inline"
+        );
+        assert!(cfg.events.contains_key(&HookEvent::SessionEnd));
+    }
+
+    /// A record whose inline hooks are invalid fails the save instead of
+    /// installing a plugin that would dispatch nothing (#3005).
+    #[test]
+    fn invalid_inline_manifest_hooks_fail_the_save() {
+        let base = tempfile::tempdir().unwrap();
+        let source_id = format!("plugin-{}", "3".repeat(16));
+        fs::create_dir_all(base.path().join(&source_id)).unwrap();
+        let manifest = PluginSourceManifest {
+            source_url: "test://local".to_string(),
+            source_id,
+            skill_names: vec![],
+            hooks: None,
+            hooks_approved: true,
+            approval_hashes: BTreeMap::new(),
+            created_at: 0,
+            plugin: None,
+            hook_files: vec![],
+            inline_hooks: vec![serde_json::json!({ "PreToolUse": "not-an-array" })],
+            mcp_servers: Vec::new(),
+            mcp_approved: false,
+            enabled: true,
+            installed_commit: None,
+        };
+        let error = save_source_in(base.path(), manifest).unwrap_err();
+        assert!(error.contains("PreToolUse"), "{error}");
     }
 
     /// #2927: a disabled plugin keeps its files and approval record, but the
@@ -1030,6 +1177,7 @@ mod tests {
             created_at: 0,
             plugin: None,
             hook_files: vec![],
+            inline_hooks: vec![],
             mcp_servers: if approved {
                 vec![PluginMcpServerSnapshot {
                     name: "srv".to_string(),
@@ -1253,6 +1401,102 @@ mod tests {
                 .manifest
                 .enabled,
             "a missing trust file must not disable a plugin"
+        );
+    }
+
+    fn exec_handler(command: &str, args: Option<Vec<String>>) -> HookHandler {
+        HookHandler {
+            command: command.to_string(),
+            args,
+            powershell: None,
+            timeout_ms: crate::services::hooks::schema::default_hook_timeout_ms(
+                HookEvent::PreToolUse,
+            ),
+            r#async: false,
+            shell: None,
+            http: None,
+        }
+    }
+
+    /// #3005 gatekeeper G1.1: in exec form the script usually lives in
+    /// `args`, so its content must be part of the approval hash — editing it
+    /// after approval invalidates the handler.
+    #[test]
+    fn exec_form_args_script_edit_invalidates_the_approval_hash() {
+        let root = tempfile::tempdir().unwrap();
+        let script = root.path().join("x.js");
+        fs::write(&script, "console.log('v1')").unwrap();
+        let handler = exec_handler("node", Some(vec!["${CLAUDE_PLUGIN_ROOT}/x.js".to_string()]));
+
+        let before = approval_hash_value(root.path(), &handler);
+        fs::write(&script, "console.log('evil')").unwrap();
+        let after = approval_hash_value(root.path(), &handler);
+
+        assert_ne!(
+            before, after,
+            "editing a script referenced by exec-form args must change the approval hash"
+        );
+    }
+
+    /// #3005 gatekeeper G2.2: an exec-form argument can wrap a whole command
+    /// string (`bash -c "./hooks/x.sh --fix"`), where no argument is a file
+    /// path on its own. The path tokens inside each argument must be hashed
+    /// too, or x.sh can be edited after approval and still run.
+    #[test]
+    fn exec_form_command_string_path_tokens_are_hashed() {
+        let root = tempfile::tempdir().unwrap();
+        let hooks = root.path().join("hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        let script = hooks.join("x.sh");
+        fs::write(&script, "#!/bin/sh\necho v1").unwrap();
+        let handler = exec_handler(
+            "bash",
+            Some(vec!["-c".to_string(), "./hooks/x.sh --fix".to_string()]),
+        );
+
+        let before = approval_hash_value(root.path(), &handler);
+        fs::write(&script, "#!/bin/sh\necho evil").unwrap();
+        let after = approval_hash_value(root.path(), &handler);
+
+        assert_ne!(
+            before, after,
+            "editing a script wrapped inside an exec-form argument must change the approval hash"
+        );
+    }
+
+    /// #3005 gatekeeper G1.3: two handlers with the same event, matcher and
+    /// command but different `args` get different approval keys, while a
+    /// handler without `args` keeps the key earlier installs recorded.
+    #[test]
+    fn approval_hash_key_separates_handlers_by_args() {
+        let first = exec_handler("node", Some(vec!["a.js".to_string()]));
+        let second = exec_handler("node", Some(vec!["b.js".to_string()]));
+        let plain = exec_handler("node", None);
+
+        assert_ne!(
+            approval_hash_key(HookEvent::PreToolUse, None, &first),
+            approval_hash_key(HookEvent::PreToolUse, None, &second),
+            "same command with different argv must not share one approval key"
+        );
+
+        // Keys of handlers without `args` are unchanged: the digest input of
+        // the pre-#3005 formula.
+        let expected_legacy = format!(
+            "{:x}",
+            Sha256::digest(
+                format!(
+                    "{}|*|{}|{}",
+                    HookEvent::PreToolUse.as_str(),
+                    plain.command,
+                    ""
+                )
+                .as_bytes(),
+            )
+        );
+        assert_eq!(
+            approval_hash_key(HookEvent::PreToolUse, None, &plain),
+            expected_legacy,
+            "a handler without args must keep the key an earlier install recorded"
         );
     }
 }

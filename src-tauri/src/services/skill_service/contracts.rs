@@ -136,6 +136,11 @@ pub struct HookPreviewEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matcher: Option<String>,
     pub command: String,
+    /// Exec-form argument vector (#3005 gatekeeper G1.2). The approval dialog
+    /// must show everything that runs: `args` can carry `-c`/`-e` and
+    /// arbitrary code even when `command` is just `node` or `bash`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub powershell: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

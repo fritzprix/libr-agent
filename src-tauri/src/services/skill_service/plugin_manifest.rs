@@ -29,6 +29,58 @@ pub enum ComponentPaths {
     Many(Vec<String>),
 }
 
+/// The manifest `hooks` field (#3005). Claude Code accepts a path, an inline
+/// hooks object, or an array that mixes both:
+/// <https://code.claude.com/docs/en/plugins/manifest-reference>
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HooksDecl {
+    Single(String),
+    List(Vec<HookDeclEntry>),
+    /// One inline hooks object (`{ "PreToolUse": [ ... ] }`).
+    Object(serde_json::Value),
+}
+
+/// One entry of a `hooks` array: a config file path or an inline hooks object.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HookDeclEntry {
+    Path(String),
+    Inline(serde_json::Value),
+}
+
+impl HooksDecl {
+    /// The config file paths this field declares, in order.
+    pub fn paths(&self) -> Vec<&str> {
+        match self {
+            HooksDecl::Single(path) => vec![path.as_str()],
+            HooksDecl::Object(_) => Vec::new(),
+            HooksDecl::List(entries) => entries
+                .iter()
+                .filter_map(|entry| match entry {
+                    HookDeclEntry::Path(path) => Some(path.as_str()),
+                    HookDeclEntry::Inline(_) => None,
+                })
+                .collect(),
+        }
+    }
+
+    /// The inline hooks objects this field declares, in order.
+    pub fn inline_values(&self) -> Vec<&serde_json::Value> {
+        match self {
+            HooksDecl::Single(_) => Vec::new(),
+            HooksDecl::Object(value) => vec![value],
+            HooksDecl::List(entries) => entries
+                .iter()
+                .filter_map(|entry| match entry {
+                    HookDeclEntry::Inline(value) => Some(value),
+                    HookDeclEntry::Path(_) => None,
+                })
+                .collect(),
+        }
+    }
+}
+
 impl ComponentPaths {
     pub fn to_vec(&self) -> Vec<String> {
         match self {
@@ -172,8 +224,9 @@ pub struct PluginManifest {
     pub commands: Option<ComponentPaths>,
     #[serde(default)]
     pub agents: Option<ComponentPaths>,
+    /// Hook config: file paths, inline hooks objects, or a mix (#3005).
     #[serde(default)]
-    pub hooks: Option<ComponentPaths>,
+    pub hooks: Option<HooksDecl>,
     #[serde(default, rename = "mcpServers")]
     pub mcp_servers: Option<McpServersDecl>,
     /// `userConfig`: values the plugin needs from the user (#2926). Empty
@@ -260,7 +313,6 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
         ("skills", &manifest.skills),
         ("commands", &manifest.commands),
         ("agents", &manifest.agents),
-        ("hooks", &manifest.hooks),
     ];
     for (field, paths) in fields {
         if let Some(paths) = paths {
@@ -268,6 +320,12 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
                 validate_component_path(&raw)
                     .map_err(|error| format!("plugin manifest {field}: {error}"))?;
             }
+        }
+    }
+    if let Some(hooks) = &manifest.hooks {
+        for raw in hooks.paths() {
+            validate_component_path(raw)
+                .map_err(|error| format!("plugin manifest hooks: {error}"))?;
         }
     }
     if let Some(McpServersDecl::Paths(paths)) = &manifest.mcp_servers {
@@ -285,7 +343,19 @@ pub fn validate_manifest_paths(manifest: &PluginManifest) -> Result<(), String> 
 /// auto-loaded per the spec); a manifest entry that duplicates a default,
 /// or a missing file, is a preview-time error in the caller.
 pub fn hook_config_paths(manifest: Option<&PluginManifest>) -> Option<Vec<String>> {
-    manifest.and_then(|m| m.hooks.as_ref()).map(|p| p.to_vec())
+    manifest
+        .and_then(|m| m.hooks.as_ref())
+        .map(|hooks| hooks.paths().into_iter().map(str::to_string).collect())
+        .filter(|paths: &Vec<String>| !paths.is_empty())
+}
+
+/// Inline hooks objects the manifest declares (#3005). Each value has the same
+/// shape as a hook config file's `"hooks"` member.
+pub fn hook_inline_values(manifest: Option<&PluginManifest>) -> Vec<serde_json::Value> {
+    manifest
+        .and_then(|m| m.hooks.as_ref())
+        .map(|hooks| hooks.inline_values().into_iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// Validate the `userConfig` map (#2926): every key must map to a usable
@@ -437,7 +507,66 @@ mod tests {
         assert_eq!(manifest.author.as_ref().unwrap().display_name(), "Jane Doe");
         assert!(manifest.version.is_none());
         assert!(hook_config_paths(Some(&manifest)).is_none());
+        assert!(hook_inline_values(Some(&manifest)).is_empty());
         validate_manifest_paths(&manifest).unwrap();
+    }
+
+    /// `hooks` may be an inline object instead of a path (#3005).
+    #[test]
+    fn inline_hooks_object_is_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{
+              "name": "p",
+              "hooks": { "PreToolUse": [ { "matcher": "Bash", "command": "echo hi" } ] }
+            }"#,
+        );
+        let manifest = load_plugin_manifest(dir.path()).unwrap().expect("manifest");
+        assert_eq!(hook_config_paths(Some(&manifest)), None);
+        let inline = hook_inline_values(Some(&manifest));
+        assert_eq!(inline.len(), 1);
+        assert!(inline[0].get("PreToolUse").is_some());
+        validate_manifest_paths(&manifest).unwrap();
+    }
+
+    /// A `hooks` array may mix file paths and inline objects (#3005).
+    #[test]
+    fn hooks_array_mixes_paths_and_inline_objects() {
+        let dir = tempfile::tempdir().unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{
+              "name": "p",
+              "hooks": [
+                "./hooks/custom.json",
+                { "SessionEnd": [ { "command": "echo bye" } ] }
+              ]
+            }"#,
+        );
+        let manifest = load_plugin_manifest(dir.path()).unwrap().expect("manifest");
+        assert_eq!(
+            hook_config_paths(Some(&manifest)),
+            Some(vec!["./hooks/custom.json".to_string()])
+        );
+        let inline = hook_inline_values(Some(&manifest));
+        assert_eq!(inline.len(), 1);
+        assert!(inline[0].get("SessionEnd").is_some());
+        validate_manifest_paths(&manifest).unwrap();
+    }
+
+    /// A path outside the plugin root is still rejected when it sits in a mixed
+    /// `hooks` array (#3005 keeps the #2921 path rule).
+    #[test]
+    fn manifest_hooks_path_outside_root_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        write_manifest(
+            dir.path(),
+            r#"{ "name": "p", "hooks": ["./hooks/a.json", "./../escape.json"] }"#,
+        );
+        let manifest = load_plugin_manifest(dir.path()).unwrap().expect("manifest");
+        let error = validate_manifest_paths(&manifest).unwrap_err();
+        assert!(error.contains("inside the plugin root"), "{error}");
     }
 
     #[test]
