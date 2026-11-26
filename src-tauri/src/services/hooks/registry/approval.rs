@@ -75,6 +75,15 @@ pub fn approval_hash_key(event: HookEvent, matcher: Option<&str>, handler: &Hook
             key.push_str(name);
         }
     }
+    // Two handlers that differ only by `if` are separate approvals
+    // (`if` is part of `approval_hash_value`, so sharing one key would let
+    // the later insert overwrite the earlier one and the other handler would
+    // then be skipped as "unapproved or modified"). Appended only when
+    // present, so keys of handlers without `if` stay stable (#3003 G1.1).
+    if let Some(cond) = &handler.r#if {
+        key.push_str("|if=");
+        key.push_str(cond);
+    }
     let digest = Sha256::digest(key.as_bytes());
     format!("{:x}", digest)
 }
@@ -115,6 +124,10 @@ pub fn approval_hash_value(plugin_root: &Path, handler: &HookHandler) -> String 
             hasher.update(arg.as_bytes());
             hasher.update(b"\0");
         }
+    }
+    if let Some(cond) = &handler.r#if {
+        hasher.update(b"\0if=");
+        hasher.update(cond.as_bytes());
     }
     for (rel, file_hash) in collect_referenced_script_hashes(plugin_root, handler) {
         hasher.update(b"\0");

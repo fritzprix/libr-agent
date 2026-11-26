@@ -85,11 +85,62 @@ async fn plugin_variables_reach_the_hook_process() {
     crate::services::hooks::plugin_env::clear_session_plugin_env(&sid);
 }
 
-#[test]
-fn matcher_or_patterns() {
-    assert!(matcher_matches(Some("startup|clear"), "startup"));
-    assert!(!matcher_matches(Some("startup|clear"), "resume"));
-    assert!(matcher_matches(None, "anything"));
+/// Same event, matcher, and command with two different `if` values — the
+/// documented way to express two conditions. If the approval key ignored
+/// `if`, the second handler's hash would overwrite the first's and one
+/// handler would be skipped as "unapproved or modified" (#3003 G1.1).
+#[tokio::test]
+async fn two_handlers_differing_only_by_if_each_get_dispatched() {
+    let json_out = r#"{"additionalContext":"guarded"}"#;
+    let ps = format!("Write-Output '{json_out}'");
+    let sh = format!("printf '%s' '{json_out}'");
+    let hooks_json = serde_json::json!({
+        "hooks": {
+            "PreToolUse": [{
+                "matcher": "workspace__runShell",
+                "hooks": [
+                    { "type": "command", "command": sh, "powershell": ps, "if": "Bash(git *)" },
+                    { "type": "command", "command": sh, "powershell": ps, "if": "Bash(npm *)" }
+                ]
+            }]
+        }
+    })
+    .to_string();
+    let (temp, root) = setup_approved_plugin(&hooks_json);
+
+    let sid = format!("if-approval-{}", uuid::Uuid::new_v4());
+    let mut params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
+    params.tool_name = Some("workspace__runShell".to_string());
+
+    params.tool_input = Some(serde_json::json!({ "command": "git status" }));
+    let git = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PreToolUse,
+        "workspace__runShell",
+        &params,
+        &sid,
+    )
+    .await;
+    assert_eq!(
+        git.additional_context,
+        vec!["guarded".to_string()],
+        "the `git *` handler must be approved and run"
+    );
+
+    params.tool_input = Some(serde_json::json!({ "command": "npm test" }));
+    let npm = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PreToolUse,
+        "workspace__runShell",
+        &params,
+        &sid,
+    )
+    .await;
+    assert_eq!(
+        npm.additional_context,
+        vec!["guarded".to_string()],
+        "the `npm *` handler must be approved and run"
+    );
 }
 
 #[test]

@@ -46,6 +46,7 @@ pub use outbox::{install_outbox, SKILL_OUTBOX_RELATIVE_DIR};
 pub use plugin_agents::{
     declared_plugin_agent_model, is_plugin_agent_id, parse_plugin_agent_id, plugin_agent_id,
     plugin_model_to_complexity, plugin_source_of_config, reject_plugin_agent_mutation,
+    resolve_plugin_source_namespace, resolve_plugin_source_namespace_in,
     resolve_session_plugin_assistant, session_plugin_agent_infos, session_store_source_ids,
     PluginAgentListInfo,
 };
