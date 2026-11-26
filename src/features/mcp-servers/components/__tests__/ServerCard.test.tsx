@@ -1,22 +1,84 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+} from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { ServerCard } from '../ServerCard';
+import { __resetAuthFlowsForTest } from '../../authFlowStore';
+import {
+  cancelOAuthFlow,
+  hasOAuthToken,
+  isOAuthFlowActive,
+  revokeOAuthToken,
+  startOAuthFlow,
+} from '@/lib/backend';
 import type { MCPServerEntity } from '@/models/chat';
 import type { ReactElement } from 'react';
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (_key: string, defaultValue: string | Record<string, unknown>) => {
-      if (typeof defaultValue === 'string') return defaultValue;
-      return String(defaultValue?.defaultValue ?? _key);
-    },
-  }),
-}));
+vi.mock('react-i18next', async () => {
+  // Minimal i18next stand-in backed by the REAL en locale file, so tests
+  // exercise production locale strings and {{interpolation}} (#3040 G2.1).
+  const en = (await import('@/locales/en/common.json')).default;
+  const lookup = (key: string): unknown =>
+    key
+      .split('.')
+      .reduce<unknown>(
+        (obj, part) =>
+          obj && typeof obj === 'object'
+            ? (obj as Record<string, unknown>)[part]
+            : undefined,
+        en,
+      );
+  return {
+    useTranslation: () => ({
+      t: (key: string, second?: unknown) => {
+        const raw = lookup(key);
+        const opts =
+          typeof second === 'object' && second !== null
+            ? (second as Record<string, unknown>)
+            : {};
+        const fallback =
+          typeof second === 'string'
+            ? second
+            : typeof opts.defaultValue === 'string'
+              ? opts.defaultValue
+              : key;
+        const template = typeof raw === 'string' ? raw : fallback;
+        return template.replace(
+          /\{\{\s*(\w+)\s*\}\}/g,
+          (_match, variable: string) => String(opts[variable] ?? ''),
+        );
+      },
+    }),
+  };
+});
 
 vi.mock('@/lib/backend/assistants', () => ({
   listAssistants: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('@/lib/backend', () => ({
+  hasOAuthToken: vi.fn().mockResolvedValue(false),
+  startOAuthFlow: vi.fn(
+    () => new Promise(() => {
+      /* leave authorizing until cancelled */
+    }),
+  ),
+  cancelOAuthFlow: vi.fn().mockResolvedValue('cancelled'),
+  revokeOAuthToken: vi.fn().mockResolvedValue('revoked'),
+  isOAuthFlowActive: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('@/lib/backend/core', () => ({
+  safeInvoke: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 function renderCard(ui: ReactElement) {
@@ -403,6 +465,275 @@ describe('ServerCard', () => {
         b.textContent?.trim(),
       );
       expect(buttonsInActionRow).toEqual(['Tools', 'Edit', 'Delete']);
+    });
+  });
+
+  // #3040: while Authorize is in progress the card shows Cancel.
+  describe('OAuth authorize cancel (#3040)', () => {
+    const oauthServer: MCPServerEntity = {
+      ...baseServer,
+      authentication: {
+        type: 'oauth2.1',
+        authorizationEndpoint: 'https://auth.example.com/authorize',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client',
+        redirectUri: 'http://localhost:14207/callback',
+        usePKCE: true,
+      },
+    };
+
+    const renderOauthCard = () =>
+      renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+    beforeEach(() => {
+      __resetAuthFlowsForTest();
+      vi.clearAllMocks();
+      vi.mocked(hasOAuthToken).mockResolvedValue(false);
+      vi.mocked(isOAuthFlowActive).mockResolvedValue(false);
+      vi.mocked(cancelOAuthFlow).mockResolvedValue('cancelled');
+      vi.mocked(revokeOAuthToken).mockResolvedValue('revoked');
+      vi.mocked(startOAuthFlow).mockImplementation(
+        () =>
+          new Promise<string>(() => {
+            /* stay pending until the test settles it */
+          }),
+      );
+    });
+
+    it('shows Cancel while authorization is in progress and invokes cancel', async () => {
+      renderOauthCard();
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+      expect(startOAuthFlow).toHaveBeenCalledWith(
+        oauthServer.id,
+        oauthServer.authentication,
+      );
+
+      fireEvent.click(screen.getByTestId('oauth-cancel'));
+      expect(cancelOAuthFlow).toHaveBeenCalledWith(oauthServer.id);
+    });
+
+    it('interpolates the cause into the real authCancelFailed locale string (#3040 G2.1)', async () => {
+      vi.mocked(cancelOAuthFlow).mockRejectedValueOnce(
+        new Error('no matching OAuth authorization is in progress'),
+      );
+      renderOauthCard();
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('oauth-cancel'));
+
+      const toast = await import('sonner');
+      await vi.waitFor(() =>
+        expect(toast.toast.error).toHaveBeenCalledWith(
+          'Could not cancel: no matching OAuth authorization is in progress',
+        ),
+      );
+      expect(toast.toast.error).not.toHaveBeenCalledWith(
+        expect.stringContaining('{{error}}'),
+      );
+    });
+
+    it('after a refused cancel with no token, reports failure — never cancelled (#3068 G2.1)', async () => {
+      // Mount sync sees the backend holding the flow; the poll after the
+      // refused cancel reports it gone and the token re-read finds none.
+      vi.mocked(isOAuthFlowActive)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValue(false);
+      renderOauthCard();
+
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      vi.mocked(cancelOAuthFlow).mockRejectedValueOnce(
+        new Error('no authorization in progress'),
+      );
+      fireEvent.click(screen.getByTestId('oauth-cancel'));
+
+      expect(await screen.findByTestId('oauth-authorize')).toBeInTheDocument();
+      const notice = await screen.findByTestId('oauth-result');
+      expect(notice).toHaveTextContent(
+        'Authorization failed: the authorization ended without storing a token',
+      );
+      expect(notice).not.toHaveTextContent('cancelled');
+    });
+
+    it('after a refused cancel that ended in success, shows the connected state (#3068 G2.1)', async () => {
+      // The cancel is refused because the token is being stored; the flow
+      // then ends with success. The poll must re-read the token and land
+      // the card on the connected (Disconnect) state, not on a notice.
+      vi.mocked(isOAuthFlowActive)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValue(false);
+      // First call is the mount sync (no token yet); later calls are the
+      // post-flow re-read, which finds the stored token.
+      vi.mocked(hasOAuthToken)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValue(true);
+      renderOauthCard();
+
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      vi.mocked(cancelOAuthFlow).mockRejectedValueOnce(
+        new Error('OAuth flow is completing; token is being stored'),
+      );
+      fireEvent.click(screen.getByTestId('oauth-cancel'));
+
+      expect(
+        await screen.findByTestId('oauth-disconnect'),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-result')).not.toBeInTheDocument();
+      const toast = await import('sonner');
+      expect(toast.toast.success).toHaveBeenCalledWith(
+        'Successfully authenticated!',
+      );
+    });
+
+    it('shows the cancelled notice when a cancel succeeds on a remounted card (#3068 G2.1)', async () => {
+      // No local store record: the card only knows the cancel succeeded
+      // because the cancel RPC resolved — "cancelled" is then truthful.
+      vi.mocked(isOAuthFlowActive).mockResolvedValueOnce(true);
+      renderOauthCard();
+
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('oauth-cancel'));
+
+      expect(await screen.findByTestId('oauth-authorize')).toBeInTheDocument();
+      expect(await screen.findByTestId('oauth-result')).toHaveTextContent(
+        'Authorization cancelled.',
+      );
+    });
+
+    it('lets a card remounted onto a running flow settle into success (#3040 G2.2)', async () => {
+      let resolveFlow: (value: string) => void = () => {};
+      vi.mocked(startOAuthFlow).mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveFlow = resolve;
+          }),
+      );
+
+      const first = renderOauthCard();
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      // Navigate away while the flow is still running.
+      first.unmount();
+
+      // A fresh card shows Cancel (flow from the store, not from its own state)
+      // and learns about success without any user action.
+      renderOauthCard();
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-authorize')).not.toBeInTheDocument();
+
+      await act(async () => resolveFlow('authorized'));
+
+      expect(await screen.findByTestId('oauth-disconnect')).toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-cancel')).not.toBeInTheDocument();
+      const toast = await import('sonner');
+      expect(toast.toast.success).toHaveBeenCalledWith(
+        'Successfully authenticated!',
+      );
+    });
+
+    it('lets a card remounted onto a running flow recover after failure (#3040 G2.2)', async () => {
+      let rejectFlow: (reason: Error) => void = () => {};
+      vi.mocked(startOAuthFlow).mockImplementationOnce(
+        () =>
+          new Promise<string>((_resolve, reject) => {
+            rejectFlow = reject;
+          }),
+      );
+
+      const first = renderOauthCard();
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+      first.unmount();
+
+      renderOauthCard();
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      await act(async () =>
+        rejectFlow(new Error('AUTH_TIMEOUT: OAuth authorization timed out')),
+      );
+
+      // Authorize is available again and the timed-out cause is on the card.
+      const authorize = await screen.findByTestId('oauth-authorize');
+      expect(authorize).toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-cancel')).not.toBeInTheDocument();
+      expect(await screen.findByTestId('oauth-result')).toHaveTextContent(
+        'timed out',
+      );
+    });
+
+    it('shows Cancel when the backend already holds the flow (#3040 G1.5)', async () => {
+      const { isOAuthFlowActive } = await import('@/lib/backend');
+      vi.mocked(isOAuthFlowActive).mockResolvedValueOnce(true);
+
+      renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-authorize')).not.toBeInTheDocument();
+    });
+
+    it('reports a timed-out flow as timed out, not cancelled (#3040 G1.6)', async () => {
+      const { startOAuthFlow } = await import('@/lib/backend');
+      vi.mocked(startOAuthFlow).mockRejectedValueOnce(
+        new Error('AUTH_TIMEOUT: OAuth authorization timed out after 5 minutes'),
+      );
+
+      renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      const notice = await screen.findByTestId('oauth-result');
+      expect(notice).toHaveTextContent('timed out');
+      expect(notice).not.toHaveTextContent('cancelled');
+    });
+
+    it('keeps a provider denial a provider error even when its text says cancelled (#3040 G1.6)', async () => {
+      const { startOAuthFlow } = await import('@/lib/backend');
+      vi.mocked(startOAuthFlow).mockRejectedValueOnce(
+        new Error(
+          'OAuth provider error (access_denied): The user cancelled the request',
+        ),
+      );
+
+      renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      const notice = await screen.findByTestId('oauth-result');
+      expect(notice).toHaveTextContent(
+        'OAuth provider error (access_denied): The user cancelled the request',
+      );
     });
   });
 });

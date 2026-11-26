@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { safeInvoke } from './core';
 import {
   callTool,
+  cancelOAuthFlow,
   hasOAuthToken,
   getOAuthToken,
   revokeOAuthToken,
@@ -121,6 +122,19 @@ describe('mcp-server backend API', () => {
         serverId: 'server-123',
       });
       expect(result).toBe('Token revoked');
+    });
+  });
+
+  describe('cancelOAuthFlow', () => {
+    it('should call cancel_oauth_flow with serverId', async () => {
+      vi.mocked(safeInvoke).mockResolvedValueOnce('OAuth authorization cancelled');
+
+      const result = await cancelOAuthFlow('server-123');
+
+      expect(safeInvoke).toHaveBeenCalledWith('cancel_oauth_flow', {
+        serverId: 'server-123',
+      });
+      expect(result).toContain('cancelled');
     });
   });
 

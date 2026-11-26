@@ -1103,7 +1103,11 @@
       "toggled": "Erweiterung {{status}}",
       "toggleFailed": "Fehler beim Umschalten der Erweiterung: {{error}}",
       "activated": "aktiviert",
-      "deactivated": "deaktiviert"
+      "deactivated": "deaktiviert",
+      "authCancelled": "Autorisierung abgebrochen.",
+      "authTimedOut": "Zeitüberschreitung bei der Autorisierung. Versuchen Sie es erneut.",
+      "authCancelFailed": "Abbrechen fehlgeschlagen: {{error}}",
+      "authEndedWithoutToken": "die Autorisierung endete ohne Speicherung eines Tokens"
     },
     "toolsModal": {
       "description": "Tool-Namen und Beschreibungen, wie vom MCP-Server zurückgegeben.",
@@ -1114,7 +1118,8 @@
       "inputSchema": "Eingabeschema",
       "toolsCount_one": "({{count}} Tool)",
       "toolsCount_other": "({{count}} Tools)"
-    }
+    },
+    "cancelAuthorize": "Abbrechen"
   },
   "playbook": {
     "title": "Playbooks",

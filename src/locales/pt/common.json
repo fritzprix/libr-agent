@@ -1103,7 +1103,11 @@
       "toggled": "Extensão {{status}}",
       "toggleFailed": "Falha ao alternar extensão: {{error}}",
       "activated": "ativada",
-      "deactivated": "desativada"
+      "deactivated": "desativada",
+      "authCancelled": "Autorização cancelada.",
+      "authTimedOut": "Tempo de autorização esgotado. Tente novamente.",
+      "authCancelFailed": "Não foi possível cancelar: {{error}}",
+      "authEndedWithoutToken": "a autorização terminou sem armazenar um token"
     },
     "toolsModal": {
       "description": "Nomes e descrições das ferramentas conforme retornados pelo servidor MCP.",
@@ -1114,7 +1118,8 @@
       "inputSchema": "Esquema de entrada",
       "toolsCount_one": "({{count}} ferramenta)",
       "toolsCount_other": "({{count}} ferramentas)"
-    }
+    },
+    "cancelAuthorize": "Cancelar"
   },
   "playbook": {
     "title": "Roteiros (Playbooks)",

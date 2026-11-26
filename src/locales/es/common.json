@@ -1103,7 +1103,11 @@
       "toggled": "Extensión {{status}}",
       "toggleFailed": "Error al alternar la extensión: {{error}}",
       "activated": "activada",
-      "deactivated": "desactivada"
+      "deactivated": "desactivada",
+      "authCancelled": "Autorización cancelada.",
+      "authTimedOut": "Se agotó el tiempo de autorización. Inténtalo de nuevo.",
+      "authCancelFailed": "No se pudo cancelar: {{error}}",
+      "authEndedWithoutToken": "la autorización terminó sin guardar un token"
     },
     "toolsModal": {
       "description": "Nombres y descripciones de herramientas tal como los devuelve el servidor MCP.",
@@ -1114,7 +1118,8 @@
       "inputSchema": "Esquema de entrada",
       "toolsCount_one": "({{count}} herramienta)",
       "toolsCount_other": "({{count}} herramientas)"
-    }
+    },
+    "cancelAuthorize": "Cancelar"
   },
   "playbook": {
     "title": "Guías (Playbooks)",

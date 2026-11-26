@@ -7,13 +7,150 @@ use oauth2::{
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 use crate::mcp::types::OAuthConfig;
 
 pub const DEFAULT_CALLBACK_PORT: u16 = 14207;
 pub const DEFAULT_CALLBACK_URL: &str = "http://localhost:14207/callback";
+/// How long the loopback listener waits for a provider callback (#3040).
+pub const OAUTH_CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Stable machine-readable error prefixes (#3040 G1.6): the UI classifies
+/// cancelled / timed-out / provider-error outcomes by these prefixes and never
+/// by substring-matching human-readable text (a provider description such as
+/// "The user cancelled the request" must not masquerade as a local cancel).
+pub const AUTH_ERROR_PREFIX_CANCELLED: &str = "AUTH_CANCELLED:";
+pub const AUTH_ERROR_PREFIX_TIMEOUT: &str = "AUTH_TIMEOUT:";
+
+const ERR_CANCELLED: &str = "AUTH_CANCELLED: OAuth authorization cancelled";
+const ERR_IN_PROGRESS: &str = "An OAuth authorization is already in progress";
+
+/// One in-flight loopback authorization at a time (shared callback port).
+struct ActiveOAuthFlow {
+    server_id: String,
+    cancel: CancellationToken,
+    /// Set under the slot lock right before the token store begins. While
+    /// true, `cancel_oauth_flow` is refused: a keychain write already started
+    /// (it can block on an unlock prompt) cannot be undone by cancel (#3040
+    /// G2.4).
+    storing: bool,
+}
+
+static ACTIVE_OAUTH_FLOW: OnceLock<Mutex<Option<ActiveOAuthFlow>>> = OnceLock::new();
+
+fn active_oauth_flow() -> &'static Mutex<Option<ActiveOAuthFlow>> {
+    ACTIVE_OAUTH_FLOW.get_or_init(|| Mutex::new(None))
+}
+
+/// Begin a single-flight OAuth wait. Fails if another flow already holds the port.
+pub async fn begin_oauth_flow(server_id: &str) -> Result<CancellationToken, String> {
+    let mut slot = active_oauth_flow().lock().await;
+    if slot.is_some() {
+        return Err(ERR_IN_PROGRESS.to_string());
+    }
+    let cancel = CancellationToken::new();
+    *slot = Some(ActiveOAuthFlow {
+        server_id: server_id.to_string(),
+        cancel: cancel.clone(),
+        storing: false,
+    });
+    Ok(cancel)
+}
+
+/// Signal cancel for the in-progress flow for `server_id` (#3040).
+/// Refused once the token store has begun — see `ActiveOAuthFlow::storing`
+/// (#3040 G2.4).
+pub async fn cancel_oauth_flow(server_id: &str) -> Result<(), String> {
+    let mut slot = active_oauth_flow().lock().await;
+    match slot.as_mut() {
+        Some(flow) if flow.server_id == server_id => {
+            if flow.storing {
+                Err("The OAuth token is being stored; this authorization can no longer be cancelled".to_string())
+            } else {
+                flow.cancel.cancel();
+                Ok(())
+            }
+        }
+        Some(_) => Err("No matching OAuth authorization is in progress".to_string()),
+        None => Err("No OAuth authorization is in progress".to_string()),
+    }
+}
+
+/// Drop the single-flight slot when the wait ends (success, fail, or cancel).
+pub async fn end_oauth_flow(server_id: &str) {
+    let mut slot = active_oauth_flow().lock().await;
+    if slot
+        .as_ref()
+        .is_some_and(|flow| flow.server_id == server_id)
+    {
+        *slot = None;
+    }
+}
+
+/// True while a single-flight OAuth flow is held for `server_id` (#3040 G1.5:
+/// the UI derives the "in progress" card state from the flow owner, so a
+/// remounted card shows Cancel for a flow it did not start).
+pub async fn is_oauth_flow_active(server_id: &str) -> bool {
+    active_oauth_flow()
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|flow| flow.server_id == server_id)
+}
+
+/// Complete an exchanged OAuth flow: a cancel that lands during the code
+/// exchange must still prevent the token from being stored (#3040 G1.4), and
+/// once the store has begun the flow can no longer be cancelled (#3040 G2.4).
+/// The cancel check and the `storing` state change happen under the flow-slot
+/// lock, so a concurrent `cancel_oauth_flow` is either observed here or
+/// refused there — it can never slip in mid-store. `store_token` is the real
+/// keychain write in production and a spy in tests.
+pub async fn finish_oauth_flow<F, Fut>(
+    server_id: &str,
+    access_token: String,
+    store_token: F,
+) -> Result<(), String>
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let mut slot = active_oauth_flow().lock().await;
+    match slot.as_mut() {
+        Some(flow) if flow.server_id == server_id => {
+            if flow.cancel.is_cancelled() {
+                return Err(ERR_CANCELLED.to_string());
+            }
+            flow.storing = true;
+        }
+        // No live slot for this server: refuse instead of storing — the
+        // plain-cancel fallback would bypass the storing guard above
+        // (#3040 G3.3).
+        _ => {
+            return Err(
+                "No active OAuth authorization for this server; refusing to store the token"
+                    .to_string(),
+            );
+        }
+    }
+    drop(slot);
+    store_token(server_id.to_string(), access_token).await
+}
+
+/// Format a provider `error` / `error_description` callback for the UI.
+pub(crate) fn provider_callback_error(error: &str, description: Option<&str>) -> String {
+    match description.filter(|d| !d.is_empty()) {
+        Some(desc) if error == "access_denied" => {
+            format!("OAuth provider denied access: {desc}")
+        }
+        Some(desc) => format!("OAuth provider error ({error}): {desc}"),
+        None if error == "access_denied" => "OAuth provider denied access".to_string(),
+        None => format!("OAuth provider error ({error})"),
+    }
+}
 
 fn is_private_or_local_host(host: &str) -> bool {
     if host.is_empty() || host == "localhost" || host == "127.0.0.1" {
@@ -351,13 +488,16 @@ impl OAuthManager {
     }
 
     /// Starts a temporary localhost listener to wait for the OAuth authorization code.
-    /// This runs asynchronously and times out after 2 minutes.
+    ///
+    /// Ends on a valid code, a provider `error` callback, cancel, or
+    /// [`OAUTH_CALLBACK_TIMEOUT`] (#3040).
     pub async fn wait_for_callback(
         &self,
         redirect_uri: &str,
         expected_state: &str,
+        cancel: CancellationToken,
+        timeout: Duration,
     ) -> Result<String, String> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
         // Security validation: redirect_uri must be whitelisted
@@ -386,95 +526,212 @@ impl OAuthManager {
             .await
             .map_err(|e| format!("Failed to bind OAuth listener to port {port}: {e}"))?;
 
-        let timeout_dur = std::time::Duration::from_secs(120);
-        let timeout = tokio::time::sleep(timeout_dur);
-        tokio::pin!(timeout);
+        let timeout_sleep = tokio::time::sleep(timeout);
+        tokio::pin!(timeout_sleep);
+
+        // Connections accepted but not yet read. They live inside this wait,
+        // so cancel or timeout drops them together with the listener — a
+        // silent connection (a browser preconnect is enough) can never hold
+        // the wait hostage or keep the port bound (#3040 G3.2).
+        let mut pending: futures::stream::FuturesUnordered<_> =
+            futures::stream::FuturesUnordered::new();
 
         loop {
             tokio::select! {
+                _ = cancel.cancelled() => {
+                    return Err(ERR_CANCELLED.to_string());
+                }
+                _ = &mut timeout_sleep => {
+                    return Err(format!(
+                        "{}OAuth authorization timed out after {} minutes",
+                        AUTH_ERROR_PREFIX_TIMEOUT,
+                        timeout.as_secs() / 60
+                    ));
+                }
+                Some(outcome) = futures::stream::StreamExt::next(&mut pending),
+                    if !pending.is_empty() =>
+                {
+                    match outcome {
+                        CallbackOutcome::Code(code) => return Ok(code),
+                        CallbackOutcome::ProviderError(message) => {
+                            return Err(message);
+                        }
+                        // State mismatch or junk request: respond already
+                        // sent; keep listening.
+                        CallbackOutcome::Ignore => {}
+                    }
+                }
                 accept_res = listener.accept() => {
                     match accept_res {
-                        Ok((mut stream, _)) => {
-                            let mut buffer = [0; 1024];
-                            match stream.read(&mut buffer).await {
-                                Ok(n) if n > 0 => {
-                                    let request = String::from_utf8_lossy(&buffer[..n]);
-                                    if request.starts_with("GET ") {
-                                        let first_line = request.lines().next().unwrap_or("");
-                                        let parts: Vec<&str> = first_line.split_whitespace().collect();
-                                        if parts.len() >= 2 {
-                                            let path = parts[1];
-                                            if let Some(query_start) = path.find('?') {
-                                                let query = &path[query_start + 1..];
-                                                let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
-                                                    .into_owned()
-                                                    .collect();
-
-                                                let code = params.get("code");
-                                                let state = params.get("state");
-
-                                                if let (Some(code), Some(state)) = (code, state) {
-                                                    if state == expected_state {
-                                                         // Send success HTML page response
-                                                         let html = "<html>\
-                                                             <head>\
-                                                                 <title>LibrAgent - Authentication Successful</title>\
-                                                                 <style>\
-                                                                     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 100px; background-color: #0d1117; color: #c9d1d9; }\
-                                                                     .card { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; display: inline-block; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }\
-                                                                     h1 { color: #2ea043; margin-top: 0; }\
-                                                                     p { color: #8b949e; line-height: 1.5; }\
-                                                                 </style>\
-                                                             </head>\
-                                                             <body>\
-                                                                 <div class='card'>\
-                                                                     <h1>✓ Authentication Successful</h1>\
-                                                                     <p>LibrAgent has been authorized successfully. You can now close this browser tab and return to the application.</p>\
-                                                                 </div>\
-                                                             </body>\
-                                                             </html>";
-                                                         let response = format!(
-                                                             "HTTP/1.1 200 OK\r\n\
-                                                              Content-Type: text/html; charset=utf-8\r\n\
-                                                              Content-Length: {}\r\n\
-                                                              Cache-Control: no-store, no-cache, must-revalidate\r\n\
-                                                              Pragma: no-cache\r\n\
-                                                              Expires: 0\r\n\
-                                                              Connection: close\r\n\r\n\
-                                                              {}",
-                                                              html.len(),
-                                                              html
-                                                         );
-                                                         let _ = stream.write_all(response.as_bytes()).await;
-                                                         let _ = stream.flush().await;
-                                                         return Ok(code.clone());
-                                                     } else {
-                                                         log::warn!("OAuth state mismatch detected during callback processing");
-                                                     }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Invalid request fall-through
-                                    let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\nFailed to authenticate. State mismatch or missing code.";
-                                    let _ = stream.write_all(response.as_bytes()).await;
-                                    let _ = stream.flush().await;
-                                }
-                                _ => {}
-                            }
+                        Ok((stream, _)) => {
+                            // Reading one connection never blocks accepting
+                            // the next (#3040 G3.2); each read is raced
+                            // against cancel and timeout through this same
+                            // select (#3040 G2.3).
+                            pending.push(handle_callback_connection(stream, expected_state));
                         }
                         Err(e) => {
                             log::error!("Error accepting connection in OAuth callback listener: {e}");
                         }
                     }
                 }
-                _ = &mut timeout => {
-                    return Err("OAuth authorization timed out after 2 minutes".to_string());
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum CallbackOutcome {
+    Code(String),
+    ProviderError(String),
+    Ignore,
+}
+
+/// Read one loopback callback connection (until the request headers end,
+/// bounded at 16 KB), write the browser-facing response, and classify the
+/// outcome. The caller races this whole future against cancel and timeout so
+/// a silent or half-open connection (a browser preconnect is enough) cannot
+/// hide them or keep the port bound (#3040 G2.3).
+async fn handle_callback_connection(
+    mut stream: tokio::net::TcpStream,
+    expected_state: &str,
+) -> CallbackOutcome {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut request_bytes: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 2048];
+    loop {
+        match stream.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                request_bytes.extend_from_slice(&chunk[..n]);
+                if request_bytes.windows(4).any(|w| w == b"\r\n\r\n")
+                    || request_bytes.len() >= 16_384
+                {
+                    break;
                 }
             }
         }
     }
+
+    let outcome = if request_bytes.is_empty() {
+        None
+    } else {
+        let request = String::from_utf8_lossy(&request_bytes);
+        parse_oauth_callback_request(&request, expected_state)
+    };
+
+    match outcome {
+        Some(CallbackOutcome::Code(code)) => {
+            let _ = write_http_html(
+                &mut stream,
+                200,
+                "Authentication Successful",
+                "LibrAgent has been authorized successfully. You can now close this browser tab and return to the application.",
+                true,
+            )
+            .await;
+            CallbackOutcome::Code(code)
+        }
+        Some(CallbackOutcome::ProviderError(message)) => {
+            let _ =
+                write_http_html(&mut stream, 400, "Authorization Failed", &message, false).await;
+            CallbackOutcome::ProviderError(message)
+        }
+        Some(CallbackOutcome::Ignore) | None => {
+            log::warn!("OAuth callback ignored (state mismatch or incomplete params)");
+            let _ = stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\nFailed to authenticate. State mismatch or missing code.",
+                )
+                .await;
+            let _ = stream.flush().await;
+            CallbackOutcome::Ignore
+        }
+    }
+}
+
+fn parse_oauth_callback_request(request: &str, expected_state: &str) -> Option<CallbackOutcome> {
+    if !request.starts_with("GET ") {
+        return None;
+    }
+    let first_line = request.lines().next().unwrap_or("");
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let path = parts[1];
+    let query_start = path.find('?')?;
+    let query = &path[query_start + 1..];
+    let params: HashMap<String, String> = url::form_urlencoded::parse(query.as_bytes())
+        .into_owned()
+        .collect();
+
+    // State must be present and match for every callback outcome, including
+    // provider errors: otherwise any local request or web page could end the
+    // flow with a chosen message (#3040 G1.3).
+    let state = params.get("state")?;
+    if !constant_time_compare(state.as_bytes(), expected_state.as_bytes()) {
+        return Some(CallbackOutcome::Ignore);
+    }
+
+    if let Some(error) = params.get("error") {
+        let description = params.get("error_description").map(String::as_str);
+        return Some(CallbackOutcome::ProviderError(provider_callback_error(
+            error,
+            description,
+        )));
+    }
+
+    let code = params.get("code")?;
+    Some(CallbackOutcome::Code(code.clone()))
+}
+
+/// Escapes untrusted text before it is embedded in the loopback callback page
+/// (#3040 G1.2: `error` / `error_description` come from the callback URL).
+fn html_escape_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn render_oauth_html_page(title: &str, body: &str, success: bool) -> String {
+    let color = if success { "#2ea043" } else { "#f85149" };
+    let title = html_escape_text(title);
+    let body = html_escape_text(body);
+    format!(
+        "<html><head><title>LibrAgent - {title}</title>\
+         <style>body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;text-align:center;padding-top:100px;background:#0d1117;color:#c9d1d9;}}\
+         .card{{background:#161b22;padding:40px;border-radius:12px;border:1px solid #30363d;display:inline-block;max-width:400px;}}\
+         h1{{color:{color};margin-top:0;}}p{{color:#8b949e;line-height:1.5;}}</style></head>\
+         <body><div class='card'><h1>{title}</h1><p>{body}</p></div></body></html>"
+    )
+}
+
+async fn write_http_html(
+    stream: &mut tokio::net::TcpStream,
+    status: u16,
+    title: &str,
+    body: &str,
+    success: bool,
+) -> Result<(), std::io::Error> {
+    use tokio::io::AsyncWriteExt;
+    let status_text = if status == 200 { "OK" } else { "Bad Request" };
+    let html = render_oauth_html_page(title, body, success);
+    let response = format!(
+        "HTTP/1.1 {status} {status_text}\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Content-Length: {}\r\n\
+         Cache-Control: no-store\r\n\
+         Connection: close\r\n\r\n\
+         {html}",
+        html.len()
+    );
+    stream.write_all(response.as_bytes()).await?;
+    stream.flush().await
 }
 
 impl Default for OAuthManager {
@@ -486,6 +743,13 @@ impl Default for OAuthManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The single-flight slot is a process-wide static, so every test that
+    /// touches it must hold this lock (tests run in parallel by default).
+    fn flow_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[tokio::test]
     async fn test_oauth_manager_creation() {
@@ -603,10 +867,17 @@ mod tests {
     #[tokio::test]
     async fn test_wait_for_callback_redirect_uri_whitelist() {
         let manager = OAuthManager::new();
+        let cancel = CancellationToken::new();
+        let timeout = Duration::from_secs(1);
 
         // Invalid host
         let res = manager
-            .wait_for_callback("http://malicious.example.com/callback", "state")
+            .wait_for_callback(
+                "http://malicious.example.com/callback",
+                "state",
+                cancel.clone(),
+                timeout,
+            )
             .await;
         assert!(res.is_err());
         assert!(res
@@ -615,7 +886,12 @@ mod tests {
 
         // Invalid scheme
         let res = manager
-            .wait_for_callback("https://localhost/callback", "state")
+            .wait_for_callback(
+                "https://localhost/callback",
+                "state",
+                cancel.clone(),
+                timeout,
+            )
             .await;
         assert!(res.is_err());
         assert!(res
@@ -624,11 +900,434 @@ mod tests {
 
         // Invalid path
         let res = manager
-            .wait_for_callback("http://localhost/badpath", "state")
+            .wait_for_callback("http://localhost/badpath", "state", cancel, timeout)
             .await;
         assert!(res.is_err());
         assert!(res
             .unwrap_err()
             .contains("Security violation: redirect_uri path"));
+    }
+
+    #[test]
+    fn provider_callback_error_formats_access_denied_and_other_errors() {
+        assert_eq!(
+            provider_callback_error("access_denied", Some("user said no")),
+            "OAuth provider denied access: user said no"
+        );
+        assert_eq!(
+            provider_callback_error("access_denied", None),
+            "OAuth provider denied access"
+        );
+        assert_eq!(
+            provider_callback_error("server_error", Some("down")),
+            "OAuth provider error (server_error): down"
+        );
+    }
+
+    #[test]
+    fn parse_oauth_callback_request_reads_code_and_provider_error() {
+        let ok = parse_oauth_callback_request("GET /callback?code=abc&state=s1 HTTP/1.1\r\n", "s1");
+        assert!(matches!(ok, Some(CallbackOutcome::Code(code)) if code == "abc"));
+
+        let denied = parse_oauth_callback_request(
+            "GET /callback?error=access_denied&error_description=Nope&state=s1 HTTP/1.1\r\n",
+            "s1",
+        );
+        match denied {
+            Some(CallbackOutcome::ProviderError(msg)) => {
+                assert!(msg.contains("denied"));
+                assert!(msg.contains("Nope"));
+            }
+            other => panic!("expected provider error, got {other:?}"),
+        }
+
+        let mismatch =
+            parse_oauth_callback_request("GET /callback?code=abc&state=wrong HTTP/1.1\r\n", "s1");
+        assert!(matches!(mismatch, Some(CallbackOutcome::Ignore)));
+    }
+
+    #[test]
+    fn parse_rejects_error_callbacks_without_matching_state() {
+        // Missing state: not our flow, ignore entirely (#3040 G1.3).
+        let no_state = parse_oauth_callback_request(
+            "GET /callback?error=access_denied&error_description=Nope HTTP/1.1\r\n",
+            "s1",
+        );
+        assert!(no_state.is_none());
+
+        // Wrong state: same — a random local request cannot end the flow.
+        let wrong_state = parse_oauth_callback_request(
+            "GET /callback?error=access_denied&state=evil HTTP/1.1\r\n",
+            "s1",
+        );
+        assert!(matches!(wrong_state, Some(CallbackOutcome::Ignore)));
+    }
+
+    #[test]
+    fn render_oauth_html_page_escapes_untrusted_callback_text() {
+        // #3040 G1.2: error_description from the callback URL must not reach
+        // the page as raw HTML.
+        let msg = provider_callback_error(
+            "access_denied",
+            Some("<script>alert(1)</script> & \"quoted\""),
+        );
+        let page = render_oauth_html_page("Authorization Failed", &msg, false);
+        assert!(!page.contains("<script>"), "{page}");
+        assert!(page.contains("&lt;script&gt;"), "{page}");
+        assert!(page.contains("&quot;quoted&quot;"), "{page}");
+    }
+
+    #[tokio::test]
+    async fn begin_oauth_flow_rejects_a_second_start() {
+        let _guard = flow_test_lock().lock().await;
+        let first = begin_oauth_flow("srv-a").await.expect("first start");
+        assert!(is_oauth_flow_active("srv-a").await);
+        assert!(!is_oauth_flow_active("srv-b").await);
+        let second = begin_oauth_flow("srv-b").await;
+        assert_eq!(second.unwrap_err(), ERR_IN_PROGRESS);
+        first.cancel();
+        end_oauth_flow("srv-a").await;
+        assert!(!is_oauth_flow_active("srv-a").await);
+        begin_oauth_flow("srv-b").await.expect("after end");
+        end_oauth_flow("srv-b").await;
+    }
+
+    #[tokio::test]
+    async fn cancel_oauth_flow_stops_the_wait() {
+        let _guard = flow_test_lock().lock().await;
+        let cancel = begin_oauth_flow("srv-cancel").await.expect("begin");
+        let manager = OAuthManager::new();
+        // Bind an ephemeral port so this does not fight the default app port.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let uri = format!("http://127.0.0.1:{port}/callback");
+        let wait = tokio::spawn({
+            let cancel = cancel.clone();
+            async move {
+                manager
+                    .wait_for_callback(&uri, "state", cancel, Duration::from_secs(30))
+                    .await
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        cancel_oauth_flow("srv-cancel").await.expect("cancel");
+        let err = wait.await.expect("join").expect_err("cancelled");
+        assert_eq!(err, ERR_CANCELLED);
+        end_oauth_flow("srv-cancel").await;
+    }
+
+    #[tokio::test]
+    async fn wait_for_callback_returns_provider_deny_immediately() {
+        let manager = OAuthManager::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let uri = format!("http://127.0.0.1:{port}/callback");
+        let cancel = CancellationToken::new();
+        let wait = tokio::spawn({
+            let cancel = cancel.clone();
+            let uri = uri.clone();
+            async move {
+                manager
+                    .wait_for_callback(&uri, "state-x", cancel, Duration::from_secs(30))
+                    .await
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("connect");
+        use tokio::io::AsyncWriteExt;
+        stream
+            .write_all(
+                b"GET /callback?error=access_denied&error_description=Nope&state=state-x HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .expect("write");
+        let err = wait.await.expect("join").expect_err("provider deny");
+        assert!(err.contains("denied"), "{err}");
+        assert!(err.contains("Nope"), "{err}");
+    }
+
+    /// A connection that connects and sends nothing (browser preconnect) must
+    /// not hide cancel or the timeout (#3040 G2.3).
+    #[tokio::test]
+    async fn wait_for_callback_lets_cancel_and_timeout_pass_silent_connections() {
+        let manager = OAuthManager::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let uri = format!("http://127.0.0.1:{port}/callback");
+
+        // 1. Cancel must win while the first connection stays silent.
+        let cancel = CancellationToken::new();
+        let wait = tokio::spawn({
+            let cancel = cancel.clone();
+            let uri = uri.clone();
+            async move {
+                manager
+                    .wait_for_callback(&uri, "state", cancel, Duration::from_secs(30))
+                    .await
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let _silent = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("silent connect");
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        cancel.cancel();
+        let err = tokio::time::timeout(Duration::from_secs(2), wait)
+            .await
+            .expect("cancel must be observed while a connection is silent")
+            .expect("join")
+            .expect_err("cancelled");
+        assert_eq!(err, ERR_CANCELLED);
+
+        // 2. Timeout must win on a fresh listener with only a silent connection.
+        let listener2 = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port2 = listener2.local_addr().expect("addr").port();
+        drop(listener2);
+        let uri2 = format!("http://127.0.0.1:{port2}/callback");
+        let manager2 = OAuthManager::new();
+        let wait2 = tokio::spawn(async move {
+            manager2
+                .wait_for_callback(
+                    &uri2,
+                    "state",
+                    CancellationToken::new(),
+                    Duration::from_millis(150),
+                )
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        let _silent2 = tokio::net::TcpStream::connect(format!("127.0.0.1:{port2}"))
+            .await
+            .expect("silent connect");
+        let err = tokio::time::timeout(Duration::from_secs(2), wait2)
+            .await
+            .expect("timeout must fire while a connection is silent")
+            .expect("join")
+            .expect_err("timed out");
+        assert!(err.starts_with(AUTH_ERROR_PREFIX_TIMEOUT), "{err}");
+    }
+
+    /// A silent connection accepted first (browser preconnect) must not
+    /// delay a valid callback that arrives on a later connection: the
+    /// listener keeps accepting while earlier connections are being read
+    /// (#3040 G3.2).
+    #[tokio::test]
+    async fn wait_for_callback_reads_valid_callback_behind_silent_connection() {
+        let manager = OAuthManager::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let uri = format!("http://127.0.0.1:{port}/callback");
+        let wait = tokio::spawn(async move {
+            manager
+                .wait_for_callback(
+                    &uri,
+                    "state-ok",
+                    CancellationToken::new(),
+                    Duration::from_secs(30),
+                )
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(80)).await;
+
+        // First connection stays silent and is never closed.
+        let _silent = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("silent connect");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // The real callback arrives on a second connection and must be read
+        // without waiting for the silent peer.
+        let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("callback connect");
+        use tokio::io::AsyncWriteExt;
+        stream
+            .write_all(
+                b"GET /callback?code=real-code&state=state-ok HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .expect("write");
+
+        let code = tokio::time::timeout(Duration::from_secs(2), wait)
+            .await
+            .expect("valid callback must be read while another connection is silent")
+            .expect("join")
+            .expect("callback code");
+        assert_eq!(code, "real-code");
+    }
+
+    #[tokio::test]
+    async fn wait_for_callback_times_out() {
+        let manager = OAuthManager::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let uri = format!("http://127.0.0.1:{port}/callback");
+        let err = manager
+            .wait_for_callback(
+                &uri,
+                "state",
+                CancellationToken::new(),
+                Duration::from_millis(80),
+            )
+            .await
+            .expect_err("timeout");
+        assert!(err.starts_with(AUTH_ERROR_PREFIX_TIMEOUT), "{err}");
+        assert!(err.contains("timed out"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn wait_for_callback_returns_other_provider_error_immediately() {
+        let manager = OAuthManager::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("ephemeral");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+        let uri = format!("http://127.0.0.1:{port}/callback");
+        let cancel = CancellationToken::new();
+        let wait = tokio::spawn({
+            let cancel = cancel.clone();
+            let uri = uri.clone();
+            async move {
+                manager
+                    .wait_for_callback(&uri, "state-y", cancel, Duration::from_secs(30))
+                    .await
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("connect");
+        use tokio::io::AsyncWriteExt;
+        stream
+            .write_all(
+                b"GET /callback?error=server_error&error_description=down&state=state-y HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .expect("write");
+        let err = wait.await.expect("join").expect_err("provider error");
+        assert!(err.contains("server_error"), "{err}");
+        assert!(err.contains("down"), "{err}");
+    }
+
+    /// The production flow stores the token only through `finish_oauth_flow`,
+    /// which refuses to store once the flow is cancelled (#3040 G1.4, G1.7).
+    ///
+    /// Uses a spy store instead of the OS keychain because the keychain tests
+    /// in `mcp::keychain` are `#[ignore]`d in headless CI.
+    #[tokio::test]
+    async fn finish_oauth_flow_refuses_to_overwrite_stored_token_after_cancel() {
+        let _guard = flow_test_lock().lock().await;
+
+        let existing = std::sync::Arc::new(std::sync::Mutex::new("pre-existing-token".to_string()));
+        let store_calls = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+
+        let _cancel = begin_oauth_flow("srv-token").await.expect("begin");
+        cancel_oauth_flow("srv-token").await.expect("cancel");
+
+        let store = {
+            let existing = existing.clone();
+            let store_calls = store_calls.clone();
+            move |_sid: String, token: String| {
+                let existing = existing.clone();
+                let store_calls = store_calls.clone();
+                async move {
+                    *store_calls.lock().expect("calls lock") += 1;
+                    *existing.lock().expect("token lock") = token;
+                    Ok(())
+                }
+            }
+        };
+
+        let err = finish_oauth_flow("srv-token", "fresh-token".to_string(), store)
+            .await
+            .expect_err("cancelled flow must not store");
+        assert_eq!(err, ERR_CANCELLED);
+        assert_eq!(*store_calls.lock().expect("calls lock"), 0);
+        assert_eq!(
+            existing.lock().expect("token lock").as_str(),
+            "pre-existing-token",
+            "existing token must survive a cancelled flow"
+        );
+        end_oauth_flow("srv-token").await;
+    }
+
+    /// Once the token store has begun, `cancel_oauth_flow` is refused and the
+    /// cancel token stays uncancelled (#3040 G2.4).
+    #[tokio::test]
+    async fn cancel_oauth_flow_is_refused_while_storing() {
+        let _guard = flow_test_lock().lock().await;
+        let cancel = begin_oauth_flow("srv-race").await.expect("begin");
+
+        let store = {
+            let cancel_check = cancel.clone();
+            move |_sid: String, _token: String| async move {
+                // Simulate the keychain write blocking: cancel arrives now and
+                // must be refused, not raced.
+                assert!(!cancel_check.is_cancelled());
+                let err = cancel_oauth_flow("srv-race")
+                    .await
+                    .expect_err("cancel must be refused once storing began");
+                assert!(err.contains("no longer"), "{err}");
+                assert!(
+                    !cancel_check.is_cancelled(),
+                    "refused cancel must not cancel"
+                );
+                Ok(())
+            }
+        };
+
+        finish_oauth_flow("srv-race", "fresh-token".to_string(), store)
+            .await
+            .expect("uncancelled flow stores");
+        assert!(!cancel.is_cancelled());
+        end_oauth_flow("srv-race").await;
+    }
+
+    #[tokio::test]
+    async fn finish_oauth_flow_stores_token_when_not_cancelled() {
+        let _guard = flow_test_lock().lock().await;
+
+        let stored = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let _cancel = begin_oauth_flow("srv-ok").await.expect("begin");
+
+        let store = {
+            let stored = stored.clone();
+            move |sid: String, token: String| {
+                let stored = stored.clone();
+                async move {
+                    *stored.lock().expect("stored lock") = Some(format!("{sid}:{token}"));
+                    Ok(())
+                }
+            }
+        };
+
+        finish_oauth_flow("srv-ok", "fresh-token".to_string(), store)
+            .await
+            .expect("uncancelled flow stores");
+        assert_eq!(
+            stored.lock().expect("stored lock").as_deref(),
+            Some("srv-ok:fresh-token")
+        );
+        end_oauth_flow("srv-ok").await;
     }
 }

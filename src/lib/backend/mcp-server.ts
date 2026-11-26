@@ -85,6 +85,20 @@ export async function startOAuthFlow(
 }
 
 /**
+ * Cancels an in-progress OAuth loopback wait for the given server (#3040).
+ */
+export async function cancelOAuthFlow(serverId: string): Promise<string> {
+  return safeInvoke<string>('cancel_oauth_flow', { serverId });
+}
+
+/**
+ * True while an OAuth flow is in progress for the given server (#3040 G1.5).
+ */
+export async function isOAuthFlowActive(serverId: string): Promise<boolean> {
+  return safeInvoke<boolean>('is_oauth_flow_active', { serverId });
+}
+
+/**
  * Performs text generation (sampling) using a model on a specified MCP server.
  * @param serverName The name of the server.
  * @param prompt The prompt to send to the model.

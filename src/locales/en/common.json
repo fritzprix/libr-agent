@@ -1131,7 +1131,11 @@
       "toggled": "Extension {{status}}",
       "toggleFailed": "Failed to toggle extension: {{error}}",
       "activated": "activated",
-      "deactivated": "deactivated"
+      "deactivated": "deactivated",
+      "authCancelled": "Authorization cancelled.",
+      "authTimedOut": "Authorization timed out. Try Authorize again.",
+      "authCancelFailed": "Could not cancel: {{error}}",
+      "authEndedWithoutToken": "the authorization ended without storing a token"
     },
     "toolsModal": {
       "description": "Tool names and descriptions as returned by the MCP server.",
@@ -1142,7 +1146,8 @@
       "inputSchema": "Input schema",
       "toolsCount_one": "({{count}} tool)",
       "toolsCount_other": "({{count}} tools)"
-    }
+    },
+    "cancelAuthorize": "Cancel"
   },
   "playbook": {
     "title": "Playbooks",

@@ -1103,7 +1103,11 @@
       "toggled": "Extension {{status}}",
       "toggleFailed": "Échec du basculement de l'extension : {{error}}",
       "activated": "activée",
-      "deactivated": "désactivée"
+      "deactivated": "désactivée",
+      "authCancelled": "Autorisation annulée.",
+      "authTimedOut": "Délai d'autorisation dépassé. Réessayez.",
+      "authCancelFailed": "Impossible d'annuler : {{error}}",
+      "authEndedWithoutToken": "l'autorisation s'est terminée sans enregistrer de jeton"
     },
     "toolsModal": {
       "description": "Noms et descriptions des outils tels que renvoyés par le serveur MCP.",
@@ -1114,7 +1118,8 @@
       "inputSchema": "Schéma d'entrée",
       "toolsCount_one": "({{count}} outil)",
       "toolsCount_other": "({{count}} outils)"
-    }
+    },
+    "cancelAuthorize": "Annuler"
   },
   "playbook": {
     "title": "Scénarios",
