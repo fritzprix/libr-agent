@@ -1,10 +1,9 @@
 use crate::agent::events::AgentEventDispatcher;
-use crate::agent::state::{enforce_cached_message_limit, AgentSession};
+use crate::agent::state::AgentSession;
 use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::types::ToolCall;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
-use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +12,13 @@ use tokio::sync::RwLock;
 
 use super::response_admission;
 use super::response_circuit_breaker;
+use super::response_persist::{
+    assistant_message_has_only_ui_tool_calls, cache_assistant_message, extract_prompt_tokens,
+    persist_assistant_message_to_db, persist_prompt_token_checkpoint,
+};
+use super::response_recovery::{
+    recover_malformed_tool_markup, reset_streaming_recovery_retry_counts,
+};
 use super::tool_execution;
 use crate::agent::llm::assistant_message_shape::inspect_assistant_message_shape;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
@@ -30,180 +36,6 @@ pub fn completion_result_from_error_handling_outcome(
     match outcome {
         LlmErrorHandlingOutcome::RecoveredByCompaction => Ok(()),
         LlmErrorHandlingOutcome::FinalizedWorkflowError => Err(error.into()),
-    }
-}
-
-fn assistant_message_has_only_ui_tool_calls(message: &Message) -> bool {
-    message
-        .tool_calls
-        .as_ref()
-        .map(|tool_calls| {
-            !tool_calls.is_empty()
-                && tool_calls
-                    .iter()
-                    .all(|tool_call| tool_call.function.name.starts_with("ui__"))
-        })
-        .unwrap_or(false)
-}
-
-async fn persist_assistant_message_to_db(message: &Message) -> Result<(), String> {
-    let repo = crate::state::get_message_repository();
-    repo.insert(message).await.map_err(|error| {
-        log::error!(
-            "Failed to save assistant message to DB: msg_id={}, error={}",
-            message.id,
-            error
-        );
-        format!("Failed to save assistant message to DB: {}", error)
-    })
-}
-
-async fn cache_assistant_message(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-    assistant_message: &Message,
-) {
-    let sessions = active_sessions.read().await;
-    if let Some(session) = sessions.get(session_id) {
-        let mut messages = session.messages.write().await;
-        messages.push(assistant_message.clone());
-        enforce_cached_message_limit(&mut messages);
-
-        log::info!(
-            "🤖 Message stack after assistant message: session={}, count={}, latest_message={}",
-            session_id,
-            messages.len(),
-            assistant_message.id
-        );
-    }
-}
-
-fn extract_prompt_tokens(message: &Message) -> Option<i64> {
-    message
-        .usage
-        .as_ref()
-        .and_then(|usage| usage.get("promptTokens"))
-        .and_then(|value| {
-            value
-                .as_i64()
-                .or_else(|| value.as_u64().and_then(|v| i64::try_from(v).ok()))
-        })
-}
-
-async fn persist_prompt_token_checkpoint(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-    prompt_tokens: i64,
-) {
-    let (checkpoint_handle, message_handle) = {
-        let sessions = active_sessions.read().await;
-        let Some(session) = sessions.get(session_id) else {
-            return;
-        };
-        (
-            session.last_submitted_input_message_id.clone(),
-            session.messages.clone(),
-        )
-    };
-
-    let checkpoint_id = checkpoint_handle.read().await.clone();
-    let Some(checkpoint_id) = checkpoint_id else {
-        return;
-    };
-
-    let checkpoint_message = {
-        let mut messages = message_handle.write().await;
-        let Some(message) = messages
-            .iter_mut()
-            .find(|message| message.id == checkpoint_id)
-        else {
-            log::warn!(
-                "Failed to stamp prompt-token checkpoint: session={}, checkpoint_id={} missing from cache",
-                session_id,
-                checkpoint_id
-            );
-            return;
-        };
-
-        message.prompt_tokens = Some(prompt_tokens);
-        message.clone()
-    };
-
-    let repo = crate::state::get_message_repository();
-    if let Err(error) = repo.insert(&checkpoint_message).await {
-        log::error!(
-            "Failed to persist prompt-token checkpoint: session={}, checkpoint_id={}, error={}",
-            session_id,
-            checkpoint_message.id,
-            error
-        );
-    }
-}
-
-/// A final turn that is only text-formatted tool-call markup for a registered
-/// tool, with nothing else queued: the message is discarded (it was not cached
-/// or persisted yet) and a corrective retry is started. Returns `true` when a
-/// retry was started; `false` leaves the turn to end as it does today.
-async fn recover_malformed_tool_markup(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
-    session_id: &str,
-    assistant_message: &Message,
-) -> Result<bool, String> {
-    let text = assistant_message
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            crate::mcp::types::MCPContent::Text { text, .. } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let Some(tool_name) =
-        crate::agent::llm::malformed_tool_markup::malformed_tool_markup_name(&text)
-    else {
-        return Ok(false);
-    };
-    if crate::agent::workflow::session_has_pending_events(active_sessions, session_id).await {
-        return Ok(false);
-    }
-    let registered = crate::agent::tools::collect_available_tools(session_id, proxy_manager)
-        .await
-        .map(|tools| tools.iter().any(|tool| tool.name == tool_name))
-        .unwrap_or(false);
-    if !registered {
-        return Ok(false);
-    }
-
-    let outcome = crate::agent::llm::stream_recovery::handle_malformed_tool_markup_completion(
-        session_repo,
-        active_sessions,
-        proxy_manager,
-        app_handle,
-        session_id.to_string(),
-        assistant_message.id.clone(),
-        tool_name,
-    )
-    .await?;
-    Ok(matches!(
-        outcome,
-        crate::agent::llm::stream_recovery::StreamingIssueOutcome::Retried { .. }
-    ))
-}
-
-async fn reset_streaming_recovery_retry_counts(
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    session_id: &str,
-) {
-    let active = active_sessions.read().await;
-    if let Some(session) = active.get(session_id) {
-        *session.repeated_thinking_retry_count.write().await = 0;
-        *session.repeated_text_loop_retry_count.write().await = 0;
-        *session.reasoning_budget_retry_count.write().await = 0;
-        *session.malformed_tool_markup_retry_count.write().await = 0;
-        *session.invalid_tool_args_retry_count.write().await = 0;
     }
 }
 
