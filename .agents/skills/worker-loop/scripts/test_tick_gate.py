@@ -179,8 +179,6 @@ class TickGateTest(unittest.TestCase):
                 number = int(args[1].split("/issues/", 1)[1].split("/", 1)[0])
                 return json.dumps((sub_issues or {}).get(number, []))
             if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
-                # Issue #2995: an existing item returns its blocker list. These
-                # tests do not exercise 404 (an error now, not an empty list).
                 return "[]"
             if args[:3] == ("issue", "list", "--state"):
                 return json.dumps(list(issues))
@@ -472,7 +470,7 @@ class TickGateTest(unittest.TestCase):
 
 
 class PendingApprovedIssueTest(unittest.TestCase):
-    def pending(self, issues, prs=(), claims=None, worker="worker", comments=(), open_issues=(), sub_issues=None):
+    def pending(self, issues, prs=(), claims=None, worker="worker", comments=(), blocked_by=None, sub_issues=None):
         def _gh(*args):
             if args[:2] == ("api", "user"):
                 return "me\n"
@@ -486,12 +484,8 @@ class PendingApprovedIssueTest(unittest.TestCase):
                 number = int(args[1].split("/issues/", 1)[1].split("/", 1)[0])
                 return json.dumps((sub_issues or {}).get(number, []))
             if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
-                # Issue #2995: an existing item returns its blocker list. These
-                # tests do not exercise 404 (an error now, not an empty list).
-                return "[]"
-            if args[0] == "api":
-                number = int(args[1].rsplit("/", 1)[1])
-                return "open\n" if number in open_issues else "closed\n"
+                number = int(args[1].split("/issues/", 1)[1].split("/", 1)[0])
+                return json.dumps((blocked_by or {}).get(number, []))
             raise ValueError(f"Unexpected gh call: {args}")
 
         # `list_open_prs` lives in issue_candidates and uses its own gh wrapper.
@@ -536,9 +530,10 @@ class PendingApprovedIssueTest(unittest.TestCase):
         answer = {"author": {"login": "me"}, "body": "(a)", "createdAt": "2026-01-02T00:00:00Z"}
         self.assertEqual(self.pending([issue], comments=[question, answer]), 3)
 
-    def test_issue_with_an_open_dependency_is_not_pending(self):
+    def test_issue_with_an_open_blocker_is_not_pending(self):
         blocked = {**approvals_issue(3, ["approved"]), "body": "Depends on #2"}
-        self.assertIsNone(self.pending([blocked], open_issues={2}))
+        self.assertIsNone(self.pending([blocked], blocked_by={3: [{"number": 2, "state": "open"}]}))
+        self.assertEqual(self.pending([blocked], blocked_by={3: [{"number": 2, "state": "closed"}]}), 3)
         self.assertEqual(self.pending([blocked]), 3)
 
     def test_parent_issue_without_epic_label_is_not_pending(self):

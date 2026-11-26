@@ -44,6 +44,9 @@ class ExclusionReasonTest(unittest.TestCase):
         self.assertIn("epic", reason(["approved", "epic"]))
         self.assertIn("auto:e2e", reason(["approved", "auto:e2e"]))
 
+    def test_rejected_is_not_a_candidate_even_with_approved(self):
+        self.assertIn("rejected", reason(["approved", "rejected"]))
+
     def test_assignment_rules(self):
         self.assertIn("assigned to other", reason(["approved"], assignees=["other"]))
         self.assertIsNone(reason(["approved"], assignees=["me"]))
@@ -71,8 +74,8 @@ QUESTION = comment("<!-- worker-loop: needs-owner -->\nWhich one? (a) or (b)", "
 NOT_FOUND = "gh api failed: gh: Not Found (HTTP 404)"
 
 
-def fake_gh(comments=(), states=None, blocked_by=(), blocked_by_error=None):
-    """gh stand-in: issue comments, issue states by number ('missing' = 404), and the blocked-by API.
+def fake_gh(comments=(), blocked_by=(), blocked_by_error=None):
+    """gh stand-in: issue comments and the blocked-by API.
 
     `blocked_by` entries are `{"number", "state"}` dicts as the dependency API
     returns them; `blocked_by_error` raises (default: no error, empty list).
@@ -85,12 +88,6 @@ def fake_gh(comments=(), states=None, blocked_by=(), blocked_by_error=None):
                 # Mirrors the helper: its own gh raises DepsError on failure.
                 raise DepsError(blocked_by_error)
             return json.dumps(list(blocked_by))
-        if args[0] == "api":
-            state = (states or {}).get(int(args[1].rsplit("/", 1)[1]), "closed")
-            if state == "missing":
-                # Mirrors issue_candidates.gh, which raises GhError.
-                raise issue_candidates.GhError(NOT_FOUND)
-            return state + "\n"
         raise ValueError(f"Unexpected gh call: {args}")
     return _gh
 
@@ -100,42 +97,22 @@ def waiting(labels=("approved",), body="", **gh_kwargs):
     return issue_candidates.waiting_reason(issue, set(labels), "me", fake_gh(**gh_kwargs))
 
 
-class DependencyRefsTest(unittest.TestCase):
-    def test_finds_depends_on_and_blocked_by(self):
-        body = "Part of #1. Depends on #2749. Continues #2704.\nBlocked by #3, #4, and #5"
-        self.assertEqual(issue_candidates.dependency_refs(body), [2749, 3, 4, 5])
-
-    def test_list_ends_at_the_first_item_that_is_not_a_number(self):
-        body = "Depends on #2752, the implementation issues under this epic, #2754, and #2755"
-        self.assertEqual(issue_candidates.dependency_refs(body), [2752])
-
-    def test_plain_mentions_are_not_dependencies(self):
-        self.assertEqual(issue_candidates.dependency_refs("Part of #1. See #2."), [])
-        self.assertEqual(issue_candidates.dependency_refs(None), [])
-
-
 class WaitingReasonTest(unittest.TestCase):
     def test_free_issue_does_not_wait(self):
         self.assertEqual(waiting(), (None, None))
 
-    def test_open_dependency_blocks(self):
-        reason, _ = waiting(body="Depends on #7 and #8", states={7: "open", 8: "closed"})
-        self.assertEqual(reason, "blocked by open #7")
-        self.assertEqual(waiting(body="Depends on #7", states={7: "closed"}), (None, None))
+    def test_open_api_blocker_blocks_and_closed_does_not(self):
+        api_blockers = [{"number": 9, "state": "open"}, {"number": 8, "state": "closed"}]
+        self.assertEqual(waiting(blocked_by=api_blockers)[0], "blocked by open #9")
+        self.assertEqual(waiting(blocked_by=[{"number": 9, "state": "closed"}]), (None, None))
 
-    def test_missing_dependency_excludes_only_that_issue(self):
-        self.assertEqual(waiting(body="Depends on #404", states={404: "missing"})[0],
-                         "dependency #404 not found")
+    def test_body_text_dependency_lines_are_ignored(self):
+        self.assertEqual(waiting(body="Depends on #7 and #8"), (None, None))
+        self.assertEqual(waiting(body="Blocked by #9"), (None, None))
 
-    def test_blocked_by_failure_other_than_404_is_raised(self):
+    def test_blocked_by_failure_is_raised(self):
         with self.assertRaises(issue_candidates.GhError):
             waiting(blocked_by_error="gh api failed: API rate limit exceeded (HTTP 403)")
-
-    def test_github_blocked_by_counts_when_available(self):
-        api_blockers = [{"number": 9, "state": "open"}]
-        self.assertEqual(waiting(blocked_by=api_blockers)[0], "blocked by open #9")
-        self.assertEqual(waiting(body="Blocked by #9", states={9: "open"}, blocked_by=api_blockers)[0],
-                         "blocked by open #9")
 
     def test_unanswered_needs_owner_waits(self):
         reason, answer = waiting(labels=("approved", "needs-owner"), comments=[QUESTION])
@@ -158,10 +135,10 @@ class WaitingReasonTest(unittest.TestCase):
         self.assertIsNotNone(waiting(labels=("approved", "needs-owner"), comments=[QUESTION, outsider])[0])
         self.assertIsNone(waiting(labels=("approved", "needs-owner"), comments=[QUESTION, outsider, member])[0])
 
-    def test_answered_issue_still_waits_on_open_dependency(self):
+    def test_answered_issue_still_waits_on_open_blocker(self):
         answer = comment("Go with (a).", "2026-01-02T00:00:00Z")
         reason, found = waiting(labels=("approved", "needs-owner"), comments=[QUESTION, answer],
-                                body="Depends on #7", states={7: "open"})
+                                blocked_by=[{"number": 7, "state": "open"}])
         self.assertEqual(reason, "blocked by open #7")
         self.assertIsNotNone(found)
 
