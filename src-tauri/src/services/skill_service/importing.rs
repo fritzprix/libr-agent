@@ -1406,6 +1406,7 @@ fn build_hook_preview_entries(config: &HooksConfig) -> Vec<HookPreviewEntry> {
                 event: event_name.clone(),
                 matcher: item.matcher.clone(),
                 command: item.command.clone(),
+                args: None,
                 powershell: None,
                 script_body: None,
                 execution_status: HookPreviewExecutionStatus::Stubbed,

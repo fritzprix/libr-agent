@@ -1414,6 +1414,7 @@ mod tests {
             ),
             r#async: false,
             shell: None,
+            http: None,
         }
     }
 

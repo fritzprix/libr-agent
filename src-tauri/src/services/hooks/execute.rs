@@ -1111,13 +1111,25 @@ mod tests {
 
     /// `updatedInput` (#3005): a `PreToolUse` hook that allows the call rewrites
     /// the arguments, and the aggregated dispatch result carries the rewrite.
+    /// The handler carries a `powershell` variant (#3005 gatekeeper G3.1): an
+    /// unquoted `echo {...}` under `cmd.exe /C` arrives mangled, so Windows
+    /// writes the JSON through `Write-Output` like the neighbouring tests.
     #[tokio::test]
     async fn pre_tool_use_updated_input_reaches_the_dispatch_result() {
-        #[cfg(not(target_os = "windows"))]
-        let hooks_json = r#"{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "printf '%s\\n' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{\"path\":\"rewritten.txt\"}}}'" } ] } ] } }"#;
-        #[cfg(target_os = "windows")]
-        let hooks_json = r#"{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "echo {\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"updatedInput\":{\"path\":\"rewritten.txt\"}}}" } ] } ] } }"#;
-        let (temp, root) = setup_approved_plugin(hooks_json);
+        let decision_json = r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"path":"rewritten.txt"}}}"#;
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "hooks": [{
+                        "type": "command",
+                        "command": format!("printf '%s' '{decision_json}'"),
+                        "powershell": format!("Write-Output '{decision_json}'"),
+                    }]
+                }]
+            }
+        })
+        .to_string();
+        let (temp, root) = setup_approved_plugin(&hooks_json);
         let sid = format!("hook-updated-input-{}", uuid::Uuid::new_v4());
         let mut params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PreToolUse);
         params.tool_name = Some("workspace__readFile".to_string());

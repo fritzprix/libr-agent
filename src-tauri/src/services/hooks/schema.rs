@@ -214,6 +214,7 @@ impl HooksConfig {
             version: None,
             events: BTreeMap::new(),
             unsupported_events: BTreeMap::new(),
+            unsupported_handlers: BTreeMap::new(),
         }
     }
 }
@@ -856,7 +857,7 @@ mod tests {
             Some("Bearer $MY_TOKEN")
         );
         assert_eq!(http.allowed_env_vars, vec!["MY_TOKEN"]);
-        assert_eq!(handler.timeout_secs, 30);
+        assert_eq!(handler.timeout_ms, 30_000);
         assert!(cfg.unsupported_handlers.is_empty());
 
         let no_url = r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"http"}]}]}}"#;
