@@ -126,6 +126,52 @@ class HeartbeatTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertLess(time.time() - started, 5)
 
+    def test_the_first_renewal_waits_one_interval(self):
+        """`acquire` just wrote a fresh lease; renewing again at once is a race.
+
+        An immediate renewal let the heartbeat overwrite a lease that a test or
+        an operator had aged on purpose, so takeover checks measured timing
+        instead of liveness (#3031 G1.1).
+        """
+        path = worker_slots.slots_path()
+        slots = worker_state.read_json(path)
+        slots[self.worker]["renewedAt"] = int(time.time()) - worker_state.LEASE_TTL_SECONDS + 30
+        worker_state.atomic_write_json(path, slots)
+        stale = self.record()["renewedAt"]
+
+        with patch.dict(os.environ, {"WORKER_LOOP_HEARTBEAT_SECONDS": "2"}):
+            self.assertIsNotNone(lease_heartbeat.start(self.worker, self.token, os.getpid()))
+            time.sleep(0.5)
+            self.assertEqual(
+                self.record()["renewedAt"], stale, "renewed before one interval had passed"
+            )
+
+        self.assertTrue(
+            wait_for(lambda: self.record().get("renewedAt", 0) > stale, timeout=10),
+            f"the heartbeat never renewed: {self.record()}",
+        )
+
+    def test_stop_never_signals_a_pid_that_was_reused(self):
+        """A PID alone is not the heartbeat: a reused one is another process."""
+        pid = lease_heartbeat.start(self.worker, self.token, os.getpid())
+        self.assertTrue(lease_heartbeat.running(pid))
+
+        path = worker_slots.slots_path()
+        slots = worker_state.read_json(path)
+        recorded = slots[self.worker].get("heartbeatStart")
+        self.assertIsNotNone(recorded, "the start time must be recorded with the PID")
+        slots[self.worker]["heartbeatStart"] = "some-other-process"
+        worker_state.atomic_write_json(path, slots)
+
+        self.assertFalse(
+            lease_heartbeat.stop(self.worker), "it signalled a PID it did not start"
+        )
+        self.assertTrue(lease_heartbeat.running(pid), "the heartbeat was killed anyway")
+
+        slots[self.worker]["heartbeatStart"] = recorded
+        worker_state.atomic_write_json(path, slots)
+        self.assertTrue(lease_heartbeat.stop(self.worker))
+
 
 class LeaseReleaseTest(unittest.TestCase):
     """The lease itself starts and stops the heartbeat, not the skill text."""
@@ -152,6 +198,21 @@ class LeaseReleaseTest(unittest.TestCase):
 
         self.assertTrue(wait_for(lambda: not lease_heartbeat.running(pid), timeout=10))
         self.assertFalse(worker_slots.holds_slot(held.worker, held.token))
+
+    def test_a_stale_token_does_not_stop_the_new_owners_heartbeat(self):
+        """`release` frees nothing for a stale token; it must also signal nothing."""
+        held = lease.acquire(OWNER, "worker-2")
+        self.addCleanup(lease.release, held.worker, held.token)
+        pid = lease_heartbeat.heartbeat_pid(held.worker)
+        self.assertIsNotNone(pid)
+        self.assertTrue(lease_heartbeat.running(pid))
+
+        lease.release(held.worker, "a-token-from-an-older-run")
+
+        self.assertTrue(
+            lease_heartbeat.running(pid), "a stale token stopped the owner's heartbeat"
+        )
+        self.assertTrue(worker_slots.holds_slot(held.worker, held.token))
 
 
 class TokenRequiredTest(unittest.TestCase):

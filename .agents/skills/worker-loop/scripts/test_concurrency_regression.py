@@ -738,6 +738,10 @@ class WorktreeIsolationTest(StateDirCase):
         self.set_state("worker", {"current": {"ref": "issue:1", "branch": "fix/a-1"}})
         self.assertIsNone(worker_claims.claim("worker", "issue:1"))
         self.age("worker", age)
+        # A dead run took its heartbeat with it. Without this the aged lease is
+        # renewed by a live writer and the takeover tests measure heartbeat
+        # timing instead of liveness (#3031 G1.1).
+        lease_heartbeat.stop("worker")
         return dead
 
     def takeover(self, held, *extra):

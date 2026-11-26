@@ -410,6 +410,15 @@ def pid_alive(pid: int | None) -> bool:
     return _pid_alive(pid)
 
 
+def pid_start(pid: int | None) -> str | None:
+    """When this process started, or None where it cannot be read.
+
+    The value changes when a PID is reused, so a recorded PID plus its start
+    identifies one process across time.
+    """
+    return _pid_start(int(pid)) if pid else None
+
+
 def lease_renewed_at(record: dict) -> float:
     """When the run that wrote this slot or lock record last proved it was alive."""
     return float(record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0)

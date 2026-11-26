@@ -18,9 +18,11 @@ It stops on its own when
     takeover and the TTL are for. The ceiling is what finally stops renewing
     for such a tick and lets the TTL reclaim the slot.
 
-`lease.release` (every `--unlock` path) stops it explicitly, and
-`worker_slots.set_heartbeat_pid` records its PID on the slot record so any
-release path can find it.
+`lease.release` (every `--unlock` path) stops it explicitly for that lease's
+token, so a run that lost the slot cannot stop the new owner's heartbeat.
+`worker_slots.set_heartbeat_pid` records its PID together with the process start
+time, and the stop path signals only while the PID still has that start: a
+reused PID must never be killed.
 """
 from __future__ import annotations
 
@@ -40,6 +42,13 @@ MAX_LIFETIME_ENV = "WORKER_LOOP_HEARTBEAT_MAX_SECONDS"
 DEFAULT_INTERVAL_SECONDS = 300.0  # six renewals per 1800s TTL
 DEFAULT_MAX_LIFETIME_SECONDS = 2 * 3600.0
 _PID_KEY = "heartbeatPid"
+_START_KEY = "heartbeatStart"
+
+# Windows has neither zombies nor `WNOHANG`, and no `SIGKILL`; there `os.kill`
+# terminates outright. Both are looked up once so the stop path never raises on
+# a platform that lacks them (#3031 G1.2).
+_WNOHANG = getattr(os, "WNOHANG", None)
+_SIGKILL = getattr(signal, "SIGKILL", None)
 
 # Heartbeats this process started and has not reaped yet, by PID. Kept so the
 # `Popen` handle survives until `_reap` collects the exit status.
@@ -67,11 +76,27 @@ def max_lifetime_seconds() -> float:
     return _env_seconds(MAX_LIFETIME_ENV, DEFAULT_MAX_LIFETIME_SECONDS)
 
 
+def heartbeat(worker: str, token: str | None = None) -> tuple[int | None, str | None]:
+    """The recorded heartbeat PID and its start time; `(None, None)` when none.
+
+    `token` limits the answer to the lease that owns the slot, so a run that has
+    lost its lease cannot stop the heartbeat of the run that took it over
+    (#3031 G1.4).
+    """
+    record = worker_slots.load_slots().get(worker) or {}
+    if token is not None and record.get("token") != token:
+        return (None, None)
+    pid = record.get(_PID_KEY)
+    start = record.get(_START_KEY)
+    return (
+        int(pid) if isinstance(pid, int) and pid > 0 else None,
+        start if isinstance(start, str) else None,
+    )
+
+
 def heartbeat_pid(worker: str) -> int | None:
     """The recorded heartbeat PID, live or not; None when the slot has none."""
-    record = worker_slots.load_slots().get(worker) or {}
-    pid = record.get(_PID_KEY)
-    return int(pid) if isinstance(pid, int) and pid > 0 else None
+    return heartbeat(worker)[0]
 
 
 def running(pid: int) -> bool:
@@ -80,12 +105,15 @@ def running(pid: int) -> bool:
     In production the heartbeat is re-parented to init, which reaps it. A
     process that started one and lives on — a test, or a tick that ended —
     keeps the exit status until it reaps, and `kill(pid, 0)` answers "alive"
-    for that zombie.
+    for that zombie. Windows has no zombies, so `pid_alive` is the whole answer
+    there.
     """
     if not worker_state.pid_alive(pid):
         return False
+    if _WNOHANG is None:
+        return True
     try:
-        reaped, _ = os.waitpid(pid, os.WNOHANG)
+        reaped, _ = os.waitpid(pid, _WNOHANG)
     except (ChildProcessError, OSError):
         return True  # not our child: pid_alive is all we can know
     if reaped == 0:
@@ -95,6 +123,19 @@ def running(pid: int) -> bool:
     if proc is not None:
         proc.poll()
     return False
+
+
+def _is_the_heartbeat(pid: int, start: str | None) -> bool:
+    """Does `pid` still name the process this lease started?
+
+    A dead process's PID is reused, so a recorded PID alone can point at an
+    unrelated process, and signalling that one is machine-unsafe (#3031 G1.3).
+    The recorded start time is the tie-breaker; where it could not be read there
+    is nothing better than the PID.
+    """
+    if not running(pid):
+        return False
+    return start is None or worker_state.pid_start(pid) == start
 
 
 def start(
@@ -141,31 +182,39 @@ def start(
     # child still runs prints a ResourceWarning from `__del__` on every `--lock`.
     _spawned[proc.pid] = proc
     if not worker_slots.set_heartbeat_pid(worker, token, proc.pid):
-        _terminate(proc.pid)
+        _terminate(proc.pid, worker_state.pid_start(proc.pid))
         return None
     return proc.pid
 
 
-def stop(worker: str, timeout: float = 5.0) -> bool:
-    """Stop the recorded heartbeat, if any. Returns True when one was running."""
-    pid = heartbeat_pid(worker)
+def stop(worker: str, token: str | None = None, timeout: float = 5.0) -> bool:
+    """Stop the recorded heartbeat, if any. Returns True when one was running.
+
+    `token` stops only the heartbeat of the lease that owns the slot: a run that
+    lost its lease must not take down the new owner's heartbeat (#3031 G1.4).
+    """
+    pid, start = heartbeat(worker, token)
     if not pid:
         return False
-    return _terminate(pid, timeout)
+    return _terminate(pid, start, timeout)
 
 
-def _terminate(pid: int, timeout: float = 5.0) -> bool:
-    try:
-        return _kill(pid, timeout)
-    finally:
+def _terminate(pid: int, start: str | None = None, timeout: float = 5.0) -> bool:
+    stopped = _kill(pid, start, timeout)
+    # Only collect a status we caused. A refused signal leaves a live process,
+    # and reaping it would either block or kill a PID the stop path just
+    # declined to touch (#3031 G1.3).
+    if stopped:
         _reap(pid)
+    return stopped
 
 
 def _reap(pid: int) -> None:
     """Collect the exit status of a heartbeat this process started.
 
     Only `_spawned` holds a handle; a heartbeat started by another process is
-    not ours to wait on.
+    not ours to wait on. `running` already reaps a child that died on its own,
+    so this sees a process this process stopped.
     """
     proc = _spawned.pop(pid, None)
     if proc is None:
@@ -173,11 +222,18 @@ def _reap(pid: int) -> None:
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        _spawned[pid] = proc
 
 
-def _kill(pid: int, timeout: float = 5.0) -> bool:
-    if not running(pid):
+def _kill(pid: int, start: str | None = None, timeout: float = 5.0) -> bool:
+    """Signal the heartbeat, but only while `pid` is still that process.
+
+    The start time is re-checked before each signal: between the polite SIGTERM
+    and the forced one the process may have exited and its PID been reused
+    (#3031 G1.3). Without `SIGKILL` (Windows) the SIGTERM above already ends the
+    process, so there is no second stage.
+    """
+    if not _is_the_heartbeat(pid, start):
         return False
     try:
         os.kill(pid, signal.SIGTERM)
@@ -185,15 +241,16 @@ def _kill(pid: int, timeout: float = 5.0) -> bool:
         return False
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if not running(pid):
+        if not _is_the_heartbeat(pid, start):
             return True
         time.sleep(0.05)
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except OSError:
-        pass
+    if _SIGKILL is not None and _is_the_heartbeat(pid, start):
+        try:
+            os.kill(pid, _SIGKILL)
+        except OSError:
+            pass
     for _ in range(int(timeout / 0.05) or 1):
-        if not running(pid):
+        if not _is_the_heartbeat(pid, start):
             break
         time.sleep(0.05)
     return True
@@ -213,13 +270,17 @@ def run(
     started = time.time()
     try:
         while True:
-            if watch_pid and not worker_state.pid_alive(watch_pid):
-                return 0
             if time.time() - started >= max_lifetime:
+                return 0
+            # `lease.acquire` has just written a fresh lease, so the first
+            # renewal waits one interval. Renewing the moment this starts made
+            # the heartbeat race every test, takeover and operator that ages a
+            # lease to check whether it is still live (#3031 G1.1).
+            time.sleep(interval)
+            if watch_pid and not worker_state.pid_alive(watch_pid):
                 return 0
             if not lease.renew(worker, token, state_file):
                 return 0
-            time.sleep(interval)
     finally:
         worker_slots.set_heartbeat_pid(worker, token, None)
 

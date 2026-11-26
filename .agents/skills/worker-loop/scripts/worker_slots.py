@@ -156,7 +156,9 @@ def set_heartbeat_pid(
     """Record (or clear) the lease heartbeat's PID on the slot record (#3031).
 
     The token check keeps a run that lost its slot from touching the new
-    owner's record; `None` removes the field.
+    owner's record; `None` removes the field. The process start time is recorded
+    with the PID: a PID alone can be reused by an unrelated process, and the
+    stop path must not signal one it did not start (#3031 G1.3).
     """
     path = path or slots_path()
     with exclusive(path.with_name(path.name + ".lock")):
@@ -166,8 +168,14 @@ def set_heartbeat_pid(
             return False
         if pid is None:
             record.pop("heartbeatPid", None)
+            record.pop("heartbeatStart", None)
         else:
             record["heartbeatPid"] = int(pid)
+            start = worker_state.pid_start(int(pid))
+            if start:
+                record["heartbeatStart"] = start
+            else:
+                record.pop("heartbeatStart", None)
         worker_state.atomic_write_json(path, slots)
     return True
 
