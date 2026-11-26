@@ -29,7 +29,15 @@ All natural-completion and workflow-error finalization paths now converge on
 | `settle_session_and_finalize_error`   | Error path → `Error` + `WorkflowError`                                              |
 
 Production callers still use the public wrappers. Tests can inject a custom
-`AgentEventDispatcher` through the `*_with_dispatcher` variants.
+`AgentEventDispatcher` through the `*_with_dispatcher` variants, and both a
+custom event dispatcher and a custom `WorkflowRestart` through the
+`*_with_dispatcher` variants that take them.
+
+`WorkflowRestart` is the only way settlement starts another turn. Production
+passes `LlmCompletionRestart` (which calls
+`request_llm_completion_with_recovery`); a test passes its own stub, so a
+settlement test never drives the completion path through a mock `AppHandle`
+(#3028).
 
 ### Success Path
 
@@ -37,9 +45,9 @@ Production callers still use the public wrappers. Tests can inject a custom
 LLM natural completion
   → persist_terminal_assistant_sync
   → continue_workflow_if_pending_events
-      → if pending: request_llm_completion_with_recovery, return Ok(true)
+      → if pending: restart.restart(...), return Ok(true)
   → continue_workflow_if_pending_events   # finish-window guard
-      → if pending: request_llm_completion_with_recovery, return Ok(true)
+      → if pending: restart.restart(...), return Ok(true)
   → update_session_status(..., Idle)
   → emit WorkflowCompleted
 ```

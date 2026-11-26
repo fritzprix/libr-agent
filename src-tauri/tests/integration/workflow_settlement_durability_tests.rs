@@ -1,7 +1,9 @@
 use crate::common;
 use serde_json::json;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -18,7 +20,6 @@ use tauri_mcp_agent_lib::agent::events::{
 use tauri_mcp_agent_lib::agent::lifecycle::update_session_status_with_dispatcher;
 use tauri_mcp_agent_lib::agent::llm::tool_execution::stop_turn_from_hook;
 use tauri_mcp_agent_lib::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
-use tauri_mcp_agent_lib::agent::llm::{install_completion_override, CompletionOverrideGuard};
 use tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages;
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::agent::state::{
@@ -28,7 +29,7 @@ use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::workflow::{
     continue_workflow_if_pending_events, persist_terminal_assistant_sync,
     session_has_pending_events, settle_session_and_finalize_error_with_dispatcher,
-    settle_session_and_go_idle_with_dispatcher,
+    settle_session_and_go_idle_with_dispatcher, WorkflowRestart,
 };
 use tauri_mcp_agent_lib::agent::ExecutionMode;
 use tauri_mcp_agent_lib::mcp::builtin::agent::utils::{
@@ -184,6 +185,65 @@ impl AgentEventDispatcher for NoticeOrderProbeDispatcher {
     }
 }
 
+/// Restart stub for settlement tests that do restart: drains the pending queue
+/// and marks the session `Busy` through the recording dispatcher, so the
+/// completion path is never driven through the mock `AppHandle` cast
+/// (#3028 G2.1/G2.2). It also asserts that the restart targets the session the
+/// settlement just finished.
+struct PendingDrainRestart {
+    sessions: Arc<tokio::sync::RwLock<HashMap<String, AgentSession>>>,
+    session_repo: Arc<dyn SessionRepository>,
+    dispatcher: Arc<RecordingDispatcher>,
+    expected_session: String,
+}
+
+impl WorkflowRestart for PendingDrainRestart {
+    fn restart<'a>(
+        &'a self,
+        _session_repo: &'a Arc<dyn SessionRepository>,
+        _active_sessions: &'a Arc<tokio::sync::RwLock<HashMap<String, AgentSession>>>,
+        _proxy_manager: &'a Arc<MCPServiceProxyManager>,
+        _app_handle: &'a tauri::AppHandle,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        assert_eq!(
+            session_id, self.expected_session,
+            "settlement must request the restart for the session it just settled"
+        );
+        let sessions = Arc::clone(&self.sessions);
+        let session_repo = Arc::clone(&self.session_repo);
+        let dispatcher = Arc::clone(&self.dispatcher);
+        Box::pin(async move {
+            claim_all_pending_messages(&sessions, dispatcher.as_ref(), &session_id).await?;
+            update_session_status_with_dispatcher(
+                &session_repo,
+                &sessions,
+                dispatcher.as_ref(),
+                &session_id,
+                SessionStatus::Busy,
+            )
+            .await
+        })
+    }
+}
+
+/// Restart stub for a settlement that must not restart the workflow: any
+/// restart request panics, so a stray pending event cannot pass unnoticed.
+struct NeverRestart;
+
+impl WorkflowRestart for NeverRestart {
+    fn restart<'a>(
+        &'a self,
+        _session_repo: &'a Arc<dyn SessionRepository>,
+        _active_sessions: &'a Arc<tokio::sync::RwLock<HashMap<String, AgentSession>>>,
+        _proxy_manager: &'a Arc<MCPServiceProxyManager>,
+        _app_handle: &'a tauri::AppHandle,
+        _session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        panic!("this settlement must not restart the workflow")
+    }
+}
+
 struct SettlementHarness {
     mock_app: tauri::App<MockRuntime>,
     session_id: String,
@@ -278,30 +338,17 @@ impl SettlementHarness {
         }
     }
 
-    /// Install a completion stub that drains pending work through the recording
-    /// dispatcher and marks the session `Busy`. Settlement restart tests must
-    /// use this instead of driving the mistyped mock `AppHandle` through the
-    /// WebView LLM route (#3028 / #3004 owner decision).
-    fn install_restart_without_app_handle(&self) -> CompletionOverrideGuard {
-        let sessions = Arc::clone(&self.active_sessions);
-        let session_repo = Arc::clone(&self.session_repo);
-        let dispatcher = Arc::clone(&self.dispatcher);
-        install_completion_override(move |session_id| {
-            let sessions = Arc::clone(&sessions);
-            let session_repo = Arc::clone(&session_repo);
-            let dispatcher = Arc::clone(&dispatcher);
-            async move {
-                claim_all_pending_messages(&sessions, dispatcher.as_ref(), &session_id).await?;
-                update_session_status_with_dispatcher(
-                    &session_repo,
-                    &sessions,
-                    dispatcher.as_ref(),
-                    &session_id,
-                    SessionStatus::Busy,
-                )
-                .await
-            }
-        })
+    /// Restart stub for settlement tests: drains pending work through the
+    /// recording dispatcher and marks the session `Busy`, never touching
+    /// `AppHandle` (#3028 / #3004 owner decision). The stub asserts that the
+    /// restart targets this harness's session.
+    fn restart_stub(&self) -> PendingDrainRestart {
+        PendingDrainRestart {
+            sessions: Arc::clone(&self.active_sessions),
+            session_repo: Arc::clone(&self.session_repo),
+            dispatcher: Arc::clone(&self.dispatcher),
+            expected_session: self.session_id.clone(),
+        }
     }
 
     async fn session_status(&self) -> SessionStatus {
@@ -498,6 +545,7 @@ async fn settle_session_and_go_idle_persists_terminal_message_and_sets_idle() {
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         harness.dispatcher.as_ref(),
         &harness.session_id,
         Some(&terminal),
@@ -576,6 +624,7 @@ async fn continue_workflow_if_pending_events_returns_false_when_queue_is_empty()
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         &harness.session_id,
     )
     .await
@@ -658,6 +707,7 @@ async fn settle_session_and_go_idle_returns_error_when_terminal_cache_lookup_fai
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         harness.dispatcher.as_ref(),
         "missing-session-id",
         None,
@@ -718,6 +768,7 @@ async fn settle_session_and_go_idle_returns_error_when_workflow_completed_emit_f
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         &dispatcher,
         &harness.session_id,
         Some(&terminal),
@@ -891,6 +942,7 @@ async fn normal_completion_path_preserves_process_wake_fence_and_proxy() {
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         harness.dispatcher.as_ref(),
         &harness.session_id,
         Some(&terminal),
@@ -978,6 +1030,7 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         harness.dispatcher.as_ref(),
         parent_id,
         Some(&parent_terminal),
@@ -1015,6 +1068,7 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         harness.dispatcher.as_ref(),
         child_id,
         Some(&child_terminal),
@@ -1075,6 +1129,7 @@ async fn settle_with_hook_stop_reason_settles_idle_and_delivers_stop_reason() {
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         harness.dispatcher.as_ref(),
         &harness.session_id,
         None,
@@ -1130,6 +1185,7 @@ async fn settle_with_hook_stop_reason_settles_idle_and_delivers_stop_reason() {
 /// `Idle` with the reason, and no further completion is requested.
 #[tokio::test]
 async fn stop_turn_from_hook_closes_remaining_calls_and_settles_without_new_completion() {
+    let restart = NeverRestart;
     let harness =
         SettlementHarness::new("sess-hook-stop-production-path", SessionStatus::Busy).await;
 
@@ -1169,6 +1225,7 @@ async fn stop_turn_from_hook_closes_remaining_calls_and_settles_without_new_comp
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &restart,
         &harness.session_id,
         &remaining,
         "budget exhausted",
@@ -1250,7 +1307,7 @@ fn disable_rust_executor() -> tauri_mcp_agent_lib::agent::llm::rust_executor::Co
 #[tokio::test]
 async fn stop_turn_from_hook_with_queued_prompt_restarts_cleanly_and_surfaces_stop_reason() {
     let harness = SettlementHarness::new("sess-hook-stop-queued-prompt", SessionStatus::Busy).await;
-    let _restart = harness.install_restart_without_app_handle();
+    let restart = harness.restart_stub();
 
     let tool_calls = vec![build_tool_call("call-1"), build_tool_call("call-2")];
     let mut assistant =
@@ -1308,6 +1365,7 @@ async fn stop_turn_from_hook_with_queued_prompt_restarts_cleanly_and_surfaces_st
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &restart,
         &harness.session_id,
         &remaining,
         "budget exhausted",
@@ -1358,7 +1416,7 @@ async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped
     // Do not drive the mistyped mock AppHandle through the WebView LLM route (#3028).
     let notice_harness =
         SettlementHarness::new("sess-hook-stop-queued-notice", SessionStatus::Busy).await;
-    let _restart = notice_harness.install_restart_without_app_handle();
+    let notice_restart = notice_harness.restart_stub();
     notice_harness
         .push_assistant_to_cache(build_assistant_message(
             &notice_harness.session_id,
@@ -1395,6 +1453,7 @@ async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped
         &notice_harness.active_sessions,
         &notice_harness.proxy_manager,
         notice_harness.app_handle(),
+        &notice_restart,
         notice_harness.dispatcher.as_ref(),
         &notice_harness.session_id,
         None,
@@ -1488,6 +1547,7 @@ async fn stop_turn_from_hook_with_user_cancel_and_queued_prompt_settles_paused_w
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         &harness.session_id,
         &remaining,
         "budget exhausted",
@@ -1531,6 +1591,7 @@ async fn stop_turn_from_hook_after_cancel_consumed_by_batch_completion_stays_pau
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
+        &NeverRestart,
         &harness.session_id,
         &[],
         "budget exhausted",

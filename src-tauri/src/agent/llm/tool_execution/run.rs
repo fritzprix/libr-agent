@@ -106,6 +106,7 @@ pub async fn execute_tool_calls(
                         context.active_sessions,
                         context.proxy_manager,
                         context.app_handle,
+                        &crate::agent::workflow::LlmCompletionRestart,
                         context.session_id,
                         &tool_calls[index + 1..],
                         &stop_reason,
@@ -131,6 +132,7 @@ pub async fn execute_tool_calls(
                     context.active_sessions,
                     context.proxy_manager,
                     context.app_handle,
+                    &crate::agent::workflow::LlmCompletionRestart,
                     context.session_id,
                     &tool_calls[index + 1..],
                     &stop_reason,
@@ -685,11 +687,13 @@ fn hook_stopped_remaining_tool_result(stop_reason: &str) -> ToolExecutionResult 
 /// a non-error end of turn (#3004 G3.1).
 ///
 /// `pub` so the integration test can drive the production stop path (#3004 G2.2).
+#[allow(clippy::too_many_arguments)]
 pub async fn stop_turn_from_hook(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    restart: &dyn crate::agent::workflow::WorkflowRestart,
     session_id: &str,
     remaining: &[ToolCall],
     stop_reason: &str,
@@ -777,6 +781,7 @@ pub async fn stop_turn_from_hook(
         active_sessions,
         proxy_manager,
         app_handle,
+        restart,
         &dispatcher,
         session_id,
         None,

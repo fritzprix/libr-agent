@@ -15,9 +15,55 @@ use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
+
+/// Starts one more LLM turn after settlement finds pending work or a stop hook
+/// asks to continue.
+///
+/// The settlement path takes this as a parameter instead of calling the
+/// completion entry point directly, so a test can own its restart stub. A
+/// process-wide test hook would leak into release builds and race between
+/// tests (#3028 G2.1/G2.2).
+pub trait WorkflowRestart: Send + Sync {
+    fn restart<'a>(
+        &'a self,
+        session_repo: &'a Arc<dyn SessionRepository>,
+        active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+        proxy_manager: &'a Arc<MCPServiceProxyManager>,
+        app_handle: &'a AppHandle,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
+}
+
+/// The production restart: request another turn through the completion path.
+pub struct LlmCompletionRestart;
+
+impl WorkflowRestart for LlmCompletionRestart {
+    fn restart<'a>(
+        &'a self,
+        session_repo: &'a Arc<dyn SessionRepository>,
+        active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+        proxy_manager: &'a Arc<MCPServiceProxyManager>,
+        app_handle: &'a AppHandle,
+        session_id: String,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            crate::agent::llm::request_llm_completion_with_recovery(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+            )
+            .await
+            .map_err(|error| error.to_string())
+        })
+    }
+}
 
 fn latest_assistant_message_from_cache(messages: &[Message]) -> Option<Message> {
     messages
@@ -84,6 +130,7 @@ pub async fn continue_workflow_if_pending_events(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    restart: &dyn WorkflowRestart,
     session_id: &str,
 ) -> Result<bool, String> {
     if !session_has_pending_events(active_sessions, session_id).await {
@@ -95,15 +142,15 @@ pub async fn continue_workflow_if_pending_events(
         session_id
     );
 
-    crate::agent::llm::request_llm_completion_with_recovery(
-        session_repo,
-        active_sessions,
-        proxy_manager,
-        app_handle,
-        session_id.to_string(),
-    )
-    .await
-    .map_err(|error| error.to_string())?;
+    restart
+        .restart(
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle,
+            session_id.to_string(),
+        )
+        .await?;
 
     Ok(true)
 }
@@ -159,6 +206,7 @@ pub async fn settle_before_terminal_transition(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    restart: &dyn WorkflowRestart,
     session_id: &str,
     terminal_message: Option<&Message>,
 ) -> Result<bool, String> {
@@ -169,6 +217,7 @@ pub async fn settle_before_terminal_transition(
         active_sessions,
         proxy_manager,
         app_handle,
+        restart,
         session_id,
     )
     .await
@@ -343,6 +392,7 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    restart: &dyn WorkflowRestart,
     dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
     terminal_message: Option<&Message>,
@@ -354,6 +404,7 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         active_sessions,
         proxy_manager,
         app_handle,
+        restart,
         session_id,
         terminal_message,
     )
@@ -389,6 +440,7 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         active_sessions,
         proxy_manager,
         app_handle,
+        restart,
         session_id,
     )
     .await?
@@ -424,6 +476,7 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         active_sessions,
         proxy_manager,
         app_handle,
+        restart,
         session_id,
     )
     .await?
@@ -468,11 +521,13 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
 ///
 /// Returns `Ok(true)` when pending events restarted the workflow (caller must not treat
 /// the session as terminal). Returns `Ok(false)` when the session settled to `Idle`.
+#[allow(clippy::too_many_arguments)]
 pub async fn settle_session_and_go_idle(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    restart: &dyn WorkflowRestart,
     session_id: &str,
     terminal_message: Option<&Message>,
     completion_reason: WorkflowCompletionReason,
@@ -483,6 +538,7 @@ pub async fn settle_session_and_go_idle(
         active_sessions,
         proxy_manager,
         app_handle,
+        restart,
         &dispatcher,
         session_id,
         terminal_message,
@@ -620,6 +676,7 @@ async fn maybe_continue_from_stop_hook(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    restart: &dyn WorkflowRestart,
     session_id: &str,
 ) -> Result<StopHookTransition, String> {
     let (parent_session_id, assistant_id, session_name) = {
@@ -663,15 +720,15 @@ async fn maybe_continue_from_stop_hook(
 
     let transition = evaluate_stop_hook_outcome(session_id, event, outcome);
     if transition == StopHookTransition::Continue {
-        crate::agent::llm::request_llm_completion_with_recovery(
-            session_repo,
-            active_sessions,
-            proxy_manager,
-            app_handle,
-            session_id.to_string(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        restart
+            .restart(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id.to_string(),
+            )
+            .await?;
     }
     Ok(transition)
 }

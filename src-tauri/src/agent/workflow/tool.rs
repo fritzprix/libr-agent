@@ -200,6 +200,7 @@ pub async fn continue_workflow_after_tool(
                     active_sessions,
                     proxy_manager,
                     app_handle,
+                    &crate::agent::workflow::LlmCompletionRestart,
                     &session_id,
                     None,
                     crate::agent::events::WorkflowCompletionReason::RecurringStop,
