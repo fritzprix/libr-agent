@@ -15,8 +15,11 @@ use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::events::{
     AgentEvent, AgentEventDispatcher, WorkflowCompletionReason,
 };
+use tauri_mcp_agent_lib::agent::lifecycle::update_session_status_with_dispatcher;
 use tauri_mcp_agent_lib::agent::llm::tool_execution::stop_turn_from_hook;
 use tauri_mcp_agent_lib::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
+use tauri_mcp_agent_lib::agent::llm::{install_completion_override, CompletionOverrideGuard};
+use tauri_mcp_agent_lib::agent::pending_queue::claim_all_pending_messages;
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::agent::state::{
     AgentSession, CompactionRuntimeState, PendingEvent, PendingEventManager, PendingToolExecution,
@@ -189,7 +192,7 @@ struct SettlementHarness {
     pending_queue_repo: SqlitePendingQueueRepository,
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: Arc<MCPServiceProxyManager>,
-    dispatcher: RecordingDispatcher,
+    dispatcher: Arc<RecordingDispatcher>,
 }
 
 impl SettlementHarness {
@@ -271,8 +274,34 @@ impl SettlementHarness {
             pending_queue_repo,
             active_sessions,
             proxy_manager,
-            dispatcher: RecordingDispatcher::default(),
+            dispatcher: Arc::new(RecordingDispatcher::default()),
         }
+    }
+
+    /// Install a completion stub that drains pending work through the recording
+    /// dispatcher and marks the session `Busy`. Settlement restart tests must
+    /// use this instead of driving the mistyped mock `AppHandle` through the
+    /// WebView LLM route (#3028 / #3004 owner decision).
+    fn install_restart_without_app_handle(&self) -> CompletionOverrideGuard {
+        let sessions = Arc::clone(&self.active_sessions);
+        let session_repo = Arc::clone(&self.session_repo);
+        let dispatcher = Arc::clone(&self.dispatcher);
+        install_completion_override(move |session_id| {
+            let sessions = Arc::clone(&sessions);
+            let session_repo = Arc::clone(&session_repo);
+            let dispatcher = Arc::clone(&dispatcher);
+            async move {
+                claim_all_pending_messages(&sessions, dispatcher.as_ref(), &session_id).await?;
+                update_session_status_with_dispatcher(
+                    &session_repo,
+                    &sessions,
+                    dispatcher.as_ref(),
+                    &session_id,
+                    SessionStatus::Busy,
+                )
+                .await
+            }
+        })
     }
 
     async fn session_status(&self) -> SessionStatus {
@@ -469,7 +498,7 @@ async fn settle_session_and_go_idle_persists_terminal_message_and_sets_idle() {
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         &harness.session_id,
         Some(&terminal),
         WorkflowCompletionReason::Natural,
@@ -520,7 +549,7 @@ async fn settle_session_and_finalize_error_persists_terminal_message_and_sets_er
     settle_session_and_finalize_error_with_dispatcher(
         &harness.session_repo,
         &harness.active_sessions,
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         &harness.session_id,
         Some(&terminal),
         runtime_error,
@@ -629,7 +658,7 @@ async fn settle_session_and_go_idle_returns_error_when_terminal_cache_lookup_fai
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         "missing-session-id",
         None,
         WorkflowCompletionReason::Natural,
@@ -656,7 +685,7 @@ async fn settle_session_and_finalize_error_returns_error_when_terminal_cache_loo
     let result = settle_session_and_finalize_error_with_dispatcher(
         &harness.session_repo,
         &harness.active_sessions,
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         "missing-session-id",
         None,
         runtime_error,
@@ -862,7 +891,7 @@ async fn normal_completion_path_preserves_process_wake_fence_and_proxy() {
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         &harness.session_id,
         Some(&terminal),
         WorkflowCompletionReason::Natural,
@@ -949,7 +978,7 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         parent_id,
         Some(&parent_terminal),
         WorkflowCompletionReason::Natural,
@@ -986,7 +1015,7 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         child_id,
         Some(&child_terminal),
         WorkflowCompletionReason::Natural,
@@ -1046,7 +1075,7 @@ async fn settle_with_hook_stop_reason_settles_idle_and_delivers_stop_reason() {
         &harness.active_sessions,
         &harness.proxy_manager,
         harness.app_handle(),
-        &harness.dispatcher,
+        harness.dispatcher.as_ref(),
         &harness.session_id,
         None,
         WorkflowCompletionReason::Natural,
@@ -1220,8 +1249,8 @@ fn disable_rust_executor() -> tauri_mcp_agent_lib::agent::llm::rust_executor::Co
 /// and the stopped turn's `stopReason` still reaches the UI via `WorkflowCompleted`.
 #[tokio::test]
 async fn stop_turn_from_hook_with_queued_prompt_restarts_cleanly_and_surfaces_stop_reason() {
-    let _executor = disable_rust_executor();
     let harness = SettlementHarness::new("sess-hook-stop-queued-prompt", SessionStatus::Busy).await;
+    let _restart = harness.install_restart_without_app_handle();
 
     let tool_calls = vec![build_tool_call("call-1"), build_tool_call("call-2")];
     let mut assistant =
@@ -1324,11 +1353,12 @@ async fn stop_turn_from_hook_with_queued_prompt_restarts_cleanly_and_surfaces_st
 
 #[tokio::test]
 async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped_notice() {
-    let _executor = disable_rust_executor();
     // Verify through the recording dispatcher that `stopReason` is still emitted
     // via `HookStoppedNotice` when settlement restarts the workflow for a queued prompt.
+    // Do not drive the mistyped mock AppHandle through the WebView LLM route (#3028).
     let notice_harness =
         SettlementHarness::new("sess-hook-stop-queued-notice", SessionStatus::Busy).await;
+    let _restart = notice_harness.install_restart_without_app_handle();
     notice_harness
         .push_assistant_to_cache(build_assistant_message(
             &notice_harness.session_id,
@@ -1336,6 +1366,26 @@ async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped
             "partial answer before the stop",
         ))
         .await;
+    let mut queued = build_assistant_message(
+        &notice_harness.session_id,
+        "queued-user-prompt-2",
+        "next task please",
+    );
+    queued.role = "user".to_string();
+    notice_harness
+        .message_repo
+        .insert(&queued)
+        .await
+        .expect("queued prompt durable");
+    notice_harness
+        .pending_queue_repo
+        .enqueue(
+            &notice_harness.session_id,
+            "queued-user-prompt-2",
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .await
+        .expect("pending index row");
     notice_harness
         .queue_pending_message("queued-user-prompt-2")
         .await;
@@ -1345,7 +1395,7 @@ async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped
         &notice_harness.active_sessions,
         &notice_harness.proxy_manager,
         notice_harness.app_handle(),
-        &notice_harness.dispatcher,
+        notice_harness.dispatcher.as_ref(),
         &notice_harness.session_id,
         None,
         WorkflowCompletionReason::Natural,

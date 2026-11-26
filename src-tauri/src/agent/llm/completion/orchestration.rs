@@ -13,6 +13,12 @@ pub async fn request_llm_completion_with_recovery(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    // Integration tests install an override so settlement can restart a turn
+    // without driving the mistyped mock `AppHandle` (#3028 / #3004).
+    if let Some(result) = super::test_override::try_run(session_id.clone()).await {
+        return result;
+    }
+
     match super::request::request_llm_completion(
         session_repo,
         active_sessions,

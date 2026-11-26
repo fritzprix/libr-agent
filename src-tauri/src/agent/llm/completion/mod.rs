@@ -2,6 +2,7 @@ pub(crate) mod compaction;
 pub(crate) mod context;
 pub(crate) mod orchestration;
 pub(crate) mod request;
+pub mod test_override;
 
 pub use compaction::{
     advance_compaction_overflow_recovery_step_for_testing, apply_compaction_retry_budget,
@@ -31,6 +32,7 @@ pub use request::{
     build_compact_summary_text, merge_consecutive_user_messages, normalize_request_messages,
     request_llm_completion, resolve_preserved_calibration_ratio, summarize_recent_tool_calls,
 };
+pub use test_override::{install as install_completion_override, CompletionOverrideGuard};
 
 // Crate-internal re-exports for intra-module visibility
 pub(crate) use context::load_context_management_settings_for_session;
