@@ -23,3 +23,17 @@ exactly like the Extensions page (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap
 |---|---|
 | `card-1024-three-col.png` | 1024 px, 3 columns incl. `notion-workspace` OAuth card; red outline = measured status-text rect, blue outline = measured button rect |
 | `card-long-status.png` | same grid with a deliberately long unauthorized-status string: text truncates with ellipsis (`truncate` + `title` tooltip), Authorize button stays fully visible on the same row |
+
+## Round 7 (head `92178bc`, G3.1 verification — 1024 px with THREE columns)
+
+Round 6 (`card-1024-three-col.png`, `card-long-status.png`) was 998 px wide and
+showed two columns, so it did not prove G3.1. These are retaken with the browser
+window at exactly 1024 px, and each one prints its own measurement in the banner
+so the screenshot proves itself: `innerWidth`, the computed column count, the
+number of cards in the first row, and the rects of the OAuth status text and its
+Authorize button.
+
+| File | Measurement printed in the image |
+|---|---|
+| `card-1024-three-col-r7.png` | `innerWidth=1024 · columns=3 · cardsInFirstRow=3` — `notion-workspace` (OAuth, Authorize inline), `linear-releases`, `github-readonly` |
+| `card-long-status-r7.png` | `innerWidth=1024 · columns=3 · cardsInFirstRow=3 · status[x=85 w=106 right=191] · authorize[x=199 w=70 right=269]` — the long unauthorized string truncates (ellipsis + `title`), the Authorize button keeps its full 70 px and stays on the same row, no overlap |
