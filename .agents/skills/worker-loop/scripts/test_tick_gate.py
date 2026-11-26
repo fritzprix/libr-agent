@@ -243,6 +243,12 @@ class TickGateTest(unittest.TestCase):
             self.assertIn("#12", out)
 
     def test_unchanged_fingerprint_returns_noop_when_only_parent_issues_remain(self):
+        # G3.1: record the fingerprint WITHOUT the idle memo (ending the first
+        # tick with --update --unlock would short-circuit the next --lock on
+        # lastIdleFingerprint before pending_approved_issue is ever called).
+        # The NOOP below can then only come from pending_approved_issue
+        # excluding #3022 as a parent issue — removing the exclusion turns
+        # this into RUN (approved issue pending: #3022).
         mock_gh = self._create_mock_gh(
             [self.IDLE, self.IDLE],
             issues=[approvals_issue(3022, ["approved"])],
@@ -252,10 +258,15 @@ class TickGateTest(unittest.TestCase):
              patch.object(tick_gate.worker_claims, "load_claims", return_value={}):
             code, token = self._lock()
             self.assertEqual(code, tick_gate.EXIT_RUN)
-            self.assertEqual(self._run("--token", token, "--update", "--unlock")[0], tick_gate.EXIT_RUN)
+            st = tick_gate.load_state(self.state_file)
+            st["lastFingerprint"] = st["tickStartFingerprint"]
+            tick_gate.save_state(self.state_file, st)
+            self.assertEqual(self._run("--token", token, "--unlock")[0], tick_gate.EXIT_RUN)
+            self.assertIsNone(tick_gate.load_state(self.state_file).get("lastIdleFingerprint"))
+
             code, out = self._run("--lock")
             self.assertEqual(code, tick_gate.EXIT_NOOP)
-            self.assertIn("NOOP", out)
+            self.assertIn("NOOP (no changes)", out)
 
     def test_fingerprint_changes_on_issue_label_comment_blocker_and_subissue(self):
         base_issue = {
