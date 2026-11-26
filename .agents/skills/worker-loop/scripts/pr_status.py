@@ -199,19 +199,9 @@ def new_triage_comments(
     return new_comments
 
 
-def base_drift(owner: str, name: str, pr: dict) -> int:
-    """Commits on the base that the PR head lacks (diagnostic only)."""
-    compare = json.loads(gh(
-        "api", f"repos/{owner}/{name}/compare/{pr['headRefOid']}...{pr['baseRefName']}",
-        "--jq", "{ahead_by}",
-    ))
-    return compare.get("ahead_by") or 0
-
-
 def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | None = None) -> dict:
     pr = fetch_until_mergeable_known(lambda: json.loads(gh("pr", "view", str(number), "--json", PR_FIELDS)))
     mergeable_unknown = pr.get("mergeable") == "UNKNOWN"
-    base_ahead_by = base_drift(owner, name, pr)
     comments = pr.get("comments") or []
     head_sha = pr["headRefOid"]
     labels = sorted(label["name"] for label in pr.get("labels") or [])
@@ -304,7 +294,6 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "mergeable": pr.get("mergeable"),
         "mergeState": pr.get("mergeStateStatus"),
         "mergeableUnknown": mergeable_unknown,
-        "baseAheadBy": base_ahead_by,
         "reviewDecision": pr.get("reviewDecision"),
         "failingChecks": failing,
         "pendingChecks": pending,
