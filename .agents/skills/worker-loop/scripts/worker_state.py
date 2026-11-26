@@ -405,6 +405,11 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
+def pid_alive(pid: int | None) -> bool:
+    """Is this process still running? Public form of the lease liveness check."""
+    return _pid_alive(pid)
+
+
 def lease_renewed_at(record: dict) -> float:
     """When the run that wrote this slot or lock record last proved it was alive."""
     return float(record.get("renewedAt") or record.get("startedAt") or record.get("time") or 0)
@@ -654,7 +659,15 @@ def main() -> None:
                 print(json.dumps(entries, ensure_ascii=False, indent=2))
         elif args.command in ("set-current", "clear-current"):
             worker = worker_name(args.worker)
-            if args.token and not worker_slots.holds_slot(worker, args.token):
+            # #3031: a call without a token cannot prove it is this tick, so it
+            # is refused instead of writing another run's `current`.
+            if not args.token:
+                print(
+                    "REFUSED: set-current/clear-current require --token "
+                    "(the one printed by `tick_gate.py --lock`)"
+                )
+                sys.exit(2)
+            if not worker_slots.holds_slot(worker, args.token):
                 print(f"LEASE LOST: {worker} no longer holds this tick; stop working")
                 sys.exit(EXIT_LEASE_LOST)
             if args.command == "clear-current":

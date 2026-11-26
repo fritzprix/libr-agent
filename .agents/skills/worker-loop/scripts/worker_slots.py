@@ -150,6 +150,28 @@ def force_release_slot(worker: str, path: Path | None = None) -> None:
             worker_state.atomic_write_json(path, slots)
 
 
+def set_heartbeat_pid(
+    worker: str, token: str, pid: int | None, path: Path | None = None
+) -> bool:
+    """Record (or clear) the lease heartbeat's PID on the slot record (#3031).
+
+    The token check keeps a run that lost its slot from touching the new
+    owner's record; `None` removes the field.
+    """
+    path = path or slots_path()
+    with exclusive(path.with_name(path.name + ".lock")):
+        slots = read_json(path)
+        record = slots.get(worker)
+        if not record or record.get("token") != token:
+            return False
+        if pid is None:
+            record.pop("heartbeatPid", None)
+        else:
+            record["heartbeatPid"] = int(pid)
+        worker_state.atomic_write_json(path, slots)
+    return True
+
+
 def find_worker_by_token(token: str, path: Path | None = None) -> str | None:
     for name, record in load_slots(path).items():
         if isinstance(record, dict) and record.get("token") == token:

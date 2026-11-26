@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import lease
+import lease_heartbeat
 import tick_gate
 import tick_lock
 import worker_claims
@@ -65,6 +66,12 @@ class StateDirCase(unittest.TestCase):
         lookup = patch.object(worker_state, "_process_info_lookup", lambda pid: None)
         lookup.start()
         self.addCleanup(lookup.stop)
+        self.addCleanup(self._stop_heartbeats)
+
+    def _stop_heartbeats(self):
+        """Each acquire starts a heartbeat that outlives the test unless stopped."""
+        for worker in list(worker_slots.load_slots()):
+            lease_heartbeat.stop(worker)
 
     def age(self, worker, seconds):
         """Make a lease look `seconds` older: slot and tick lock alike."""
