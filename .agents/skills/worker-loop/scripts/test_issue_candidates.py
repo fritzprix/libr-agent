@@ -193,5 +193,37 @@ class ClosingPrMapTest(unittest.TestCase):
         self.assertEqual(issue_candidates.closing_pr_map([]), {})
 
 
+class ParentIssueExclusionTest(unittest.TestCase):
+    """Issue #3030: parent issues with sub-issues are excluded even without `epic` label."""
+
+    def test_parent_with_open_sub_issues_is_excluded_naming_sub_issues(self):
+        reason = issue_candidates.exclusion_reason(
+            3022, {"approved"}, [], "me", {},
+            run_gh=lambda *a: "[3010, 3011]",
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("#3010", reason)
+        self.assertIn("#3011", reason)
+
+    def test_parent_with_all_closed_sub_issues_is_still_excluded(self):
+        # The sub-issues endpoint returns both open and closed children; any child excludes the parent.
+        reason = issue_candidates.exclusion_reason(
+            2900, {"approved"}, [], "me", {},
+            run_gh=lambda *a: "[2901, 2902]",
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("#2901", reason)
+        self.assertIn("#2902", reason)
+
+    def test_epic_label_without_sub_issues_is_still_excluded(self):
+        called = []
+        reason = issue_candidates.exclusion_reason(
+            2920, {"approved", "epic"}, [], "me", {},
+            run_gh=lambda *a: called.append(a) or "[]",
+        )
+        self.assertEqual(reason, "label: epic")
+        self.assertEqual(called, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -162,7 +162,7 @@ class TickGateTest(unittest.TestCase):
             fp2 = tick_gate.compute_fingerprint()
             self.assertNotEqual(fp1, fp2)
 
-    def _create_mock_gh(self, graphql_responses, issues=(), prs=()):
+    def _create_mock_gh(self, graphql_responses, issues=(), prs=(), sub_issues=None):
         responses = list(graphql_responses)
         idx = [0]
 
@@ -175,6 +175,9 @@ class TickGateTest(unittest.TestCase):
                 resp = responses[idx[0]]
                 idx[0] += 1
                 return json.dumps(resp)
+            if args[0] == "api" and args[1].endswith("/sub_issues"):
+                number = int(args[1].split("/issues/", 1)[1].split("/", 1)[0])
+                return json.dumps((sub_issues or {}).get(number, []))
             if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
                 # Issue #2995: an existing item returns its blocker list. These
                 # tests do not exercise 404 (an error now, not an empty list).
@@ -205,6 +208,21 @@ class TickGateTest(unittest.TestCase):
             code, out = self._run("--lock")
             self.assertEqual(code, tick_gate.EXIT_RUN)
             self.assertIn("#12", out)
+
+    def test_unchanged_fingerprint_returns_noop_when_only_parent_issues_remain(self):
+        mock_gh = self._create_mock_gh(
+            [self.IDLE, self.IDLE],
+            issues=[approvals_issue(3022, ["approved"])],
+            sub_issues={3022: [3010, 3011]},
+        )
+        with patch.object(tick_gate, "gh", side_effect=mock_gh), \
+             patch.object(tick_gate.worker_claims, "load_claims", return_value={}):
+            code, token = self._lock()
+            self.assertEqual(code, tick_gate.EXIT_RUN)
+            self.assertEqual(self._run("--token", token, "--update", "--unlock")[0], tick_gate.EXIT_RUN)
+            code, out = self._run("--lock")
+            self.assertEqual(code, tick_gate.EXIT_NOOP)
+            self.assertIn("NOOP", out)
 
     def _hold_with_state(self, state):
         """Take the lease, then set state as the tick would."""
@@ -333,7 +351,7 @@ class TickGateTest(unittest.TestCase):
 
 
 class PendingApprovedIssueTest(unittest.TestCase):
-    def pending(self, issues, prs=(), claims=None, worker="worker", comments=(), open_issues=()):
+    def pending(self, issues, prs=(), claims=None, worker="worker", comments=(), open_issues=(), sub_issues=None):
         def _gh(*args):
             if args[:2] == ("api", "user"):
                 return "me\n"
@@ -343,6 +361,9 @@ class PendingApprovedIssueTest(unittest.TestCase):
                 return json.dumps(list(issues))
             if args[:2] == ("issue", "view"):
                 return json.dumps({"comments": list(comments)})
+            if args[0] == "api" and args[1].endswith("/sub_issues"):
+                number = int(args[1].split("/issues/", 1)[1].split("/", 1)[0])
+                return json.dumps((sub_issues or {}).get(number, []))
             if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
                 # Issue #2995: an existing item returns its blocker list. These
                 # tests do not exercise 404 (an error now, not an empty list).
@@ -398,6 +419,12 @@ class PendingApprovedIssueTest(unittest.TestCase):
         blocked = {**approvals_issue(3, ["approved"]), "body": "Depends on #2"}
         self.assertIsNone(self.pending([blocked], open_issues={2}))
         self.assertEqual(self.pending([blocked]), 3)
+
+    def test_parent_issue_without_epic_label_is_not_pending(self):
+        parent = approvals_issue(3022, ["approved"])
+        self.assertIsNone(self.pending([parent], sub_issues={3022: [3010, 3011]}))
+        leaf = approvals_issue(3030, ["approved"])
+        self.assertEqual(self.pending([parent, leaf], sub_issues={3022: [3010]}), 3030)
 
 
 if __name__ == "__main__":
