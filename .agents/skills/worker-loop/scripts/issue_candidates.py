@@ -86,6 +86,20 @@ def dependency_refs(body: str | None) -> list[int]:
     return refs
 
 
+def sub_issues(number: int, run_gh: Callable[..., str] = gh) -> list[int]:
+    """Sub-issue numbers (open or closed) of `number` via the GitHub sub-issues API."""
+    try:
+        out = run_gh(
+            "api", f"repos/{{owner}}/{{repo}}/issues/{number}/sub_issues",
+            "--jq", "[.[].number]",
+        )
+    except GhError as e:
+        if _is_not_found(e):
+            return []
+        raise
+    return [int(n) for n in json.loads(out or "[]")]
+
+
 def exclusion_reason(
     number: int,
     labels: set[str],
@@ -93,8 +107,9 @@ def exclusion_reason(
     me: str,
     closing_pr: dict[int, list[int]],
     claimed_by: str | None = None,
+    run_gh: Callable[..., str] | None = None,
 ) -> str | None:
-    """Why an open issue is not a candidate, from data already listed; None when it may be."""
+    """Why an open issue is not a candidate; None when it may be."""
     if claimed_by:
         return f"claimed by {claimed_by}"
     if APPROVED_LABEL not in labels:
@@ -105,6 +120,10 @@ def exclusion_reason(
         return f"assigned to {', '.join(assignees)}"
     if number in closing_pr:
         return f"closed by open PR #{', #'.join(map(str, closing_pr[number]))}"
+    if run_gh is not None:
+        children = sub_issues(number, run_gh)
+        if children:
+            return f"parent issue with sub-issues #{', #'.join(map(str, children))}"
     return None
 
 
@@ -185,6 +204,7 @@ def main() -> None:
             reason = exclusion_reason(
                 number, labels, assignees, me, closing_pr,
                 claimed_by=worker_claims.claimed_by_other(claims, f"issue:{number}", worker),
+                run_gh=gh,
             )
             answer = None
             if reason is None:

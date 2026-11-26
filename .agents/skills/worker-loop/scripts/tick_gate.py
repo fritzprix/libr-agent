@@ -172,6 +172,7 @@ def pending_approved_issue(worker: str) -> int | None:
         free = issue_candidates.exclusion_reason(
             number, labels, assignees, me, closing_pr,
             claimed_by=worker_claims.claimed_by_other(claims, f"issue:{number}", worker),
+            run_gh=gh,
         )
         if free is None and issue_candidates.waiting_reason(issue, labels, me, gh)[0] is None:
             return number
