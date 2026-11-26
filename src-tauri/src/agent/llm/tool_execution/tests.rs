@@ -261,8 +261,7 @@ mod pending_approval_tests {
 mod hook_input_rewrite_tests {
     use super::super::approval::{build_pending_approval, ToolCallRef};
     use super::super::run::{
-        apply_hook_input_rewrite, pre_tool_should_apply_rewrite, EffectiveCall, HookInputRewrite,
-        PreExecutionGuards,
+        apply_hook_input_rewrite, EffectiveCall, HookInputRewrite, PreExecutionGuards,
     };
     use crate::agent::events::AgentEvent;
     use crate::agent::state::{AgentSession, PendingApprovalKind};
@@ -292,11 +291,13 @@ mod hook_input_rewrite_tests {
         }
     }
 
-    /// #3004 G3.1: `continue: false` is decided before `updatedInput`. A rewrite
-    /// that would be refused (destructive shell) must not suppress the stop —
-    /// `dispatch_pre_tool_hook_and_rewrite` skips the rewrite step entirely.
-    #[test]
-    fn continue_false_skips_rewrite_even_when_updated_input_would_be_refused() {
+    /// #3004 G4.1: the stop is decided inside the production rewrite step. A
+    /// `continue: false` with a rewrite the guards would refuse must yield
+    /// `Unchanged` — the original guards, untouched — so a refused rewrite can
+    /// never hide the stop from the gate, and no guard is re-run for a call
+    /// that will not happen.
+    #[tokio::test]
+    async fn stop_yields_unchanged_even_when_the_rewrite_would_be_refused() {
         let outcome = HookDispatchResult {
             decision: Some(HookDecision::Allow),
             stops_processing: true,
@@ -305,10 +306,32 @@ mod hook_input_rewrite_tests {
             ..HookDispatchResult::default()
         };
 
-        assert!(
-            !pre_tool_should_apply_rewrite(&outcome),
-            "a stop must skip the rewrite step so a refused updatedInput cannot drop it"
-        );
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-stop-rewrite",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo safe"}"#,
+            original_guards(),
+        )
+        .await;
+
+        match rewrite {
+            HookInputRewrite::Unchanged(guards) => assert_eq!(
+                guards.policy_decision,
+                ToolExecutionPolicyDecision::Allow,
+                "a stop must leave the guards as they were, without re-running them"
+            ),
+            other => panic!(
+                "a stop must leave the arguments unchanged, got a {} variant",
+                match other {
+                    HookInputRewrite::Applied(_) => "Applied",
+                    HookInputRewrite::Unchanged(_) => "Unchanged",
+                    HookInputRewrite::Refused(_) => "Refused",
+                }
+            ),
+        }
     }
 
     /// #3005 (first acceptance criterion, gatekeeper G1.5): the rewrite from

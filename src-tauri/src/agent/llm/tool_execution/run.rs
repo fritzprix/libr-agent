@@ -320,8 +320,10 @@ pub(super) enum HookInputRewrite {
 /// string, number, or array would make every key-reading guard see nothing,
 /// so anything else is ignored with a visible warning and the original
 /// arguments stand. A `Block` decision ignores any rewrite: the call never
-/// runs. A usable rewrite re-runs the same policy and root guards, so a hook
-/// cannot walk a command around them that the model could not run.
+/// runs. A stop (`continue: false`) likewise ignores any rewrite, so a refused
+/// rewrite cannot hide the stop from the gate (#3004). A usable rewrite re-runs
+/// the same policy and root guards, so a hook cannot walk a command around them
+/// that the model could not run.
 pub(super) async fn apply_hook_input_rewrite(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -331,10 +333,10 @@ pub(super) async fn apply_hook_input_rewrite(
     original_args_json: &str,
     original_guards: PreExecutionGuards,
 ) -> HookInputRewrite {
-    let rewrite = outcome
-        .updated_input
-        .clone()
-        .filter(|_| outcome.decision != Some(crate::services::hooks::HookDecision::Block));
+    let rewrite = outcome.updated_input.clone().filter(|_| {
+        !outcome.stops_processing
+            && outcome.decision != Some(crate::services::hooks::HookDecision::Block)
+    });
     let Some(rewritten) = rewrite else {
         return HookInputRewrite::Unchanged(original_guards);
     };
@@ -399,21 +401,9 @@ async fn dispatch_pre_tool_hook_and_rewrite(
         crate::services::hooks::push_turn_hook_context(context.session_id, &ctx);
     }
 
-    // `continue: false` must win before `updatedInput` (#3004 G3.1). A refused
-    // rewrite used to return `None` here, so the gate never saw the stop and
-    // the batch kept running.
-    if !pre_tool_should_apply_rewrite(&pre_tool_outcome) {
-        return Some(PreToolHookStage {
-            args,
-            args_json: args_str.to_string(),
-            guards,
-            outcome: pre_tool_outcome,
-        });
-    }
-
     // `updatedInput` (#3005): apply the hook's rewrite through the
-    // production step `apply_hook_input_rewrite` — object-only, Block
-    // drops it, and the rewritten arguments re-run every guard.
+    // production step `apply_hook_input_rewrite` — object-only, Block or a
+    // stop drops it, and the rewritten arguments re-run every guard.
     let rewrite = apply_hook_input_rewrite(
         context.active_sessions,
         context.session_id,
@@ -442,16 +432,6 @@ async fn dispatch_pre_tool_hook_and_rewrite(
         guards,
         outcome: pre_tool_outcome,
     })
-}
-
-/// Whether the PreToolUse rewrite step may run.
-///
-/// A stop (`continue: false`) must be decided before `updatedInput` is applied
-/// so a refused rewrite cannot skip the stop (#3004 G3.1).
-pub(super) fn pre_tool_should_apply_rewrite(
-    outcome: &crate::services::hooks::HookDispatchResult,
-) -> bool {
-    !outcome.stops_processing
 }
 
 async fn dispatch_pre_tool_hook_and_gate(
