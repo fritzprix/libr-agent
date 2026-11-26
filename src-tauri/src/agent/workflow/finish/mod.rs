@@ -17,6 +17,8 @@ pub use persist::{persist_terminal_assistant_sync, settle_before_terminal_transi
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_subagent_matcher;
 
 use crate::agent::events::{AgentEvent, AgentEventDispatcher, WorkflowCompletionReason};
 use crate::agent::llm::types::AgentRuntimeError;
