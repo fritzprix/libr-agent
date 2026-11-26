@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Preflight gate for worker-loop.
 
-Computes a fingerprint from a single GraphQL request covering:
+Computes a fingerprint from a single GraphQL request plus local claims covering:
   - Open PRs authored by @me: headRefOid, mergeable, CI statusCheckRollup state,
     updatedAt, and last comment createdAt.
-  - Candidate issues: updatedAt timestamps.
+  - Open issues (recent window plus up to 100 open `approved` issues): updatedAt,
+    labels, last comment createdAt, subIssuesSummary, and blockedBy states.
+  - Local item claims (`claims.json`), so a claim released by another worker wakes
+    an idle slot.
 
-With no 'current' work and an unchanged fingerprint, it still returns RUN when an
-open `approved` issue is free to take and no open PR closes it, so an approved
-issue is never ignored just because the tracked state did not move. It also
-returns RUN when another slot's run died with `current` work (see
-worker_slots.orphaned_slots) and prints one `ORPHANED <slot> <ref> ...` line per
-such slot; `worker_worktree.py takeover` resumes that work.
+After an idle tick (`--update --unlock`), `lastIdleFingerprint` is recorded; the
+next `--lock` with the same fingerprint returns `NOOP` even if an approved
+candidate remains, until candidate state changes or orphaned work appears. A
+non-idle tick (`--unlock` without `--update`) clears `lastIdleFingerprint`, so an
+unchanged fingerprint still checks `pending_approved_issue` and returns `RUN`
+when an approved issue is free. It also returns `RUN` when another slot's run
+died with `current` work (see `worker_slots.orphaned_slots`) and prints one
+`ORPHANED <slot> <ref> ...` line per such slot; `worker_worktree.py takeover`
+resumes that work.
 
 If state.json has no 'current' and nothing is pending and the fingerprint matches
 'lastFingerprint', outputs 'NOOP' and exits with code 1 so external schedulers
@@ -97,10 +103,40 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
   }
   repository(owner: $owner, name: $name) {
     issues(first: $issueLimit, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      totalCount
       nodes {
-        number
-        updatedAt
+        ...IssueGateFields
       }
+    }
+    approvedIssues: issues(first: 100, states: [OPEN], labels: ["approved"], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        ...IssueGateFields
+      }
+    }
+  }
+}
+
+fragment IssueGateFields on Issue {
+  number
+  updatedAt
+  labels(first: 20) {
+    nodes {
+      name
+    }
+  }
+  comments(last: 1) {
+    nodes {
+      createdAt
+    }
+  }
+  subIssuesSummary {
+    total
+    completed
+  }
+  blockedBy(first: 20) {
+    nodes {
+      number
+      state
     }
   }
 }
@@ -227,11 +263,56 @@ def compute_fingerprint() -> str:
         ))
     prs_fingerprint.sort()
 
-    issue_nodes = repo_data.get("issues", {}).get("nodes") or []
-    issues_fingerprint = sorted((i["number"], i.get("updatedAt")) for i in issue_nodes)
+    issue_by_number: dict[int, dict] = {}
+    for i in (repo_data.get("issues", {}).get("nodes") or []) + (
+        repo_data.get("approvedIssues", {}).get("nodes") or []
+    ):
+        if i and "number" in i:
+            issue_by_number[i["number"]] = i
+    issues_fingerprint = []
+    for i in issue_by_number.values():
+        labels = sorted(
+            node["name"]
+            for node in ((i.get("labels") or {}).get("nodes") or [])
+            if node and node.get("name")
+        )
+        comment_nodes = (i.get("comments") or {}).get("nodes") or []
+        last_comment = comment_nodes[0].get("createdAt") if comment_nodes else ""
+        sub = i.get("subIssuesSummary") or {}
+        sub_summary = (sub.get("total") or 0, sub.get("completed") or 0)
+        blockers = sorted(
+            (node["number"], node.get("state") or "")
+            for node in ((i.get("blockedBy") or {}).get("nodes") or [])
+            if node and "number" in node
+        )
+        issues_fingerprint.append((
+            i["number"],
+            i.get("updatedAt"),
+            labels,
+            last_comment,
+            sub_summary,
+            blockers,
+        ))
+    issues_fingerprint.sort()
+
+    claims_fingerprint = sorted(
+        (ref, info.get("worker") if isinstance(info, dict) else None)
+        for ref, info in worker_claims.load_claims().items()
+    )
+
+    open_issues_total = (repo_data.get("issues") or {}).get("totalCount")
 
     hasher = hashlib.sha256()
-    hasher.update(json.dumps({"prs": prs_fingerprint, "issues": issues_fingerprint}).encode("utf-8"))
+    hasher.update(
+        json.dumps(
+            {
+                "prs": prs_fingerprint,
+                "issues": issues_fingerprint,
+                "openIssuesTotal": open_issues_total,
+                "claims": claims_fingerprint,
+            }
+        ).encode("utf-8")
+    )
     return hasher.hexdigest()
 
 
@@ -249,11 +330,19 @@ def _finish_tick(args: argparse.Namespace, token: str | None) -> int:
             tick_start_fp = state.pop("tickStartFingerprint", None)
             if tick_start_fp:
                 state["lastFingerprint"] = tick_start_fp
+                state["lastIdleFingerprint"] = tick_start_fp
                 print(f"UPDATED: {tick_start_fp[:12]}")
             save_state(state_path, state)
-        elif "tickStartFingerprint" in state:
-            del state["tickStartFingerprint"]
-            save_state(state_path, state)
+        else:
+            changed = False
+            if "tickStartFingerprint" in state:
+                del state["tickStartFingerprint"]
+                changed = True
+            if "lastIdleFingerprint" in state:
+                del state["lastIdleFingerprint"]
+                changed = True
+            if changed:
+                save_state(state_path, state)
         if args.unlock:
             worker_claims.release_finished(worker, state)
         return EXIT_RUN
@@ -282,14 +371,17 @@ def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[in
     orphans = [o for o in worker_slots.orphaned_slots() if o["worker"] != worker]
     message = f"RUN (changes detected: {fp[:12]})"
     if last_fp and last_fp == fp:
-        # Nothing tracked moved, but an approved issue or orphaned work may still be waiting.
-        pending = pending_approved_issue(worker)
-        if pending is not None:
-            message = f"RUN (approved issue pending: #{pending})"
-        elif orphans:
+        if orphans:
             message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+        elif state.get("lastIdleFingerprint") == fp:
+            return EXIT_NOOP, "NOOP (no changes since last idle tick)"
         else:
-            return EXIT_NOOP, "NOOP (no changes)"
+            # Nothing tracked moved, but an approved issue may still be waiting.
+            pending = pending_approved_issue(worker)
+            if pending is not None:
+                message = f"RUN (approved issue pending: #{pending})"
+            else:
+                return EXIT_NOOP, "NOOP (no changes)"
 
     # Keep the start-of-tick fingerprint; lastFingerprint is saved only by a
     # successful idle tick (--update).
