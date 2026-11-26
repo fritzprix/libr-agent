@@ -261,7 +261,8 @@ mod pending_approval_tests {
 mod hook_input_rewrite_tests {
     use super::super::approval::{build_pending_approval, ToolCallRef};
     use super::super::run::{
-        apply_hook_input_rewrite, EffectiveCall, HookInputRewrite, PreExecutionGuards,
+        apply_hook_input_rewrite, pre_tool_should_apply_rewrite, EffectiveCall, HookInputRewrite,
+        PreExecutionGuards,
     };
     use crate::agent::events::AgentEvent;
     use crate::agent::state::{AgentSession, PendingApprovalKind};
@@ -289,6 +290,25 @@ mod hook_input_rewrite_tests {
             policy_decision: ToolExecutionPolicyDecision::Allow,
             refusal: None,
         }
+    }
+
+    /// #3004 G3.1: `continue: false` is decided before `updatedInput`. A rewrite
+    /// that would be refused (destructive shell) must not suppress the stop —
+    /// `dispatch_pre_tool_hook_and_rewrite` skips the rewrite step entirely.
+    #[test]
+    fn continue_false_skips_rewrite_even_when_updated_input_would_be_refused() {
+        let outcome = HookDispatchResult {
+            decision: Some(HookDecision::Allow),
+            stops_processing: true,
+            stop_reason: Some("halt the batch".to_string()),
+            updated_input: Some(json!({"command": "rm -rf /"})),
+            ..HookDispatchResult::default()
+        };
+
+        assert!(
+            !pre_tool_should_apply_rewrite(&outcome),
+            "a stop must skip the rewrite step so a refused updatedInput cannot drop it"
+        );
     }
 
     /// #3005 (first acceptance criterion, gatekeeper G1.5): the rewrite from

@@ -399,6 +399,18 @@ async fn dispatch_pre_tool_hook_and_rewrite(
         crate::services::hooks::push_turn_hook_context(context.session_id, &ctx);
     }
 
+    // `continue: false` must win before `updatedInput` (#3004 G3.1). A refused
+    // rewrite used to return `None` here, so the gate never saw the stop and
+    // the batch kept running.
+    if !pre_tool_should_apply_rewrite(&pre_tool_outcome) {
+        return Some(PreToolHookStage {
+            args,
+            args_json: args_str.to_string(),
+            guards,
+            outcome: pre_tool_outcome,
+        });
+    }
+
     // `updatedInput` (#3005): apply the hook's rewrite through the
     // production step `apply_hook_input_rewrite` — object-only, Block
     // drops it, and the rewritten arguments re-run every guard.
@@ -430,6 +442,16 @@ async fn dispatch_pre_tool_hook_and_rewrite(
         guards,
         outcome: pre_tool_outcome,
     })
+}
+
+/// Whether the PreToolUse rewrite step may run.
+///
+/// A stop (`continue: false`) must be decided before `updatedInput` is applied
+/// so a refused rewrite cannot skip the stop (#3004 G3.1).
+pub(super) fn pre_tool_should_apply_rewrite(
+    outcome: &crate::services::hooks::HookDispatchResult,
+) -> bool {
+    !outcome.stops_processing
 }
 
 async fn dispatch_pre_tool_hook_and_gate(
