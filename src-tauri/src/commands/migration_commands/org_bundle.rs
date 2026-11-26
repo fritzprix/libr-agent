@@ -477,6 +477,23 @@ pub async fn import_org_bundle(
     conflict_strategy: String,
     password: Option<String>,
 ) -> Result<OrgBundleImportResult, String> {
+    // #3039: as in `import_migration`, the import runs with foreign-key checks
+    // off on a pooled connection, so the restore must cover every early exit,
+    // not only the commit and the explicit rollback.
+    let db = get_database_connection();
+    super::fk::with_foreign_keys_disabled(
+        db,
+        run_import_org_bundle(window, file_path, conflict_strategy, password),
+    )
+    .await
+}
+
+async fn run_import_org_bundle(
+    window: tauri::Window,
+    file_path: String,
+    conflict_strategy: String,
+    password: Option<String>,
+) -> Result<OrgBundleImportResult, String> {
     emit_progress(&window, 5);
 
     if conflict_strategy != "skip"
@@ -549,13 +566,6 @@ pub async fn import_org_bundle(
         .await
         .map_err(|e| e.to_string())?;
 
-    db.execute(Statement::from_string(
-        DbBackend::Sqlite,
-        "PRAGMA foreign_keys = OFF;".to_string(),
-    ))
-    .await
-    .map_err(|e| e.to_string())?;
-
     let txn = db.begin().await.map_err(|e| e.to_string())?;
     emit_progress(&window, 25);
 
@@ -603,23 +613,11 @@ pub async fn import_org_bundle(
 
     if !(transaction_ok && total_errors == 0) {
         txn.rollback().await.ok();
-        db.execute(Statement::from_string(
-            DbBackend::Sqlite,
-            "PRAGMA foreign_keys = ON;".to_string(),
-        ))
-        .await
-        .ok();
         backup_manager.restore_from_backup(&backup_file).ok();
         return Err("Org 번들 가져오기 중 데이터베이스 오류가 발생해 원복했습니다.".to_string());
     }
 
     txn.commit().await.map_err(|e| e.to_string())?;
-    db.execute(Statement::from_string(
-        DbBackend::Sqlite,
-        "PRAGMA foreign_keys = ON;".to_string(),
-    ))
-    .await
-    .ok();
     emit_progress(&window, 70);
 
     // Re-open archive for filesystem sections

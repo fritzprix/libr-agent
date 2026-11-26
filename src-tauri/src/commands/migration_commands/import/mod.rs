@@ -5,6 +5,8 @@ mod tables;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_fk;
 
 use std::collections::HashMap;
 use std::fs;
@@ -105,6 +107,24 @@ pub async fn import_migration(
     conflict_strategy: String, // "skip" | "overwrite" | "merge"
     password: Option<String>,
 ) -> Result<MigrationImportResult, String> {
+    // #3039: the import runs with foreign-key checks off, and the connection
+    // that ran it goes back into the pool. Wrapping the whole body means every
+    // early `?` below restores the pragma too, not only the commit and the
+    // explicit rollback.
+    let db = get_database_connection();
+    super::fk::with_foreign_keys_disabled(
+        db,
+        run_import_migration(window, file_path, conflict_strategy, password),
+    )
+    .await
+}
+
+async fn run_import_migration(
+    window: tauri::Window,
+    file_path: String,
+    conflict_strategy: String, // "skip" | "overwrite" | "merge"
+    password: Option<String>,
+) -> Result<MigrationImportResult, String> {
     window.emit("migration:progress", 5).ok();
 
     let zip_bytes = read_and_decrypt_zip(&file_path, password.as_deref())?;
@@ -162,7 +182,7 @@ pub async fn import_migration(
     let transaction_ok = db::validate_foreign_keys(&txn).await;
 
     if transaction_ok && totals.errors == 0 {
-        db::commit_and_restore_fk(db, txn).await?;
+        db::commit_import_transaction(txn).await?;
         let report_skills = skills::restore_user_skills(&window, &zip_bytes, &conflict_strategy)?;
         totals.record(&mut reports, "user_skills", report_skills);
         window.emit("migration:progress", 100).ok();
@@ -174,6 +194,6 @@ pub async fn import_migration(
             total_errors: totals.errors,
         })
     } else {
-        db::rollback_and_restore_backup(db, txn, &backup_manager, &backup_file, totals.errors).await
+        db::rollback_and_restore_backup(txn, &backup_manager, &backup_file, totals.errors).await
     }
 }
