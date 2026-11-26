@@ -1,9 +1,10 @@
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import React from 'react';
 import {
   AgentSessionProvider,
   useAgentSessionState,
 } from '../AgentSessionContext';
+import { clearOpenSessionViewCache } from '../agent-session/openSessionViewCache';
 import { listen } from '@tauri-apps/api/event';
 import { safeInvoke } from '@/lib/backend/core';
 import * as agentCommandsBackend from '@/lib/backend/agent-commands';
@@ -198,4 +199,27 @@ export function AgentSessionStateObserver({
   const state = useAgentSessionState();
   onRender(state);
   return null;
+}
+
+export function setupAgentSessionEventMocks() {
+  const mockUnlisten = vi.fn();
+  const defaultWrapper = createDefaultWrapper();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearOpenSessionViewCache();
+    mockMarkSessionViewed.mockResolvedValue(undefined);
+    mockRefreshCompactedRange.mockResolvedValue(undefined);
+    listenMock.mockResolvedValue(mockUnlisten);
+    openAgentSessionMock.mockResolvedValue(
+      createOpenSessionResponse(TEST_SESSION_ID, {
+        session: {
+          name: 'Test Session',
+        },
+      }),
+    );
+    safeInvokeMock.mockResolvedValue(undefined);
+  });
+
+  return { mockUnlisten, defaultWrapper };
 }

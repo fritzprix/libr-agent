@@ -1,50 +1,16 @@
-import { TestWrapper, useLLMServiceHarness } from "./llm-service-test-utils";
+import {
+  TestWrapper,
+  useLLMServiceHarness,
+  setupLLMCompletionMocks,
+} from './llm-service-test-utils';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { listen } from '@tauri-apps/api/event';
+import { describe, it, expect } from 'vitest';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import type { Message } from '@/models/chat';
 import { buildTestMessage } from './agent-session-test-utils';
-import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
 
 describe('LLMServiceContext – Completion Execution', () => {
-  const mockUnlisten = vi.fn();
-  const mockStreamChat = vi.fn();
-  const mockListModels = vi.fn();
-  const mockCancel = vi.fn();
-  const mockDispose = vi.fn();
-  const mockSetDefaultConfig = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    __resetLLMListenerStartupLogStateForTests();
-
-    // Setup listen mock
-    (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
-
-    // Setup AIServiceFactory mock
-    (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
-      streamChat: mockStreamChat,
-      listModels: mockListModels,
-      cancel: mockCancel,
-      dispose: mockDispose,
-      setDefaultConfig: mockSetDefaultConfig,
-      sanitizeMessages: vi.fn((messages: Message[]) => messages),
-    });
-
-    // Setup mockListModels to return test models
-    mockListModels.mockResolvedValue([
-      {
-        name: 'test-model',
-        contextWindow: 4096,
-        supportReasoning: false,
-        supportTools: true,
-        supportStreaming: true,
-        cost: { input: 0.001, output: 0.002 },
-        description: 'Test model for unit tests',
-      },
-    ]);
-  });
+  const { mockStreamChat, mockSetDefaultConfig } = setupLLMCompletionMocks();
 
   describe('Execute Completion Request', () => {
     it('should execute completion and return message', async () => {

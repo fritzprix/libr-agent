@@ -1,10 +1,14 @@
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 import type { ReactNode } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { AIServiceFactory } from '@/lib/ai-service/factory';
+import type { Message } from '@/models/chat';
 import {
   LLMServiceProvider,
   useLLMService,
   useStreamingMessages,
 } from '../LLMServiceContext';
+import { __resetLLMListenerStartupLogStateForTests } from '../llm/useLLMListener';
 import { TestSettingsProvider } from '@/test/fixtures/TestSettingsProvider';
 
 const { loggerInfo, loggerDebug, loggerWarn, loggerError } = vi.hoisted(() => ({
@@ -80,4 +84,50 @@ export function createDeferred<T>() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+export function setupLLMCompletionMocks() {
+  const mockUnlisten = vi.fn();
+  const mockStreamChat = vi.fn();
+  const mockListModels = vi.fn();
+  const mockCancel = vi.fn();
+  const mockDispose = vi.fn();
+  const mockSetDefaultConfig = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetLLMListenerStartupLogStateForTests();
+
+    (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
+
+    (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
+      streamChat: mockStreamChat,
+      listModels: mockListModels,
+      cancel: mockCancel,
+      dispose: mockDispose,
+      setDefaultConfig: mockSetDefaultConfig,
+      sanitizeMessages: vi.fn((messages: Message[]) => messages),
+    });
+
+    mockListModels.mockResolvedValue([
+      {
+        name: 'test-model',
+        contextWindow: 4096,
+        supportReasoning: false,
+        supportTools: true,
+        supportStreaming: true,
+        cost: { input: 0.001, output: 0.002 },
+        description: 'Test model for unit tests',
+      },
+    ]);
+  });
+
+  return {
+    mockUnlisten,
+    mockStreamChat,
+    mockListModels,
+    mockCancel,
+    mockDispose,
+    mockSetDefaultConfig,
+  };
 }

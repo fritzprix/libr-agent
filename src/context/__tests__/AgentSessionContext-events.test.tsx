@@ -1,29 +1,19 @@
-import { TEST_SESSION_ID, createDefaultWrapper, mockMarkSessionViewed, mockRefreshCompactedRange, listenMock, openAgentSessionMock, safeInvokeMock, createOpenSessionResponse, createReadyRuntimeState, buildTestMessage, OpenAgentSessionResponse } from "./agent-session-test-utils";
-import { clearOpenSessionViewCache } from '../agent-session/openSessionViewCache';
-import { renderHook, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-    useAgentSessionState,
-} from '../AgentSessionContext';
-describe('AgentSessionContext – Event Handling', () => {
-  const mockUnlisten = vi.fn();
-  const defaultWrapper = createDefaultWrapper();
+  TEST_SESSION_ID,
+  listenMock,
+  openAgentSessionMock,
+  createOpenSessionResponse,
+  createReadyRuntimeState,
+  buildTestMessage,
+  setupAgentSessionEventMocks,
+  type OpenAgentSessionResponse,
+} from './agent-session-test-utils';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { useAgentSessionState } from '../AgentSessionContext';
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    clearOpenSessionViewCache();
-    mockMarkSessionViewed.mockResolvedValue(undefined);
-    mockRefreshCompactedRange.mockResolvedValue(undefined);
-    listenMock.mockResolvedValue(mockUnlisten);
-    openAgentSessionMock.mockResolvedValue(
-      createOpenSessionResponse(TEST_SESSION_ID, {
-        session: {
-          name: 'Test Session',
-        },
-      }),
-    );
-    safeInvokeMock.mockResolvedValue(undefined);
-  });
+describe('AgentSessionContext – Event Handling', () => {
+  const { mockUnlisten, defaultWrapper } = setupAgentSessionEventMocks();
 
         it('ignores stale runtime-state snapshots that arrive after a newer one', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
