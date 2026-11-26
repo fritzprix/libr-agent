@@ -9,6 +9,8 @@ pub mod request_layout;
 pub mod response;
 pub(crate) mod response_admission;
 pub(crate) mod response_circuit_breaker;
+pub(crate) mod response_persist;
+pub(crate) mod response_recovery;
 pub mod rust_executor;
 pub mod stream_recovery;
 pub mod token_utils;

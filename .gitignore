@@ -23,7 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
-prompt
+/prompt
 error.txt
 error_*.txt
 .claude/
