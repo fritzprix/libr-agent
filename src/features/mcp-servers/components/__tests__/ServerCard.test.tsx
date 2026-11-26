@@ -197,9 +197,16 @@ describe('ServerCard', () => {
 
     // #3000 G3.2: Retry sits next to the failed status line, not in the
     // action row, so the row keeps the same Tools / Edit / Delete slots.
+    // G1.3/G1.4: both share one row that never wraps; the status text
+    // truncates (with a title tooltip) while Retry keeps its full size.
     const failedStatus = screen.getByText('Connection failed');
     const retryButton = screen.getByText('Retry').closest('button')!;
-    expect(failedStatus.parentElement).toBe(retryButton.parentElement);
+    const failedRow = failedStatus.closest('div')!;
+    expect(failedRow).toContainElement(retryButton);
+    expect(failedRow).not.toHaveClass('flex-wrap');
+    expect(failedStatus).toHaveClass('truncate');
+    expect(failedStatus).toHaveAttribute('title', 'Connection failed');
+    expect(retryButton).toHaveClass('shrink-0');
 
     const deleteButton = screen.getByText('Delete').closest('button')!;
     const actionRow = deleteButton.parentElement!;
@@ -372,10 +379,17 @@ describe('ServerCard', () => {
       expect(header).toHaveClass('items-start', 'gap-2');
       expect(header).not.toHaveClass('items-center');
 
-      // Authorize sits inline next to the "Authorization Required" status line, NOT in the action row
+      // Authorize sits inline next to the "Authorization Required" status line, NOT in the action row.
+      // G1.1/G1.2/G1.4: one non-wrapping row; the status text truncates
+      // (with a title tooltip) so Authorize is always fully visible.
       const authStatus = screen.getByText('Authorization Required');
       const authorizeButton = screen.getByText('Authorize').closest('button')!;
-      expect(authStatus.parentElement).toBe(authorizeButton.parentElement);
+      const authRow = authStatus.closest('div')!;
+      expect(authRow).toContainElement(authorizeButton);
+      expect(authRow).not.toHaveClass('flex-wrap');
+      expect(authStatus).toHaveClass('truncate');
+      expect(authStatus).toHaveAttribute('title', 'Authorization Required');
+      expect(authorizeButton).toHaveClass('shrink-0');
 
       // Action row is pinned to bottom and contains Tools, Edit, Delete in one single row
       const deleteButton = screen.getByText('Delete').closest('button')!;
