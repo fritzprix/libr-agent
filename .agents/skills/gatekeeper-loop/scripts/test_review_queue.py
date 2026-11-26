@@ -202,7 +202,10 @@ class DetermineStatusTests(unittest.TestCase):
     def test_has_passed_macos_check(self) -> None:
         self.assertTrue(
             review_queue.has_passed_macos_check(
-                [{"name": "Test (macos-15)", "conclusion": "SUCCESS"}]
+                [
+                    {"name": "Test (macos-15)", "conclusion": "SUCCESS"},
+                    {"name": "Build (macos-15)", "conclusion": "SUCCESS"},
+                ]
             )
         )
         self.assertFalse(
@@ -211,6 +214,18 @@ class DetermineStatusTests(unittest.TestCase):
                     {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
                     {"name": "Test (windows-latest)", "conclusion": "SUCCESS"},
                 ]
+            )
+        )
+        # Loop skill macOS job alone must not count as app CI (#3070 G1.2).
+        self.assertFalse(
+            review_queue.has_passed_macos_check(
+                [{"name": "test (macos-latest)", "conclusion": "SUCCESS"}]
+            )
+        )
+        # Test without Build is incomplete.
+        self.assertFalse(
+            review_queue.has_passed_macos_check(
+                [{"name": "Test (macos-15)", "conclusion": "SUCCESS"}]
             )
         )
 
@@ -905,7 +920,9 @@ class BlockedStatusTests(unittest.TestCase):
                         "createdAt": "2026-11-19T00:00:00Z",
                         "statusCheckRollup": [
                             {"name": "Test (ubuntu-latest)", "conclusion": conclusion},
+                            {"name": "Build (ubuntu-latest)", "conclusion": conclusion},
                             {"name": "Test (macos-15)", "conclusion": conclusion},
+                            {"name": "Build (macos-15)", "conclusion": conclusion},
                         ],
                         "comments": [{
                             "author": {"login": "fritzprix"},

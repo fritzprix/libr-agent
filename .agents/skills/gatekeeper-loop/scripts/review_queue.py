@@ -102,13 +102,19 @@ def check_state(check: dict) -> str:
     return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
 
 
+# Application CI job names from LibrAgent CI/CD (matrix.os = macos-15).
+# Do not match Loop skill tests' `test (macos-latest)` (#3070 G1.2).
+REQUIRED_MACOS_CHECK_NAMES = ("Test (macos-15)", "Build (macos-15)")
+
+
 def has_passed_macos_check(checks: list[dict]) -> bool:
-    """True when at least one check whose name mentions macOS concluded SUCCESS (#3070)."""
-    for check in checks:
-        name = (check.get("name") or check.get("context") or "").lower()
-        if "macos" in name and check_state(check) == "SUCCESS":
-            return True
-    return False
+    """True when both app-workflow macOS Test and Build checks succeeded (#3070)."""
+    passed = {
+        (check.get("name") or check.get("context") or "")
+        for check in checks
+        if check_state(check) == "SUCCESS"
+    }
+    return all(name in passed for name in REQUIRED_MACOS_CHECK_NAMES)
 
 
 def is_dev_base(base: str) -> bool:

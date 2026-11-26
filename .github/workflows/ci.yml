@@ -8,18 +8,34 @@ on:
     branches: [main, master, 'dev/*']
 
 # Cancel superseded PR runs when a new push (or review-clean label) arrives.
-# Pushes to dev/*, main, and master are NOT cancelled: each push keeps its own
-# run so every merge commit has a full result. Runs on the same ref queue
-# behind each other (#3070).
+# Pushes to dev/*, main, and master are NOT cancelled: each push uses a
+# per-SHA group so every merge commit has a full result and a later push
+# cannot drop a pending run (#3070 G1.3).
+# Labeled events for any label other than gatekeeper:review-clean use a
+# unique group so they never cancel an in-progress PR build (#3070 G1.1).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: >-
+    ${{
+      github.event_name == 'push'
+      && format('{0}-{1}-{2}', github.workflow, github.ref, github.sha)
+      || (
+        github.event_name == 'pull_request'
+        && github.event.action == 'labeled'
+        && github.event.label.name != 'gatekeeper:review-clean'
+        && format('{0}-pr-{1}-skip-label-{2}', github.workflow, github.event.pull_request.number, github.run_id)
+        || format('{0}-pr-{1}', github.workflow, github.event.pull_request.number || github.ref)
+      )
+    }}
+  cancel-in-progress: ${{
+    github.event_name == 'pull_request'
+    && !(github.event.action == 'labeled' && github.event.label.name != 'gatekeeper:review-clean')
+  }}
 
 jobs:
   os-matrix:
     name: Resolve OS matrix
-    # Skip labeled runs that are not gatekeeper:review-clean. Concurrency already
-    # cancels the older PR run; this avoids a useless second run for other labels.
+    # Skip labeled runs that are not gatekeeper:review-clean. Those runs use a
+    # unique concurrency group (above), so they do not cancel real CI.
     if: >
       github.event_name != 'pull_request'
       || github.event.action != 'labeled'
@@ -30,16 +46,19 @@ jobs:
     steps:
       - id: resolve
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          # JSON array of label names; keep out of the script text (G1 S1.1).
+          PR_LABELS_JSON: ${{ github.event_name == 'pull_request' && toJSON(github.event.pull_request.labels.*.name) || '[]' }}
         run: |
           set -euo pipefail
           include_macos=false
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$EVENT_NAME" = "push" ]; then
             # Always run macOS on pushes to protected branches.
             include_macos=true
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
             # PR macOS only after the gatekeeper marks review clean (#3070).
-            labels='${{ toJSON(github.event.pull_request.labels.*.name) }}'
-            if printf '%s' "$labels" | grep -F '"gatekeeper:review-clean"' >/dev/null; then
+            if printf '%s' "$PR_LABELS_JSON" | grep -F '"gatekeeper:review-clean"' >/dev/null; then
               include_macos=true
             fi
           fi
