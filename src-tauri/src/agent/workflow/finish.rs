@@ -260,10 +260,83 @@ async fn transition_to_terminal_status_and_emit(
     emit_settlement_agent_event(dispatcher, session_id, event, event_label)
 }
 
+/// `WorkflowCompleted` for a turn a hook stopped (#3004 G3.1): the hook's
+/// `stopReason` rides the event so the UI can show why the turn ended without
+/// an error.
+fn hook_stopped_completion_event(session_id: &str, stop_reason: &str) -> AgentEvent {
+    AgentEvent::WorkflowCompleted {
+        session_id: session_id.to_string(),
+        reason: WorkflowCompletionReason::HookStopped,
+        stop_reason: Some(stop_reason.to_string()),
+    }
+}
+
+/// Shared tail of both hook-stop settlement paths (#3004 G4.2): the turn was
+/// stopped by a `PreToolUse`/`PostToolUse` hook (`hook_stop_reason`) or by the
+/// `Stop` hook (`StopHookTransition::StoppedByHook`). Reset the continuation
+/// counter, settle to `Idle` with the reason, and surface it through
+/// `WorkflowCompleted`.
+async fn settle_hook_stopped_to_idle(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    stop_reason: &str,
+) -> Result<(), String> {
+    crate::services::hooks::reset_stop_hook_continuations(session_id);
+    crate::agent::lifecycle::update_session_status_with_reason(
+        session_repo,
+        active_sessions,
+        app_handle,
+        session_id,
+        SessionStatus::Idle,
+        stop_reason,
+    )
+    .await?;
+    emit_settlement_agent_event(
+        dispatcher,
+        session_id,
+        hook_stopped_completion_event(session_id, stop_reason),
+        "WorkflowCompleted",
+    )
+}
+
+/// Surface the hook's `stopReason` when a queued prompt already restarted the
+/// workflow (#3004 G1.2): uses `HookStoppedNotice` instead of `WorkflowCompleted`
+/// so the UI displays the reason without flipping the continuing turn to `idle`.
+/// Best-effort — the queued turn owns the session now, so a failed emit is
+/// logged, not propagated.
+fn emit_hook_stopped_notice(
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    stop_reason: &str,
+) {
+    if let Err(error) = dispatcher.emit_agent_event(AgentEvent::HookStoppedNotice {
+        session_id: session_id.to_string(),
+        stop_reason: stop_reason.to_string(),
+    }) {
+        log::error!(
+            "Failed to emit HookStoppedNotice for session {}: {}",
+            session_id,
+            error
+        );
+    }
+}
+
 /// Finish a workflow only after terminal messages are durable and no pending work remains.
 ///
 /// Returns `Ok(true)` when pending events restarted the workflow (caller must not treat
 /// the session as terminal). Returns `Ok(false)` when the session settled to `Idle`.
+///
+/// `hook_stop_reason` is `Some` when a `PreToolUse`/`PostToolUse` hook stopped the turn
+/// (`continue: false`, #3004 G3.2): settlement runs the same terminal persist and
+/// pending-event scans as a normal finish so queued prompts keep draining, but the
+/// `Stop` hook is skipped — a hook already stopped this turn — and the session settles
+/// to `Idle` with the reason surfaced through `WorkflowCompleted.stop_reason` (#3004 G3.1).
+/// When a queued prompt restarts the workflow instead, the reason is surfaced
+/// *before* the restart is requested so the UI never sees a completion for the
+/// continuing turn (#3004 G5.2).
 #[allow(clippy::too_many_arguments)]
 pub async fn settle_session_and_go_idle_with_dispatcher(
     session_repo: &Arc<dyn SessionRepository>,
@@ -274,6 +347,7 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     session_id: &str,
     terminal_message: Option<&Message>,
     completion_reason: WorkflowCompletionReason,
+    hook_stop_reason: Option<&str>,
 ) -> Result<bool, String> {
     let workflow_restarted = match settle_before_terminal_transition(
         session_repo,
@@ -300,6 +374,9 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     };
 
     if workflow_restarted {
+        if let Some(stop_reason) = hook_stop_reason {
+            emit_hook_stopped_notice(dispatcher, session_id, stop_reason);
+        }
         return Ok(true);
     }
 
@@ -316,13 +393,33 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     )
     .await?
     {
+        if let Some(stop_reason) = hook_stop_reason {
+            emit_hook_stopped_notice(dispatcher, session_id, stop_reason);
+        }
         return Ok(true);
     }
 
-    // Stop / SubagentStop hook (#2925): run before settling to Idle. If a hook
-    // returns `decision: "block"` and the per-turn continuation cap has not
-    // been reached, feed the block reason back and continue the turn.
-    if maybe_continue_from_stop_hook(
+    // A `PreToolUse`/`PostToolUse` hook already stopped this turn (#3004 G3.2):
+    // decide here that the `Stop` hook does not run, settle to `Idle` with the
+    // hook's reason, and carry that reason in `WorkflowCompleted` so the UI can
+    // show it on a non-error end of turn (#3004 G3.1).
+    if let Some(stop_reason) = hook_stop_reason {
+        settle_hook_stopped_to_idle(
+            session_repo,
+            active_sessions,
+            app_handle,
+            dispatcher,
+            session_id,
+            stop_reason,
+        )
+        .await?;
+        return Ok(false);
+    }
+
+    // Stop / SubagentStop hook (#2925, #3004 G1.3): run before settling to Idle.
+    // - `continue: false` settles and surfaces `stopReason` to the user.
+    // - `decision: "block"` feeds the block reason back and continues the turn.
+    match maybe_continue_from_stop_hook(
         session_repo,
         active_sessions,
         proxy_manager,
@@ -331,7 +428,20 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
     )
     .await?
     {
-        return Ok(true);
+        StopHookTransition::Continue => return Ok(true),
+        StopHookTransition::StoppedByHook(reason) => {
+            settle_hook_stopped_to_idle(
+                session_repo,
+                active_sessions,
+                app_handle,
+                dispatcher,
+                session_id,
+                &reason,
+            )
+            .await?;
+            return Ok(false);
+        }
+        StopHookTransition::Settle => {}
     }
 
     crate::services::hooks::reset_stop_hook_continuations(session_id);
@@ -345,6 +455,7 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         AgentEvent::WorkflowCompleted {
             session_id: session_id.to_string(),
             reason: completion_reason,
+            stop_reason: None,
         },
         "WorkflowCompleted",
     )
@@ -376,6 +487,7 @@ pub async fn settle_session_and_go_idle(
         session_id,
         terminal_message,
         completion_reason,
+        None,
     )
     .await
 }
@@ -494,16 +606,22 @@ fn subagent_matcher_value_with_names(
         .to_string()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StopHookTransition {
+    Continue,
+    Settle,
+    StoppedByHook(String),
+}
+
 /// Dispatch `Stop` (top-level session) or `SubagentStop` (child session) before
-/// settling to Idle (#2925). Returns `Ok(true)` if a hook returned `block` and
-/// the turn was continued (bounded by `MAX_STOP_HOOK_CONTINUATIONS`).
+/// settling to Idle (#2925, #3004 G1.3).
 async fn maybe_continue_from_stop_hook(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: &str,
-) -> Result<bool, String> {
+) -> Result<StopHookTransition, String> {
     let (parent_session_id, assistant_id, session_name) = {
         let active = active_sessions.read().await;
         active
@@ -543,7 +661,8 @@ async fn maybe_continue_from_stop_hook(
         crate::services::hooks::dispatch_hook_event(event, &matcher_value, &params, session_id)
             .await;
 
-    if evaluate_stop_hook_outcome(session_id, event, outcome) {
+    let transition = evaluate_stop_hook_outcome(session_id, event, outcome);
+    if transition == StopHookTransition::Continue {
         crate::agent::llm::request_llm_completion_with_recovery(
             session_repo,
             active_sessions,
@@ -553,22 +672,31 @@ async fn maybe_continue_from_stop_hook(
         )
         .await
         .map_err(|error| error.to_string())?;
-        return Ok(true);
     }
-
-    Ok(false)
+    Ok(transition)
 }
 
 /// Evaluate a `Stop` / `SubagentStop` hook result against `MAX_STOP_HOOK_CONTINUATIONS`
-/// (#2925 G1.2). Returns `true` and queues continuation feedback when the turn should
-/// continue; returns `false` once no block is requested or the cap is reached.
+/// (#2925 G1.2, #3004 G2.1/G2.2).
 pub(crate) fn evaluate_stop_hook_outcome(
     session_id: &str,
     event: crate::services::hooks::HookEvent,
     outcome: crate::services::hooks::HookDispatchResult,
-) -> bool {
+) -> StopHookTransition {
+    // `continue: false` (#3004): the turn settles as Idle with `stopReason`
+    // surfaced to the user, even when the same result also asks for a block.
+    if outcome.stops_processing {
+        let reason = outcome.stop_message("Stopped by hook.");
+        log::info!(
+            "{} hook stopped processing for session {}: {}",
+            event.as_str(),
+            session_id,
+            reason
+        );
+        return StopHookTransition::StoppedByHook(reason);
+    }
     if outcome.decision != Some(crate::services::hooks::HookDecision::Block) {
-        return false;
+        return StopHookTransition::Settle;
     }
     if !crate::services::hooks::try_increment_stop_hook_continuations(session_id) {
         log::info!(
@@ -577,7 +705,7 @@ pub(crate) fn evaluate_stop_hook_outcome(
             session_id,
             crate::services::hooks::MAX_STOP_HOOK_CONTINUATIONS
         );
-        return false;
+        return StopHookTransition::Settle;
     }
     if let Some(ctx) = outcome.joined_additional_context() {
         crate::services::hooks::push_turn_hook_context(session_id, &ctx);
@@ -595,7 +723,7 @@ pub(crate) fn evaluate_stop_hook_outcome(
         session_id,
         &format!("[{} hook]: {}", event.as_str(), reason),
     );
-    true
+    StopHookTransition::Continue
 }
 
 /// Finalize a failed workflow only after terminal messages are durable.
@@ -1103,9 +1231,15 @@ mod tests {
                     decision: Some(HookDecision::Block),
                     reason: Some(format!("keep going #{i}")),
                     updated_input: None,
+                    stop_reason: None,
+                    stops_processing: false,
                 },
             );
-            assert!(cont, "continuation #{i} must be allowed");
+            assert_eq!(
+                cont,
+                super::StopHookTransition::Continue,
+                "continuation #{i} must be allowed"
+            );
             let ctx = take_turn_hook_context(sid).expect("feedback queued");
             assert!(ctx.contains(&format!("keep going #{i}")));
         }
@@ -1119,10 +1253,13 @@ mod tests {
                 decision: Some(HookDecision::Block),
                 reason: Some("one too many".to_string()),
                 updated_input: None,
+                stop_reason: None,
+                stops_processing: false,
             },
         );
-        assert!(
-            !over_cap,
+        assert_eq!(
+            over_cap,
+            super::StopHookTransition::Settle,
             "must not continue past MAX_STOP_HOOK_CONTINUATIONS"
         );
         assert!(take_turn_hook_context(sid).is_none());
@@ -1356,5 +1493,42 @@ mod tests {
             .await,
             "child-session-name"
         );
+    }
+
+    #[test]
+    fn stop_hook_continue_false_settles_with_user_visible_reason_even_with_block() {
+        use crate::services::hooks::{
+            clear_hook_context, take_turn_hook_context, HookDecision, HookDispatchResult, HookEvent,
+        };
+
+        let sid = "finish-stop-hook-stop-test";
+        clear_hook_context(sid);
+        let transition = super::evaluate_stop_hook_outcome(
+            sid,
+            HookEvent::Stop,
+            HookDispatchResult {
+                additional_context: vec![],
+                decision: Some(HookDecision::Block),
+                reason: Some("keep going".to_string()),
+                updated_input: None,
+                stop_reason: Some("budget exhausted".to_string()),
+                stops_processing: true,
+            },
+        );
+        assert_eq!(
+            transition,
+            super::StopHookTransition::StoppedByHook("budget exhausted".to_string()),
+            "continue:false must settle the turn and surface stopReason"
+        );
+        assert!(
+            take_turn_hook_context(sid).is_none(),
+            "a stopped turn must not queue continuation feedback"
+        );
+        assert_eq!(
+            crate::services::hooks::stop_hook_continuation_count(sid),
+            0,
+            "stopping must not consume the continuation budget"
+        );
+        clear_hook_context(sid);
     }
 }

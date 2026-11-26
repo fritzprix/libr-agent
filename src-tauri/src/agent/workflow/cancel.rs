@@ -329,6 +329,7 @@ pub async fn terminate_session_with_dispatcher(
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Terminated,
+        stop_reason: None,
     };
     dispatcher
         .emit_agent_event(event)
@@ -477,6 +478,7 @@ pub async fn cancel_workflow(
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
         reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
+        stop_reason: None,
     };
     TauriEventDispatcher::from_handle(app_handle)
         .emit_agent_event(event)

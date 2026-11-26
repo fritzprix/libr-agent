@@ -262,13 +262,24 @@ pub(crate) async fn try_trigger_preflight_compaction(
         crate::services::hooks::HookEvent::PreCompact,
     );
     pre_compact_params.compact_source = Some(compact_trigger.to_string());
-    let _ = crate::services::hooks::dispatch_hook_event(
+    // The result is applied, not discarded (#3004): a `PreCompact` hook's
+    // `additionalContext` reaches the resume request that follows this compaction,
+    // and a `continue: false` records its `stopReason` for the same request.
+    let pre_compact_outcome = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::PreCompact,
         compact_trigger,
         &pre_compact_params,
         session_id,
     )
     .await;
+    if let Err(reason) = apply_pre_compact_hook_outcome(session_id, &pre_compact_outcome) {
+        log::info!(
+            "⏭️ Compaction blocked/stopped by PreCompact hook: session={}, reason={}",
+            session_id,
+            reason
+        );
+        return Ok(false);
+    }
 
     let mut prepared_attempt = None;
     let mut chosen_split_idx = preferred_split_idx;
@@ -621,13 +632,98 @@ pub async fn trigger_manual_compaction_for_session(
     .await
 }
 
+/// Apply a `PreCompact` hook result (#3004 G1.4).
+///
+/// - `continue: false` stops compaction with `stopReason` (does not push to model context).
+/// - `decision: "block"` blocks compaction with its reason.
+/// - Otherwise `additionalContext` is queued for the resumed turn.
+pub(crate) fn apply_pre_compact_hook_outcome(
+    session_id: &str,
+    outcome: &crate::services::hooks::HookDispatchResult,
+) -> Result<(), String> {
+    if outcome.stops_processing {
+        return Err(outcome.stop_message("PreCompact hook stopped processing."));
+    }
+    if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+        let reason = outcome
+            .reason
+            .clone()
+            .filter(|r| !r.trim().is_empty())
+            .unwrap_or_else(|| "PreCompact hook blocked compaction.".to_string());
+        return Err(reason);
+    }
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::pre_compact_trigger_label;
+    use super::{apply_pre_compact_hook_outcome, pre_compact_trigger_label};
+    use crate::services::hooks::{
+        clear_hook_context, take_turn_hook_context, HookDecision, HookDispatchResult,
+    };
 
     #[test]
     fn pre_compact_trigger_distinguishes_auto_and_manual() {
         assert_eq!(pre_compact_trigger_label(true), "auto");
         assert_eq!(pre_compact_trigger_label(false), "manual");
+    }
+
+    #[test]
+    fn pre_compact_queues_additional_context() {
+        let sid = "pre-compact-ctx-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["preserve architecture notes".to_string()],
+            decision: None,
+            reason: None,
+            updated_input: None,
+            stop_reason: None,
+            stops_processing: false,
+        };
+        assert!(apply_pre_compact_hook_outcome(sid, &outcome).is_ok());
+        assert_eq!(
+            take_turn_hook_context(sid).as_deref(),
+            Some("preserve architecture notes")
+        );
+        clear_hook_context(sid);
+    }
+
+    #[test]
+    fn pre_compact_block_prevents_compaction_and_drops_context() {
+        let sid = "pre-compact-block-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["should not be queued".to_string()],
+            decision: Some(HookDecision::Block),
+            reason: Some("active transaction in progress".to_string()),
+            updated_input: None,
+            stop_reason: None,
+            stops_processing: false,
+        };
+        let err = apply_pre_compact_hook_outcome(sid, &outcome).unwrap_err();
+        assert_eq!(err, "active transaction in progress");
+        assert!(take_turn_hook_context(sid).is_none());
+        clear_hook_context(sid);
+    }
+
+    #[test]
+    fn pre_compact_stop_prevents_compaction_without_pushing_model_context() {
+        let sid = "pre-compact-stop-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["must not leak".to_string()],
+            decision: None,
+            reason: None,
+            updated_input: None,
+            stop_reason: Some("budget limit reached".to_string()),
+            stops_processing: true,
+        };
+        let err = apply_pre_compact_hook_outcome(sid, &outcome).unwrap_err();
+        assert_eq!(err, "budget limit reached");
+        assert!(take_turn_hook_context(sid).is_none());
+        clear_hook_context(sid);
     }
 }

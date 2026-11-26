@@ -25,6 +25,9 @@ pub enum WorkflowCompletionReason {
     Cancelled,
     /// Hard stop / terminate: session returns to idle (no resume stack).
     Terminated,
+    /// A hook (`continue: false`) stopped the turn; `WorkflowCompleted.stop_reason`
+    /// carries the user-visible reason (#3004 G3.1).
+    HookStopped,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -56,6 +59,18 @@ pub enum AgentEvent {
     WorkflowCompleted {
         session_id: String,
         reason: WorkflowCompletionReason,
+        /// Human-readable reason to display when a hook stopped the turn
+        /// (`reason == HookStopped`); `None` for every other completion (#3004 G3.1).
+        stop_reason: Option<String>,
+    },
+
+    /// A hook stopped the current turn while a queued prompt is continuing the
+    /// session (#3004 G1.2): delivers `stop_reason` to the UI without
+    /// end-of-turn completion semantics so the session stays `busy`.
+    #[serde(rename_all = "camelCase")]
+    HookStoppedNotice {
+        session_id: String,
+        stop_reason: String,
     },
 
     /// Workflow encountered an error
@@ -291,8 +306,15 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         AgentEvent::WorkflowStarted { session_id } => {
             format!("WorkflowStarted(session={session_id})")
         }
-        AgentEvent::WorkflowCompleted { session_id, reason } => {
+        AgentEvent::WorkflowCompleted {
+            session_id,
+            reason,
+            ..
+        } => {
             format!("WorkflowCompleted(session={session_id}, reason={reason:?})")
+        }
+        AgentEvent::HookStoppedNotice { session_id, .. } => {
+            format!("HookStoppedNotice(session={session_id})")
         }
         AgentEvent::WorkflowError { session_id, .. } => {
             format!("WorkflowError(session={session_id})")

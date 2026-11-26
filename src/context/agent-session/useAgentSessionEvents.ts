@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { listen } from '@tauri-apps/api/event';
 import { openAgentSession } from '@/lib/backend/agent-commands';
@@ -24,6 +25,7 @@ import type {
   SessionRuntimeState,
 } from '@/models/agent-ipc';
 import { notifyRuntimeStateErrors } from './notifyRuntimeStateErrors';
+import { hookStoppedTurnNotice } from './workflowStopNotice';
 import {
   getOpenSessionView,
   invalidateOpenSessionView,
@@ -489,6 +491,17 @@ export function useAgentSessionEvents(
                 break;
               }
 
+              case 'hookStoppedNotice': {
+                const reason = payload.stopReason.trim();
+                if (reason) {
+                  toast(reason);
+                }
+                logger.info('Hook stopped turn while queued prompt continues', {
+                  sessionId,
+                });
+                break;
+              }
+
               case 'workflowCompleted': {
                 // Soft cancel → paused (resume). Terminate / natural stop → idle.
                 const nextStatus =
@@ -500,6 +513,11 @@ export function useAgentSessionEvents(
                 setters.setWorkflowPhase('idle');
                 setters.setPendingUserPrompt(null);
                 clearStreamingOnInactive();
+                // A hook stopped the turn: surface its stopReason (#3004 G3.1).
+                const stopNotice = hookStoppedTurnNotice(payload);
+                if (stopNotice) {
+                  toast(stopNotice);
+                }
                 logger.info('Workflow phase: idle', {
                   sessionId,
                   reason: payload.reason,

@@ -410,6 +410,7 @@ fn updated_input_from_a_blocking_handler_is_dropped() {
         decision: Some(crate::services::hooks::HookDecision::Block),
         reason: Some("denied".to_string()),
         continue_loop: None,
+        stop_reason: None,
         updated_input: Some(serde_json::json!({"path": "changed.txt"})),
     });
     assert_eq!(result.updated_input, None);
@@ -426,6 +427,7 @@ fn last_allow_rewrite_wins() {
             decision: Some(crate::services::hooks::HookDecision::Allow),
             reason: None,
             continue_loop: None,
+            stop_reason: None,
             updated_input: Some(serde_json::json!({ "path": path })),
         });
     }
@@ -433,4 +435,91 @@ fn last_allow_rewrite_wins() {
         result.updated_input,
         Some(serde_json::json!({"path": "second.txt"}))
     );
+}
+
+#[test]
+fn continue_false_is_aggregated_and_keeps_the_first_stop_reason() {
+    let mut res = HookDispatchResult::default();
+    res.merge(HookOutput {
+        continue_loop: Some(true),
+        stop_reason: None,
+        ..HookOutput::default()
+    });
+    assert!(
+        !res.stops_processing,
+        "continue:true must not stop processing"
+    );
+
+    res.merge(HookOutput {
+        continue_loop: Some(false),
+        stop_reason: Some("budget exhausted".to_string()),
+        ..HookOutput::default()
+    });
+    assert!(res.stops_processing);
+    assert_eq!(res.stop_reason.as_deref(), Some("budget exhausted"));
+    assert_eq!(res.stop_message("fallback"), "budget exhausted");
+
+    // A later handler cannot re-enable processing or replace the reason.
+    res.merge(HookOutput {
+        continue_loop: Some(true),
+        ..HookOutput::default()
+    });
+    res.merge(HookOutput {
+        continue_loop: Some(false),
+        stop_reason: Some("second stop".to_string()),
+        ..HookOutput::default()
+    });
+    assert!(res.stops_processing);
+    assert_eq!(res.stop_reason.as_deref(), Some("budget exhausted"));
+    assert_eq!(res.stop_message("fallback"), "budget exhausted");
+}
+
+#[test]
+fn stop_message_falls_back_when_the_hook_sent_no_stop_reason() {
+    let res = HookDispatchResult {
+        stops_processing: true,
+        ..HookDispatchResult::default()
+    };
+    assert_eq!(res.stop_message("fallback text"), "fallback text");
+}
+
+#[tokio::test]
+async fn large_tool_response_with_hook_ignoring_stdin_still_parses_stdout() {
+    // #3004 G1.5: payload larger than typical OS pipe buffer (64KB) sent to a
+    // hook that exits immediately without reading stdin. BrokenPipe must be
+    // non-fatal and stdout must still be captured and parsed.
+    let hooks_json = r#"{
+        "hooks": {
+            "PostToolUse": [
+                {
+                    "matcher": "BigTool",
+                    "command": "printf '{\"continue\":false,\"stopReason\":\"large-payload-ok\"}'",
+                    "powershell": "Write-Output '{\"continue\":false,\"stopReason\":\"large-payload-ok\"}'"
+                }
+            ]
+        }
+    }"#;
+    let (temp, _root) = setup_approved_plugin(hooks_json);
+    let mut params = HookEnvelopeParams::new(
+        "sess-large-stdin",
+        temp.path().to_path_buf(),
+        HookEvent::PostToolUse,
+    );
+    params.tool_name = Some("BigTool".to_string());
+    params.tool_response = Some(serde_json::json!({
+        "success": true,
+        "is_error": false,
+        "content": "x".repeat(300_000)
+    }));
+
+    let outcome = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PostToolUse,
+        "BigTool",
+        &params,
+        "sess-large-stdin",
+    )
+    .await;
+    assert!(outcome.stops_processing);
+    assert_eq!(outcome.stop_reason.as_deref(), Some("large-payload-ok"));
 }

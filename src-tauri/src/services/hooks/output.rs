@@ -13,11 +13,14 @@ pub struct HookOutput {
     pub additional_context: Option<String>,
     pub decision: Option<HookDecision>,
     pub reason: Option<String>,
+    /// `continue: false` stops processing after this hook (#3004).
     pub continue_loop: Option<bool>,
     /// `hookSpecificOutput.updatedInput` (#3005): the tool arguments a
     /// `PreToolUse` hook wants the call to run with. It replaces the whole
     /// input object, exactly as Claude Code applies it.
     pub updated_input: Option<serde_json::Value>,
+    /// `stopReason`: the text shown to the user when `continue` is `false` (#3004).
+    pub stop_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +28,8 @@ pub struct HookOutput {
 struct RawHookStdout {
     #[serde(default, rename = "continue")]
     continue_loop: Option<bool>,
+    /// `stopReason`; the camelCase rename above covers the documented spelling.
+    stop_reason: Option<String>,
     additional_context: Option<String>,
     #[serde(rename = "additional_context")]
     additional_context_snake: Option<String>,
@@ -89,6 +94,14 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
         .or(raw.reason);
 
     let continue_loop = raw.continue_loop;
+    // `stopReason` only means something together with `continue: false`.
+    let stop_reason = if continue_loop == Some(false) {
+        raw.stop_reason
+            .map(|r| r.trim().to_string())
+            .filter(|r| !r.is_empty())
+    } else {
+        None
+    };
 
     // `updatedInput` replaces the whole tool-argument object, and every
     // guard and tool assumes that object shape. A string, number, or array
@@ -124,6 +137,7 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
         reason,
         continue_loop,
         updated_input,
+        stop_reason,
     }
 }
 
@@ -181,6 +195,32 @@ mod tests {
         assert_eq!(out.decision, Some(HookDecision::Ask));
         assert_eq!(out.reason.as_deref(), Some("confirm"));
         assert_eq!(out.continue_loop, Some(false));
+    }
+
+    #[test]
+    fn parses_stop_reason_with_continue_false() {
+        let out =
+            parse_hook_stdout_json(r#"{"continue":false,"stopReason":"  budget exhausted  "}"#);
+        assert_eq!(out.continue_loop, Some(false));
+        assert_eq!(out.stop_reason.as_deref(), Some("budget exhausted"));
+    }
+
+    #[test]
+    fn stop_reason_without_continue_false_is_ignored() {
+        let out = parse_hook_stdout_json(r#"{"continue":true,"stopReason":"ignored"}"#);
+        assert_eq!(out.continue_loop, Some(true));
+        assert_eq!(out.stop_reason, None);
+
+        let out = parse_hook_stdout_json(r#"{"stopReason":"ignored"}"#);
+        assert_eq!(out.continue_loop, None);
+        assert_eq!(out.stop_reason, None);
+    }
+
+    #[test]
+    fn empty_stop_reason_is_dropped() {
+        let out = parse_hook_stdout_json(r#"{"continue":false,"stopReason":"   "}"#);
+        assert_eq!(out.continue_loop, Some(false));
+        assert_eq!(out.stop_reason, None);
     }
 
     #[test]

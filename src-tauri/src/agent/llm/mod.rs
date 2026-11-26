@@ -15,7 +15,7 @@ pub mod rust_executor;
 pub mod stream_recovery;
 pub mod token_utils;
 pub mod tool_args_validation;
-pub(crate) mod tool_execution;
+pub mod tool_execution;
 pub mod types;
 
 pub use assistant_message_shape::{inspect_assistant_message_shape, AssistantMessageShape};

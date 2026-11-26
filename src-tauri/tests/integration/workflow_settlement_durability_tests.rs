@@ -15,11 +15,13 @@ use tauri_mcp_agent_lib::agent::context::registry::ContextRegistry;
 use tauri_mcp_agent_lib::agent::events::{
     AgentEvent, AgentEventDispatcher, WorkflowCompletionReason,
 };
+use tauri_mcp_agent_lib::agent::llm::tool_execution::stop_turn_from_hook;
 use tauri_mcp_agent_lib::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 use tauri_mcp_agent_lib::agent::session_bus::SessionBus;
 use tauri_mcp_agent_lib::agent::state::{
-    AgentSession, CompactionRuntimeState, PendingEvent, PendingEventManager,
+    AgentSession, CompactionRuntimeState, PendingEvent, PendingEventManager, PendingToolExecution,
 };
+use tauri_mcp_agent_lib::agent::types::{ToolCall, ToolCallFunction};
 use tauri_mcp_agent_lib::agent::workflow::{
     continue_workflow_if_pending_events, persist_terminal_assistant_sync,
     session_has_pending_events, settle_session_and_finalize_error_with_dispatcher,
@@ -33,13 +35,15 @@ use tauri_mcp_agent_lib::mcp::service_proxy_manager::MCPServiceProxyManager;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{
-    MessageRepository, SessionMetadata, SessionRepository, SessionStatus, SqliteMessageRepository,
-    SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
+    MessageRepository, PendingQueueRepository, SessionMetadata, SessionRepository, SessionStatus,
+    SqliteMessageRepository, SqlitePendingQueueRepository, SqlitePlaybookRepository,
+    SqliteSessionRepository, SqliteSettingsRepository,
 };
 use tauri_mcp_agent_lib::server::wake::{verify_wake_token, wake_token_for};
 use tauri_mcp_agent_lib::utils::session_id::StorageSessionId;
 use tauri_mcp_agent_lib::{
-    init_concurrency_gate, init_session_bus, set_settings_repository, try_get_session_bus,
+    init_concurrency_gate, init_session_bus, set_pending_queue_repository, set_settings_repository,
+    try_get_session_bus,
 };
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tokio_util::sync::CancellationToken;
@@ -123,11 +127,66 @@ impl AgentEventDispatcher for WorkflowEventFailingDispatcher {
     }
 }
 
+/// Records whether the queued prompt was still in the pending queue when the
+/// hook-stopped notice fired — proving the notice precedes the restart that
+/// claims it (#3004 G5.2). `emit_agent_event` is synchronous, so the probe
+/// snapshots the queue with `try_read`; settlement holds no session lock at
+/// the notice point, so the snapshot succeeds on this path.
+struct NoticeOrderProbeDispatcher {
+    events: Mutex<Vec<AgentEvent>>,
+    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: String,
+    pending_at_notice: Mutex<Option<bool>>,
+}
+
+impl NoticeOrderProbeDispatcher {
+    fn agent_events(&self) -> Vec<AgentEvent> {
+        self.events.lock().expect("event lock").clone()
+    }
+}
+
+impl AgentEventDispatcher for NoticeOrderProbeDispatcher {
+    fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
+        if matches!(
+            event,
+            AgentEvent::WorkflowCompleted {
+                reason: WorkflowCompletionReason::HookStopped,
+                ..
+            }
+        ) {
+            if let Ok(sessions) = self.active_sessions.try_read() {
+                let pending = sessions
+                    .get(&self.session_id)
+                    .and_then(|session| session.pending_events.try_read().ok())
+                    .map(|events| events.count() > 0);
+                *self.pending_at_notice.lock().expect("probe lock") = pending;
+            }
+        }
+        self.events.lock().expect("event lock").push(event);
+        Ok(())
+    }
+
+    fn emit_compact_state(
+        &self,
+        _event: tauri_mcp_agent_lib::agent::llm::types::CompactStateEvent,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: tauri_mcp_agent_lib::agent::llm::types::CompletionCancelRequest,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 struct SettlementHarness {
     mock_app: tauri::App<MockRuntime>,
     session_id: String,
     session_repo: Arc<dyn SessionRepository>,
     message_repo: SqliteMessageRepository,
+    pending_queue_repo: SqlitePendingQueueRepository,
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: Arc<MCPServiceProxyManager>,
     dispatcher: RecordingDispatcher,
@@ -174,6 +233,10 @@ impl SettlementHarness {
         // Builtin servers read their repositories at tool-call time (e.g. the
         // `playbook__listPlaybooks` idle-session probe below).
         tauri_mcp_agent_lib::set_playbook_repository(SqlitePlaybookRepository::new(db.clone()));
+        // The pending-queue claim path (promoting a queued prompt into the next
+        // turn) reads this global repository at claim time.
+        let pending_queue_repo = SqlitePendingQueueRepository::new(db.clone());
+        set_pending_queue_repository(pending_queue_repo.clone());
 
         let session_repo = Arc::new(sqlite_session_repo.clone()) as Arc<dyn SessionRepository>;
         session_repo
@@ -205,6 +268,7 @@ impl SettlementHarness {
             session_id: session_id.to_string(),
             session_repo,
             message_repo,
+            pending_queue_repo,
             active_sessions,
             proxy_manager,
             dispatcher: RecordingDispatcher::default(),
@@ -409,6 +473,7 @@ async fn settle_session_and_go_idle_persists_terminal_message_and_sets_idle() {
         &harness.session_id,
         Some(&terminal),
         WorkflowCompletionReason::Natural,
+        None,
     )
     .await
     .expect("settlement succeeds");
@@ -422,6 +487,7 @@ async fn settle_session_and_go_idle_persists_terminal_message_and_sets_idle() {
             AgentEvent::WorkflowCompleted {
                 session_id,
                 reason: WorkflowCompletionReason::Natural,
+                stop_reason: None,
             } if session_id == &harness.session_id
         )
     }));
@@ -567,6 +633,7 @@ async fn settle_session_and_go_idle_returns_error_when_terminal_cache_lookup_fai
         "missing-session-id",
         None,
         WorkflowCompletionReason::Natural,
+        None,
     )
     .await;
 
@@ -626,6 +693,7 @@ async fn settle_session_and_go_idle_returns_error_when_workflow_completed_emit_f
         &harness.session_id,
         Some(&terminal),
         WorkflowCompletionReason::Natural,
+        None,
     )
     .await;
 
@@ -798,6 +866,7 @@ async fn normal_completion_path_preserves_process_wake_fence_and_proxy() {
         &harness.session_id,
         Some(&terminal),
         WorkflowCompletionReason::Natural,
+        None,
     )
     .await
     .expect("settlement succeeds");
@@ -884,6 +953,7 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
         parent_id,
         Some(&parent_terminal),
         WorkflowCompletionReason::Natural,
+        None,
     )
     .await
     .expect("parent settlement succeeds");
@@ -920,6 +990,7 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
         child_id,
         Some(&child_terminal),
         WorkflowCompletionReason::Natural,
+        None,
     )
     .await
     .expect("child settlement succeeds");
@@ -949,5 +1020,481 @@ async fn child_completing_after_parent_idle_delivers_result_to_waiting_parent() 
     assert_eq!(
         latest_session_output(&messages_for_check_session),
         "CHILD_RESULT: all subtasks done."
+    );
+}
+
+fn build_tool_call(id: &str) -> ToolCall {
+    ToolCall {
+        id: id.to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "workspace__readFile".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }
+}
+
+/// #3004 G3.1/G3.2: settling a hook-stopped turn through the shared settlement code
+/// must surface the hook's `stopReason` through `WorkflowCompleted` (the UI-rendered
+/// non-error end-of-turn channel) and must not be an error state.
+#[tokio::test]
+async fn settle_with_hook_stop_reason_settles_idle_and_delivers_stop_reason() {
+    let harness = SettlementHarness::new("sess-hook-stop-reason", SessionStatus::Busy).await;
+
+    let restarted = settle_session_and_go_idle_with_dispatcher(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.dispatcher,
+        &harness.session_id,
+        None,
+        WorkflowCompletionReason::Natural,
+        Some("budget exhausted"),
+    )
+    .await
+    .expect("hook-stopped settlement succeeds");
+
+    assert!(!restarted);
+    assert_eq!(harness.session_status().await, SessionStatus::Idle);
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Idle);
+    let row = harness
+        .session_repo
+        .get_session(&harness.session_id)
+        .await
+        .expect("session load")
+        .expect("session exists");
+    assert_eq!(row.status_reason.as_deref(), Some("budget exhausted"));
+
+    let events = harness.dispatcher.agent_events();
+    let completed = events
+        .iter()
+        .find(|event| matches!(event, AgentEvent::WorkflowCompleted { .. }))
+        .expect("hook stop must emit WorkflowCompleted");
+    match completed {
+        AgentEvent::WorkflowCompleted {
+            session_id,
+            reason: WorkflowCompletionReason::HookStopped,
+            stop_reason,
+        } => {
+            assert_eq!(session_id, &harness.session_id);
+            assert_eq!(
+                stop_reason.as_deref(),
+                Some("budget exhausted"),
+                "stopReason must ride the WorkflowCompleted event for the UI"
+            );
+        }
+        other => panic!("expected hook-stopped WorkflowCompleted, got {other:?}"),
+    }
+    assert!(
+        !harness
+            .dispatcher
+            .agent_events()
+            .iter()
+            .any(|event| matches!(event, AgentEvent::WorkflowError { .. })),
+        "a hook-stopped turn is a non-error end"
+    );
+}
+
+/// #3004 G2.2: drive the production stop path (`stop_turn_from_hook`) and assert the
+/// remaining batch calls are closed with the hook-stopped tombstone, the session ends
+/// `Idle` with the reason, and no further completion is requested.
+#[tokio::test]
+async fn stop_turn_from_hook_closes_remaining_calls_and_settles_without_new_completion() {
+    let harness =
+        SettlementHarness::new("sess-hook-stop-production-path", SessionStatus::Busy).await;
+
+    let tool_calls = vec![
+        build_tool_call("call-1"),
+        build_tool_call("call-2"),
+        build_tool_call("call-3"),
+    ];
+    let mut assistant = build_assistant_message(&harness.session_id, "asst-hook-stop", "working");
+    assistant.tool_calls = Some(tool_calls.clone());
+    harness.push_assistant_to_cache(assistant).await;
+
+    // The PreToolUse hook stopped the turn at call-2: call-1 already completed, and
+    // production cancels the token before closing the remaining calls.
+    {
+        let mut sessions = harness.active_sessions.write().await;
+        let session = sessions
+            .get_mut(&harness.session_id)
+            .expect("session in memory");
+        session.pending_execution = Some(PendingToolExecution {
+            message_id: "asst-hook-stop".to_string(),
+            total_expected: 3,
+            tool_names: HashMap::new(),
+            expected_tool_call_ids: ["call-1", "call-2", "call-3"]
+                .iter()
+                .map(|id| id.to_string())
+                .collect(),
+            completed_tool_call_ids: ["call-1"].iter().map(|id| id.to_string()).collect(),
+            deferred_history_append: Vec::new(),
+        });
+        session.cancellation_token.cancel();
+    }
+
+    let remaining = vec![tool_calls[1].clone(), tool_calls[2].clone()];
+    stop_turn_from_hook(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.session_id,
+        &remaining,
+        "budget exhausted",
+    )
+    .await;
+
+    // Remaining calls closed with the hook-stopped tombstone, durable in the DB.
+    let messages = harness
+        .message_repo
+        .get_messages_by_session(&harness.session_id, 50)
+        .await
+        .expect("db load");
+    let mut closed_ids: Vec<String> = messages
+        .iter()
+        .filter(|message| message.role == "tool")
+        .map(|message| message.tool_call_id.clone().unwrap_or_default())
+        .collect();
+    closed_ids.sort();
+    assert_eq!(closed_ids, vec!["call-2".to_string(), "call-3".to_string()]);
+    for message in messages.iter().filter(|m| m.role == "tool") {
+        let MCPContent::Text { text } = &message.content[0] else {
+            panic!("expected text tombstone");
+        };
+        assert!(
+            text.contains("Skipped because hook stopped processing: budget exhausted"),
+            "tombstone must explain the hook stop: {text}"
+        );
+    }
+
+    // End state: Idle with the stopReason; open batch cleared.
+    assert_eq!(harness.session_status().await, SessionStatus::Idle);
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Idle);
+    let row = harness
+        .session_repo
+        .get_session(&harness.session_id)
+        .await
+        .expect("session load")
+        .expect("session exists");
+    assert_eq!(row.status_reason.as_deref(), Some("budget exhausted"));
+    assert!(
+        harness
+            .active_sessions
+            .read()
+            .await
+            .get(&harness.session_id)
+            .expect("session in memory")
+            .pending_execution
+            .is_none(),
+        "the stopped batch must not stay open"
+    );
+
+    // No further completion requested: a new LLM turn would move the session out of
+    // Idle (or fail into an error). Let the async runtime run, then assert it is still
+    // settled at Idle.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(harness.session_status().await, SessionStatus::Idle);
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Idle);
+}
+
+/// The Rust LLM executor answers completions in-process by default, which would
+/// issue a real HTTP call for the queued turn. Force the WebView route so the
+/// request is emitted on the mock handle and resolves. Process-wide setting: hold
+/// the returned guard for the whole test; no other test in this binary requests
+/// completions.
+fn disable_rust_executor() -> tauri_mcp_agent_lib::agent::llm::rust_executor::ConfigGuard {
+    tauri_mcp_agent_lib::agent::llm::rust_executor::configure(
+        tauri_mcp_agent_lib::agent::llm::rust_executor::ExecutorConfig {
+            enabled: false,
+            endpoint_override: None,
+            assume_no_webview: false,
+        },
+    )
+}
+
+/// #3004 G4.1: when a user prompt is queued while a hook stops the current turn,
+/// `stop_turn_from_hook` must reset the cancelled execution state before settling so
+/// the queued turn starts cleanly instead of failing into `SessionStatus::Error`,
+/// and the stopped turn's `stopReason` still reaches the UI via `WorkflowCompleted`.
+#[tokio::test]
+async fn stop_turn_from_hook_with_queued_prompt_restarts_cleanly_and_surfaces_stop_reason() {
+    let _executor = disable_rust_executor();
+    let harness = SettlementHarness::new("sess-hook-stop-queued-prompt", SessionStatus::Busy).await;
+
+    let tool_calls = vec![build_tool_call("call-1"), build_tool_call("call-2")];
+    let mut assistant =
+        build_assistant_message(&harness.session_id, "asst-hook-stop-queued", "working");
+    assistant.tool_calls = Some(tool_calls.clone());
+    harness.push_assistant_to_cache(assistant).await;
+
+    // The user sent another prompt while the turn was running: durable message,
+    // durable pending index row, and the in-memory queue event (the injection path).
+    let mut queued = build_assistant_message(
+        &harness.session_id,
+        "queued-user-prompt",
+        "next task please",
+    );
+    queued.role = "user".to_string();
+    harness
+        .message_repo
+        .insert(&queued)
+        .await
+        .expect("queued prompt durable");
+    harness
+        .pending_queue_repo
+        .enqueue(
+            &harness.session_id,
+            "queued-user-prompt",
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .await
+        .expect("pending index row");
+    harness.queue_pending_message("queued-user-prompt").await;
+
+    // Simulate a hook stop mid-batch with a cancelled token AND a queued user prompt.
+    {
+        let mut sessions = harness.active_sessions.write().await;
+        let session = sessions
+            .get_mut(&harness.session_id)
+            .expect("session in memory");
+        session.pending_execution = Some(PendingToolExecution {
+            message_id: "asst-hook-stop-queued".to_string(),
+            total_expected: 2,
+            tool_names: HashMap::new(),
+            expected_tool_call_ids: ["call-1", "call-2"]
+                .iter()
+                .map(|id| id.to_string())
+                .collect(),
+            completed_tool_call_ids: ["call-1"].iter().map(|id| id.to_string()).collect(),
+            deferred_history_append: Vec::new(),
+        });
+        session.cancellation_token.cancel();
+    }
+
+    let remaining = vec![tool_calls[1].clone()];
+    stop_turn_from_hook(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.session_id,
+        &remaining,
+        "budget exhausted",
+    )
+    .await;
+
+    // The execution state was reset (fresh uncancelled token), the queued prompt was
+    // drained to request the next turn, and the session did NOT finalize as Error.
+    {
+        let sessions = harness.active_sessions.read().await;
+        let session = sessions
+            .get(&harness.session_id)
+            .expect("session in memory");
+        assert!(
+            !session.cancellation_token.is_cancelled(),
+            "queued turn must run with a fresh uncancelled token"
+        );
+        let promoted = session
+            .messages
+            .read()
+            .await
+            .iter()
+            .any(|message| message.id == "queued-user-prompt");
+        assert!(
+            promoted,
+            "queued prompt must be promoted into the next turn's history"
+        );
+    }
+    assert!(
+        !session_has_pending_events(&harness.active_sessions, &harness.session_id).await,
+        "queued prompt must be drained into the next turn"
+    );
+    assert_eq!(
+        harness.session_status().await,
+        SessionStatus::Busy,
+        "the next turn must be requested; a hook stop with a queued prompt must not settle to Error"
+    );
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Busy);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(harness.session_status().await, SessionStatus::Busy);
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Busy);
+}
+
+#[tokio::test]
+async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped_notice() {
+    let _executor = disable_rust_executor();
+    // Verify through the recording dispatcher that `stopReason` is still emitted
+    // via `HookStoppedNotice` when settlement restarts the workflow for a queued prompt.
+    let notice_harness =
+        SettlementHarness::new("sess-hook-stop-queued-notice", SessionStatus::Busy).await;
+    notice_harness
+        .push_assistant_to_cache(build_assistant_message(
+            &notice_harness.session_id,
+            "asst-notice",
+            "partial answer before the stop",
+        ))
+        .await;
+    notice_harness
+        .queue_pending_message("queued-user-prompt-2")
+        .await;
+
+    let restarted = settle_session_and_go_idle_with_dispatcher(
+        &notice_harness.session_repo,
+        &notice_harness.active_sessions,
+        &notice_harness.proxy_manager,
+        notice_harness.app_handle(),
+        &notice_harness.dispatcher,
+        &notice_harness.session_id,
+        None,
+        WorkflowCompletionReason::Natural,
+        Some("budget exhausted"),
+    )
+    .await
+    .expect("settlement with queued prompt must succeed");
+    assert!(restarted, "queued prompt must restart the workflow");
+    assert_eq!(
+        notice_harness.session_status().await,
+        SessionStatus::Busy,
+        "the queued turn owns the session now; it must not be settled to Idle or Error"
+    );
+    assert!(
+        notice_harness
+            .dispatcher
+            .agent_events()
+            .iter()
+            .any(|event| {
+                matches!(
+                    event,
+                    AgentEvent::HookStoppedNotice { stop_reason, .. }
+                        if stop_reason == "budget exhausted"
+                )
+            }),
+        "stopReason must still reach the user via HookStoppedNotice when a queued turn follows"
+    );
+    assert!(
+        !notice_harness
+            .dispatcher
+            .agent_events()
+            .iter()
+            .any(|event| matches!(event, AgentEvent::WorkflowCompleted { .. })),
+        "queued turn continuation must not emit WorkflowCompleted"
+    );
+    assert!(
+        !notice_harness
+            .dispatcher
+            .agent_events()
+            .iter()
+            .any(|event| matches!(event, AgentEvent::WorkflowError { .. })),
+        "queued turn restart must not emit WorkflowError"
+    );
+}
+
+/// #3004 G1.1: if the user pressed stop (`cancel_pending == true`) while a hook
+/// was running and a prompt is also queued, `stop_turn_from_hook` must leave the
+/// prompt queued and settle to `Paused` instead of attempting a queued turn that
+/// would fail into `SessionStatus::Error`.
+#[tokio::test]
+async fn stop_turn_from_hook_with_user_cancel_and_queued_prompt_settles_paused_without_error() {
+    let _executor = disable_rust_executor();
+    let harness =
+        SettlementHarness::new("sess-hook-stop-user-cancel-queued", SessionStatus::Busy).await;
+
+    let tool_calls = vec![build_tool_call("call-1"), build_tool_call("call-2")];
+    let mut assistant =
+        build_assistant_message(&harness.session_id, "asst-hook-stop-user-cancel", "working");
+    assistant.tool_calls = Some(tool_calls.clone());
+    harness.push_assistant_to_cache(assistant).await;
+    harness
+        .queue_pending_message("queued-while-cancelled")
+        .await;
+
+    {
+        let mut sessions = harness.active_sessions.write().await;
+        let session = sessions
+            .get_mut(&harness.session_id)
+            .expect("session in memory");
+        session.pending_execution = Some(PendingToolExecution {
+            message_id: "asst-hook-stop-user-cancel".to_string(),
+            total_expected: 2,
+            tool_names: HashMap::new(),
+            expected_tool_call_ids: ["call-1", "call-2"]
+                .iter()
+                .map(|id| id.to_string())
+                .collect(),
+            completed_tool_call_ids: ["call-1"].iter().map(|id| id.to_string()).collect(),
+            deferred_history_append: Vec::new(),
+        });
+        session.cancellation_token.cancel();
+        session
+            .cancel_pending
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    let remaining = vec![tool_calls[1].clone()];
+    stop_turn_from_hook(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.session_id,
+        &remaining,
+        "budget exhausted",
+    )
+    .await;
+
+    assert_eq!(
+        harness.session_status().await,
+        SessionStatus::Paused,
+        "user cancel during hook stop must settle to Paused, not Error"
+    );
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Paused);
+    assert!(
+        session_has_pending_events(&harness.active_sessions, &harness.session_id).await,
+        "queued prompt must remain queued when user cancelled"
+    );
+}
+
+/// #3004 G2.2: when the current tool call is the last call in the batch,
+/// `continue_workflow_after_tool` runs before `stop_turn_from_hook`, consumes
+/// `cancel_pending`, and sets status to `Paused`. `stop_turn_from_hook` must
+/// still honor that user cancel and leave the queued prompt untouched instead
+/// of resetting state and failing into `SessionStatus::Error`.
+#[tokio::test]
+async fn stop_turn_from_hook_after_cancel_consumed_by_batch_completion_stays_paused() {
+    let _executor = disable_rust_executor();
+    let harness = SettlementHarness::new(
+        "sess-hook-stop-cancel-already-consumed",
+        SessionStatus::Paused,
+    )
+    .await;
+    harness
+        .queue_pending_message("queued-while-cancelled")
+        .await;
+
+    // Mirror the state right after `continue_workflow_after_tool` consumed
+    // `cancel_pending` on the final tool call of a batch: `cancel_pending` is
+    // now `false`, `status` is `Paused`, and `remaining` is empty.
+    stop_turn_from_hook(
+        &harness.session_repo,
+        &harness.active_sessions,
+        &harness.proxy_manager,
+        harness.app_handle(),
+        &harness.session_id,
+        &[],
+        "budget exhausted",
+    )
+    .await;
+
+    assert_eq!(
+        harness.session_status().await,
+        SessionStatus::Paused,
+        "already-consumed user cancel must stay Paused, not Error"
+    );
+    assert_eq!(harness.in_memory_status().await, SessionStatus::Paused);
+    assert!(
+        session_has_pending_events(&harness.active_sessions, &harness.session_id).await,
+        "queued prompt must remain queued when user cancelled"
     );
 }

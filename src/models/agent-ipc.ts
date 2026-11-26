@@ -194,7 +194,8 @@ export type WorkflowCompletionReason =
   | 'natural'
   | 'recurringStop'
   | 'cancelled'
-  | 'terminated';
+  | 'terminated'
+  | 'hookStopped';
 
 export type SessionRuntimePhase =
   | 'not_started'

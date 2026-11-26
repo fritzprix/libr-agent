@@ -28,6 +28,14 @@ export type AgentEventPayload =
       type: 'workflowCompleted';
       sessionId: string;
       reason: WorkflowCompletionReason;
+      /** User-visible reason when a hook stopped the turn (`reason === 'hookStopped'`). */
+      stopReason?: string | null;
+    }
+  | {
+      type: 'hookStoppedNotice';
+      sessionId: string;
+      /** User-visible reason when a hook stopped a turn while a queued prompt continues the session. */
+      stopReason: string;
     }
   | { type: 'workflowError'; sessionId: string; error: AgentRuntimeError }
   | {
