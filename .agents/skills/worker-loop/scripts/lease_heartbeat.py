@@ -270,6 +270,12 @@ def run(
     started = time.time()
     try:
         while True:
+            # A lease that is already gone — a released slot, a deleted state
+            # directory — ends the heartbeat at once. Without this the wait
+            # below would keep a heartbeat alive for one interval after its
+            # lease stopped existing.
+            if not lease.is_held_by(worker, token, state_file):
+                return 0
             if time.time() - started >= max_lifetime:
                 return 0
             # `lease.acquire` has just written a fresh lease, so the first
