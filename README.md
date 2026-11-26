@@ -16,3 +16,10 @@ exactly like the Extensions page (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap
 | `card-wide.png` | wide grid (1440 px, 3 columns): long description next to short ones, failed + OAuth cards |
 | `card-narrow.png` | narrow grid (460 px, 1 column) |
 | `card-grid-3col.png` | tightest three-column width (1024 px) |
+
+## Round 6 (head `b4d65be5f`, G1.5 verification)
+
+| File | Scenario |
+|---|---|
+| `card-1024-three-col.png` | 1024 px, 3 columns incl. `notion-workspace` OAuth card; red outline = measured status-text rect, blue outline = measured button rect |
+| `card-long-status.png` | same grid with a deliberately long unauthorized-status string: text truncates with ellipsis (`truncate` + `title` tooltip), Authorize button stays fully visible on the same row |
