@@ -195,16 +195,49 @@ class TickGateTest(unittest.TestCase):
     MOVED = {"data": {"search": {"nodes": []}, "repository": {"issues": {"nodes": [
         {"number": 10, "updatedAt": "2026-01-01T02:00:00Z"}]}}}}
 
-    def test_unchanged_fingerprint_still_runs_when_an_approved_issue_is_free(self):
-        # An approved issue nobody has started must not be ignored just because the
-        # tracked snapshot did not move.
-        mock_gh = self._create_mock_gh([self.IDLE, self.IDLE], issues=[approvals_issue(12, ["approved"])])
+    def test_idle_tick_returns_noop_until_state_changes_and_non_idle_clears_memo(self):
+        # Issue #3033: after an idle tick (--update --unlock), a later --lock with the
+        # same fingerprint returns NOOP even when an approved candidate remains.
+        # A fingerprint change wakes the gate, and a non-idle tick (--unlock without
+        # --update) clears the idle memo.
+        labeled = {"data": {"search": {"nodes": []}, "repository": {"issues": {"nodes": [
+            {"number": 10, "updatedAt": "2026-01-01T00:00:00Z", "labels": {"nodes": [{"name": "approved"}]}}]}}}}
+        commented = {"data": {"search": {"nodes": []}, "repository": {"issues": {"nodes": [
+            {"number": 10, "updatedAt": "2026-01-01T00:00:00Z", "labels": {"nodes": [{"name": "approved"}]},
+             "comments": {"nodes": [{"createdAt": "2026-01-01T01:00:00Z"}]}}]}}}}
+        mock_gh = self._create_mock_gh(
+            [self.IDLE, self.IDLE, labeled, commented, commented],
+            issues=[approvals_issue(12, ["approved"])],
+        )
         with patch.object(tick_gate, "gh", side_effect=mock_gh), \
              patch.object(tick_gate.worker_claims, "load_claims", return_value={}):
+            # 1. First tick runs and ends idle (--update --unlock).
             code, token = self._lock()
             self.assertEqual(code, tick_gate.EXIT_RUN)
-            self.assertIsNotNone(tick_gate.load_state(self.state_file).get("tickStartFingerprint"))
             self.assertEqual(self._run("--token", token, "--update", "--unlock")[0], tick_gate.EXIT_RUN)
+            self.assertIsNotNone(tick_gate.load_state(self.state_file).get("lastIdleFingerprint"))
+
+            # 2. Same fingerprint -> NOOP even though #12 is an approved candidate.
+            code, out = self._run("--lock")
+            self.assertEqual(code, tick_gate.EXIT_NOOP)
+            self.assertIn("NOOP", out)
+
+            # 3. Label change on issue -> wakes gate; non-idle --unlock clears idle memo.
+            code, token = self._lock()
+            self.assertEqual(code, tick_gate.EXIT_RUN)
+            self.assertEqual(self._run("--token", token, "--unlock")[0], tick_gate.EXIT_RUN)
+            self.assertIsNone(tick_gate.load_state(self.state_file).get("lastIdleFingerprint"))
+
+            # 4. Comment change -> wakes gate; non-idle unlock keeps memo clear.
+            code, token = self._lock()
+            self.assertEqual(code, tick_gate.EXIT_RUN)
+            # Save lastFingerprint as if a prior tick had recorded it, without idle memo.
+            st = tick_gate.load_state(self.state_file)
+            st["lastFingerprint"] = st["tickStartFingerprint"]
+            tick_gate.save_state(self.state_file, st)
+            self.assertEqual(self._run("--token", token, "--unlock")[0], tick_gate.EXIT_RUN)
+
+            # 5. Same fingerprint after non-idle tick -> still RUN for pending #12.
             code, out = self._run("--lock")
             self.assertEqual(code, tick_gate.EXIT_RUN)
             self.assertIn("#12", out)
@@ -223,6 +256,29 @@ class TickGateTest(unittest.TestCase):
             code, out = self._run("--lock")
             self.assertEqual(code, tick_gate.EXIT_NOOP)
             self.assertIn("NOOP", out)
+
+    def test_fingerprint_changes_on_issue_label_comment_blocker_and_subissue(self):
+        base_issue = {
+            "number": 10,
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "labels": {"nodes": [{"name": "approved"}]},
+            "comments": {"nodes": []},
+            "subIssuesSummary": {"total": 0, "completed": 0},
+            "blockedBy": {"nodes": []},
+        }
+        variants = [
+            base_issue,
+            {**base_issue, "labels": {"nodes": [{"name": "approved"}, {"name": "needs-owner"}]}},
+            {**base_issue, "comments": {"nodes": [{"createdAt": "2026-01-01T01:00:00Z"}]}},
+            {**base_issue, "subIssuesSummary": {"total": 2, "completed": 0}},
+            {**base_issue, "blockedBy": {"nodes": [{"number": 99, "state": "OPEN"}]}},
+        ]
+        fps = []
+        for issue in variants:
+            payload = {"data": {"search": {"nodes": []}, "repository": {"issues": {"nodes": [issue]}}}}
+            with patch.object(tick_gate, "gh", side_effect=self._create_mock_gh([payload])):
+                fps.append(tick_gate.compute_fingerprint())
+        self.assertEqual(len(set(fps)), len(variants))
 
     def _hold_with_state(self, state):
         """Take the lease, then set state as the tick would."""

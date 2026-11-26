@@ -100,6 +100,26 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
       nodes {
         number
         updatedAt
+        labels(first: 20) {
+          nodes {
+            name
+          }
+        }
+        comments(last: 1) {
+          nodes {
+            createdAt
+          }
+        }
+        subIssuesSummary {
+          total
+          completed
+        }
+        blockedBy(first: 20) {
+          nodes {
+            number
+            state
+          }
+        }
       }
     }
   }
@@ -228,7 +248,33 @@ def compute_fingerprint() -> str:
     prs_fingerprint.sort()
 
     issue_nodes = repo_data.get("issues", {}).get("nodes") or []
-    issues_fingerprint = sorted((i["number"], i.get("updatedAt")) for i in issue_nodes)
+    issues_fingerprint = []
+    for i in issue_nodes:
+        if not i:
+            continue
+        labels = sorted(
+            node["name"]
+            for node in ((i.get("labels") or {}).get("nodes") or [])
+            if node and node.get("name")
+        )
+        comment_nodes = (i.get("comments") or {}).get("nodes") or []
+        last_comment = comment_nodes[0].get("createdAt") if comment_nodes else ""
+        sub = i.get("subIssuesSummary") or {}
+        sub_summary = (sub.get("total") or 0, sub.get("completed") or 0)
+        blockers = sorted(
+            (node["number"], node.get("state") or "")
+            for node in ((i.get("blockedBy") or {}).get("nodes") or [])
+            if node and "number" in node
+        )
+        issues_fingerprint.append((
+            i["number"],
+            i.get("updatedAt"),
+            labels,
+            last_comment,
+            sub_summary,
+            blockers,
+        ))
+    issues_fingerprint.sort()
 
     hasher = hashlib.sha256()
     hasher.update(json.dumps({"prs": prs_fingerprint, "issues": issues_fingerprint}).encode("utf-8"))
@@ -249,11 +295,19 @@ def _finish_tick(args: argparse.Namespace, token: str | None) -> int:
             tick_start_fp = state.pop("tickStartFingerprint", None)
             if tick_start_fp:
                 state["lastFingerprint"] = tick_start_fp
+                state["lastIdleFingerprint"] = tick_start_fp
                 print(f"UPDATED: {tick_start_fp[:12]}")
             save_state(state_path, state)
-        elif "tickStartFingerprint" in state:
-            del state["tickStartFingerprint"]
-            save_state(state_path, state)
+        else:
+            changed = False
+            if "tickStartFingerprint" in state:
+                del state["tickStartFingerprint"]
+                changed = True
+            if "lastIdleFingerprint" in state:
+                del state["lastIdleFingerprint"]
+                changed = True
+            if changed:
+                save_state(state_path, state)
         if args.unlock:
             worker_claims.release_finished(worker, state)
         return EXIT_RUN
@@ -282,14 +336,20 @@ def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[in
     orphans = [o for o in worker_slots.orphaned_slots() if o["worker"] != worker]
     message = f"RUN (changes detected: {fp[:12]})"
     if last_fp and last_fp == fp:
-        # Nothing tracked moved, but an approved issue or orphaned work may still be waiting.
-        pending = pending_approved_issue(worker)
-        if pending is not None:
-            message = f"RUN (approved issue pending: #{pending})"
-        elif orphans:
-            message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+        if state.get("lastIdleFingerprint") == fp:
+            if orphans:
+                message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+            else:
+                return EXIT_NOOP, "NOOP (no changes since last idle tick)"
         else:
-            return EXIT_NOOP, "NOOP (no changes)"
+            # Nothing tracked moved, but an approved issue or orphaned work may still be waiting.
+            pending = pending_approved_issue(worker)
+            if pending is not None:
+                message = f"RUN (approved issue pending: #{pending})"
+            elif orphans:
+                message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+            else:
+                return EXIT_NOOP, "NOOP (no changes)"
 
     # Keep the start-of-tick fingerprint; lastFingerprint is saved only by a
     # successful idle tick (--update).
