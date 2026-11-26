@@ -148,6 +148,10 @@ fn if_condition_bash_unmodeled_constructs_run_the_guard() {
     assert!(run("Bash(git *)", "MSG=\"fix the bug\" git push"));
     assert!(run("Bash(rm *)", "A='x y z' rm -rf build"));
     assert!(run("Bash(rm *)", "true # don't\nrm -rf build\n# it's done"));
+    assert!(run(
+        "Bash(rm *)",
+        "cat <<A\nsay \"hi\nA\nrm -rf build\ncat <<B\nbye\" now\nB",
+    ));
     // Plain assignments stay judgeable, so a real miss still misses.
     assert!(!run("Bash(git *)", "FOO=bar npm test"));
     assert!(run("Bash(git *)", "FOO=bar git push"));

@@ -329,6 +329,11 @@ fn shell_subcommands_into(command: &str, parts: &mut Vec<String>) -> Option<()> 
             '#' if !in_double && (current.is_empty() || current.ends_with(char::is_whitespace)) => {
                 return None;
             }
+            // An unquoted `<<` starts a heredoc or here-string, whose body is
+            // not shell syntax: a quote inside one heredoc body would pair with
+            // a quote in a later body and swallow the command between them
+            // (#3003 G3.1). Bail so the guard runs.
+            '<' if !in_double && chars.peek() == Some(&'<') => return None,
             '&' if !in_double && chars.peek() == Some(&'&') => {
                 chars.next();
                 flush_shell_part(&mut current, parts);
