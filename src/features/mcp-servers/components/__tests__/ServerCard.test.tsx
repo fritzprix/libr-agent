@@ -72,7 +72,7 @@ describe('ServerCard', () => {
     expect(screen.getByText('test-server')).toBeInTheDocument();
   });
 
-  it('does NOT show Browse Tools button when toolCount is null/undefined', () => {
+  it('shows the Tools button disabled when toolCount is null/undefined (#3000 G3.1)', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: undefined }}
@@ -81,10 +81,10 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.queryByText('Tools')).not.toBeInTheDocument();
+    expect(screen.getByText('Tools')).toBeDisabled();
   });
 
-  it('does NOT show Browse Tools button when toolCount is 0', () => {
+  it('shows the Tools button disabled with an explanatory title when toolCount is 0 (#3000 G3.1/S4.1)', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 0 }}
@@ -93,10 +93,16 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.queryByText('Tools')).not.toBeInTheDocument();
+    const tools = screen.getByText('Tools').closest('button');
+    expect(tools).toBeDisabled();
+    // S4.1: a disabled button must say why, like the plugin-owned Edit/Delete.
+    expect(tools).toHaveAttribute(
+      'title',
+      'Tool count unknown (not yet verified)',
+    );
   });
 
-  it('shows Browse Tools button when toolCount > 0', () => {
+  it('shows Browse Tools button enabled and untitled when toolCount > 0', () => {
     renderCard(
       <ServerCard
         server={{ ...baseServer, toolCount: 5 }}
@@ -105,7 +111,10 @@ describe('ServerCard', () => {
         onToggleActive={noop}
       />,
     );
-    expect(screen.getByText('Tools')).toBeInTheDocument();
+    const tools = screen.getByText('Tools').closest('button');
+    expect(tools).toBeInTheDocument();
+    expect(tools).toBeEnabled();
+    expect(tools).not.toHaveAttribute('title');
   });
 
   it('opens ServerToolsModal when Browse Tools is clicked', () => {
@@ -185,7 +194,27 @@ describe('ServerCard', () => {
       screen.getByText('A required command was not found on this machine.'),
     ).toBeInTheDocument();
     expect(screen.getByText('Open App Wizard')).toBeInTheDocument();
-    expect(screen.getByText('Retry')).toBeInTheDocument();
+
+    // #3000 G3.2: Retry sits next to the failed status line, not in the
+    // action row, so the row keeps the same Tools / Edit / Delete slots.
+    // G1.3/G1.4: both share one row that never wraps; the status text
+    // truncates (with a title tooltip) while Retry keeps its full size.
+    const failedStatus = screen.getByText('Connection failed');
+    const retryButton = screen.getByText('Retry').closest('button')!;
+    const failedRow = failedStatus.closest('div')!;
+    expect(failedRow).toContainElement(retryButton);
+    expect(failedRow).not.toHaveClass('flex-wrap');
+    expect(failedStatus).toHaveClass('truncate');
+    expect(failedStatus).toHaveAttribute('title', 'Connection failed');
+    expect(retryButton).toHaveClass('shrink-0');
+
+    const deleteButton = screen.getByText('Delete').closest('button')!;
+    const actionRow = deleteButton.parentElement!;
+    expect(actionRow).not.toContainElement(retryButton);
+    const buttonsInActionRow = Array.from(
+      actionRow.querySelectorAll('button'),
+    ).map((b) => b.textContent?.trim());
+    expect(buttonsInActionRow).toEqual(['Tools', 'Edit', 'Delete']);
   });
 
   it('shows verifying state for pending verification', () => {
@@ -316,6 +345,64 @@ describe('ServerCard', () => {
       expect(screen.queryByText('Plugin')).not.toBeInTheDocument();
       expect(screen.getByText('Edit').closest('button')).not.toBeDisabled();
       expect(screen.getByText('Delete').closest('button')).not.toBeDisabled();
+    });
+  });
+
+  describe('card layout and action row alignment', () => {
+    it('places Authorize inline next to Authorization Required and keeps Tools, Edit, Delete on one bottom-pinned row', () => {
+      const oauthServer: MCPServerEntity = {
+        ...baseServer,
+        id: 'srv-oauth',
+        name: 'remote-mcp',
+        toolCount: 4,
+        transport: { type: 'http-sse', url: 'https://example.com/sse' },
+        authentication: { type: 'oauth2.1' },
+      };
+
+      const { container } = renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+        />,
+      );
+
+      const card = container.firstElementChild as HTMLElement;
+      expect(card).toHaveClass('flex', 'h-full', 'flex-col');
+
+      // Header aligns Active toggle to the top consistently
+      const header = Array.from(card.children).find((el) =>
+        el.contains(screen.getByText('Active')),
+      );
+      expect(header).not.toBeUndefined();
+      expect(header).toHaveClass('items-start', 'gap-2');
+      expect(header).not.toHaveClass('items-center');
+
+      // Authorize sits inline next to the "Authorization Required" status line, NOT in the action row.
+      // G1.1/G1.2/G1.4: one non-wrapping row; the status text truncates
+      // (with a title tooltip) so Authorize is always fully visible.
+      const authStatus = screen.getByText('Authorization Required');
+      const authorizeButton = screen.getByText('Authorize').closest('button')!;
+      const authRow = authStatus.closest('div')!;
+      expect(authRow).toContainElement(authorizeButton);
+      expect(authRow).not.toHaveClass('flex-wrap');
+      expect(authStatus).toHaveClass('truncate');
+      expect(authStatus).toHaveAttribute('title', 'Authorization Required');
+      expect(authorizeButton).toHaveClass('shrink-0');
+
+      // Action row is pinned to bottom and contains Tools, Edit, Delete in one single row
+      const deleteButton = screen.getByText('Delete').closest('button')!;
+      const actionRow = deleteButton.parentElement!;
+      expect(actionRow).toHaveClass('flex', 'items-center', 'justify-between', 'gap-2');
+      expect(actionRow).not.toHaveClass('flex-wrap');
+      expect(actionRow.parentElement).toHaveClass('mt-auto');
+      expect(actionRow).not.toContainElement(authorizeButton);
+
+      const buttonsInActionRow = Array.from(actionRow.querySelectorAll('button')).map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(buttonsInActionRow).toEqual(['Tools', 'Edit', 'Delete']);
     });
   });
 });

@@ -189,7 +189,7 @@ export const ServerCard = React.memo(
     );
 
     return (
-      <Card className="relative overflow-hidden">
+      <Card className="relative flex h-full flex-col overflow-hidden">
         {/* Verification progress bar - animating shimmer when pending */}
         {verificationStatus === 'pending' && (
           <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden">
@@ -202,7 +202,7 @@ export const ServerCard = React.memo(
         {verificationStatus === 'error' && (
           <div className="absolute top-0 left-0 right-0 h-0.5 bg-destructive/70" />
         )}
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             {/* Server logo */}
             <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 mt-0.5 border border-border/50">
@@ -256,24 +256,68 @@ export const ServerCard = React.memo(
               {/* Tool count / verification status — mutually exclusive display */}
               <div className="mt-1 flex flex-col gap-1">
                 {server.authentication?.type === 'oauth2.1' && (
-                  <span
-                    className={`inline-flex items-center gap-1 text-xs font-semibold ${hasToken ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-500'}`}
-                  >
+                  <div className="flex items-center gap-2">
+                    {/* No flex-wrap: the status text truncates so the
+                        Authorize / Disconnect button never wraps or clips
+                        at narrow card widths (#3000 G1.1/G1.2). */}
+                    <span
+                      className={`inline-flex min-w-0 items-center gap-1 text-xs font-semibold ${hasToken ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-500'}`}
+                    >
+                      {hasToken ? (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                          <span
+                            className="truncate"
+                            title={t(
+                              'mcpServer.authorizedStatus',
+                              'Authorized',
+                            )}
+                          >
+                            {t('mcpServer.authorizedStatus', 'Authorized')}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                          <span
+                            className="truncate"
+                            title={t(
+                              'mcpServer.unauthorizedStatus',
+                              'Authorization Required',
+                            )}
+                          >
+                            {t(
+                              'mcpServer.unauthorizedStatus',
+                              'Authorization Required',
+                            )}
+                          </span>
+                        </>
+                      )}
+                    </span>
                     {hasToken ? (
-                      <>
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        {t('mcpServer.authorizedStatus', 'Authorized')}
-                      </>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDisconnect}
+                        className="h-6 shrink-0 px-2 text-xs text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                      >
+                        {t('mcpServer.disconnect', 'Disconnect')}
+                      </Button>
                     ) : (
-                      <>
-                        <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                        {t(
-                          'mcpServer.unauthorizedStatus',
-                          'Authorization Required',
+                      <Button
+                        variant="default"
+                        size="sm"
+                        disabled={isAuthorizing}
+                        onClick={handleAuthorize}
+                        className="h-6 shrink-0 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                      >
+                        {isAuthorizing && (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                         )}
-                      </>
+                        {t('mcpServer.authorize', 'Authorize')}
+                      </Button>
                     )}
-                  </span>
+                  </div>
                 )}
                 {verificationStatus === 'pending' && (
                   <div className="space-y-1">
@@ -304,10 +348,44 @@ export const ServerCard = React.memo(
                 )}
                 {verificationStatus === 'error' && (
                   <div className="space-y-1">
-                    <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium">
-                      <XCircle className="w-3.5 h-3.5" />
-                      {t('mcpServer.verificationFailed', 'Connection failed')}
-                    </span>
+                    {/* Retry belongs next to the failed status line, not in the
+                        action row, so every card keeps the same Tools / Edit /
+                        Delete slots (#3000 G3.2). */}
+                    {/* Same rule as the auth row: text truncates, Retry
+                        stays fully visible (#3000 G1.3). */}
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex min-w-0 items-center gap-1 text-xs text-destructive font-medium">
+                        <XCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span
+                          className="truncate"
+                          title={t(
+                            'mcpServer.verificationFailed',
+                            'Connection failed',
+                          )}
+                        >
+                          {t(
+                            'mcpServer.verificationFailed',
+                            'Connection failed',
+                          )}
+                        </span>
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isRetryingVerify}
+                        onClick={() => void handleRetryVerify()}
+                        className="h-6 shrink-0 px-2 text-xs"
+                        aria-label={t('mcpServer.retryVerify', {
+                          name: serverName,
+                          defaultValue: 'Retry verification for {{name}}',
+                        })}
+                      >
+                        {isRetryingVerify ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : null}
+                        {t('mcpServer.retryVerifyShort', 'Retry')}
+                      </Button>
+                    </div>
                     {humanizedError ? (
                       <>
                         <p
@@ -391,25 +469,32 @@ export const ServerCard = React.memo(
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex justify-between items-center w-full">
-            <div className="flex gap-2">
-              {server.toolCount !== undefined &&
-                server.toolCount !== null &&
-                server.toolCount > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsToolsOpen(true)}
-                    aria-label={t('mcpServer.browseTools', {
-                      name: serverName,
-                      defaultValue: 'Browse tools for {{name}}',
-                    })}
-                  >
-                    <Wrench className="h-3 w-3 mr-1" />
-                    {t('mcpServer.tools', 'Tools')}
-                  </Button>
-                )}
+        <CardContent className="mt-auto">
+          <div className="flex w-full items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {/* Every card shows Tools / Edit / Delete in the same slots
+                  (#3000 G3.1); Tools is disabled when there are no tools. */}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!server.toolCount}
+                title={
+                  server.toolCount
+                    ? undefined
+                    : t(
+                        'mcpServer.toolCountUnknown',
+                        'Tool count unknown (not yet verified)',
+                      )
+                }
+                onClick={() => setIsToolsOpen(true)}
+                aria-label={t('mcpServer.browseTools', {
+                  name: serverName,
+                  defaultValue: 'Browse tools for {{name}}',
+                })}
+              >
+                <Wrench className="h-3 w-3 mr-1" />
+                {t('mcpServer.tools', 'Tools')}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -430,53 +515,11 @@ export const ServerCard = React.memo(
               >
                 {t('mcpServer.edit', 'Edit')}
               </Button>
-
-              {verificationStatus === 'error' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isRetryingVerify}
-                  onClick={() => void handleRetryVerify()}
-                  aria-label={t('mcpServer.retryVerify', {
-                    name: serverName,
-                    defaultValue: 'Retry verification for {{name}}',
-                  })}
-                >
-                  {isRetryingVerify ? (
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                  ) : null}
-                  {t('mcpServer.retryVerifyShort', 'Retry')}
-                </Button>
-              )}
-
-              {server.authentication?.type === 'oauth2.1' &&
-                (hasToken ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDisconnect}
-                    className="text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/20"
-                  >
-                    {t('mcpServer.disconnect', 'Disconnect')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={isAuthorizing}
-                    onClick={handleAuthorize}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                  >
-                    {isAuthorizing && (
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                    )}
-                    {t('mcpServer.authorize', 'Authorize')}
-                  </Button>
-                ))}
             </div>
             <Button
               variant="destructive"
               size="sm"
+              className="shrink-0"
               disabled={Boolean(server.pluginSource)}
               onClick={() => onDelete(server)}
               title={
