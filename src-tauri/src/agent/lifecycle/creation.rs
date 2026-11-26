@@ -27,34 +27,13 @@ pub struct CreateSessionParams {
     pub docker_config: Option<DockerWorkspaceConfig>,
 }
 
-/// Create or update a session in the database
-pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
-    let CreateSessionParams {
-        session_repo,
-        active_sessions,
-        proxy_manager,
-        app_handle,
-        context_registry,
-        session_id,
-        name,
-        model,
-        provider,
-        mut agent_config,
-        workspace_isolation,
-        docker_config,
-    } = params;
-
-    let now = chrono::Utc::now().timestamp_millis();
-
-    // Validate agent config
-    agent_config.validate()?;
-
-    // Normalize lineage defaults so root sessions are always groupable in UI.
+/// Normalize lineage defaults so root sessions are always groupable in UI.
+pub fn normalize_lineage_defaults(agent_config: &mut crate::agent::AgentConfig, session_id: &str) {
     if agent_config.lineage_id.is_none() {
         let normalized_lineage_id = if let Some(parent_id) = &agent_config.parent_session_id {
             parent_id.clone()
         } else {
-            session_id.clone()
+            session_id.to_string()
         };
         agent_config.lineage_id = Some(normalized_lineage_id);
     }
@@ -66,43 +45,48 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
             0
         });
     }
+}
 
-    // Resolve mandatory model/provider
-    let (resolved_model, resolved_provider) = if let (Some(m), Some(p)) = (model, provider) {
-        (m, p)
-    } else {
-        // Fallback to global settings
-        let settings_repo = crate::state::get_settings_repository();
-        match settings_repo.get("preferredModel").await {
-            Ok(Some(setting)) => {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&setting.value) {
-                    let m = val["model"].as_str().unwrap_or("gpt-4").to_string();
-                    let p = val["provider"].as_str().unwrap_or("openai").to_string();
-                    (m, p)
-                } else {
-                    ("gpt-4".to_string(), "openai".to_string())
-                }
+/// Resolve mandatory model/provider, falling back to `preferredModel` in global settings
+/// and finally `("gpt-4", "openai")`.
+pub async fn resolve_model_and_provider(
+    model: Option<String>,
+    provider: Option<String>,
+    settings_repo: &dyn SettingsRepository,
+) -> (String, String) {
+    if let (Some(m), Some(p)) = (model, provider) {
+        return (m, p);
+    }
+
+    match settings_repo.get("preferredModel").await {
+        Ok(Some(setting)) => {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&setting.value) {
+                let m = val["model"].as_str().unwrap_or("gpt-4").to_string();
+                let p = val["provider"].as_str().unwrap_or("openai").to_string();
+                (m, p)
+            } else {
+                ("gpt-4".to_string(), "openai".to_string())
             }
-            _ => ("gpt-4".to_string(), "openai".to_string()),
         }
-    };
+        _ => ("gpt-4".to_string(), "openai".to_string()),
+    }
+}
 
-    // Resolve workspace override: check DB first so the pool is correct before any lazy loading.
-    // For existing sessions, the override may already be in the DB (set via set_override which
-    // now persists to DB). For new sessions, DB returns None and WorkspaceService returns None.
-    let existing_session = session_repo.get_session(&session_id).await.ok().flatten();
-
-    let workspace_override = if let Some(existing_session) = existing_session.as_ref() {
+/// Resolve workspace override from an existing persisted session or the workspace pool.
+///
+/// Preserves unavailable persisted overrides instead of clearing them on transient path loss.
+pub async fn resolve_workspace_override(
+    session_id: &str,
+    existing_session: Option<&SessionMetadata>,
+) -> Option<String> {
+    if let Some(existing_session) = existing_session {
         if let Some(db_override) = existing_session.workspace_override.clone() {
             let path = std::path::PathBuf::from(&db_override);
-            // Validate that the persisted path still exists and is accessible.
-            // If the user has since deleted or moved the directory, fall back to the
-            // default workspace and clear the stale override from the DB.
             if path.is_dir() {
                 // Pre-register in pool so WorkspaceService and tools see the correct directory
                 if let Ok(session_manager) = crate::session::get_session_manager() {
                     if let Err(e) = session_manager
-                        .register_session_override(&session_id, path)
+                        .register_session_override(session_id, path)
                         .await
                     {
                         log::warn!(
@@ -128,10 +112,47 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     } else {
         // No existing DB record — resolve from pool (handles the case where override was
         // registered before the session was first persisted)
-        crate::services::WorkspaceService::get_override(&session_id)
+        crate::services::WorkspaceService::get_override(session_id)
             .await
             .unwrap_or(None)
-    };
+    }
+}
+
+/// Create or update a session in the database
+pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
+    let CreateSessionParams {
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        context_registry,
+        session_id,
+        name,
+        model,
+        provider,
+        mut agent_config,
+        workspace_isolation,
+        docker_config,
+    } = params;
+
+    let now = chrono::Utc::now().timestamp_millis();
+
+    // Validate agent config
+    agent_config.validate()?;
+
+    normalize_lineage_defaults(&mut agent_config, &session_id);
+
+    // Resolve mandatory model/provider
+    let settings_repo = crate::state::get_settings_repository();
+    let (resolved_model, resolved_provider) =
+        resolve_model_and_provider(model, provider, settings_repo).await;
+
+    // Resolve workspace override: check DB first so the pool is correct before any lazy loading.
+    // For existing sessions, the override may already be in the DB (set via set_override which
+    // now persists to DB). For new sessions, DB returns None and WorkspaceService returns None.
+    let existing_session = session_repo.get_session(&session_id).await.ok().flatten();
+    let workspace_override =
+        resolve_workspace_override(&session_id, existing_session.as_ref()).await;
 
     let docker_host_workspace_path = if workspace_isolation == WorkspaceIsolationMode::Docker {
         let host_workspace = if let Some(override_path) = workspace_override.as_ref() {
