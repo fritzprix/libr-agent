@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -36,13 +35,8 @@ from issue_deps import (  # noqa: E402
 )
 from issue_deps import open_blockers as gh_open_blockers  # noqa: E402
 
-EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question", "epic", "auto:e2e"}
+EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question", "epic", "auto:e2e", "rejected"}
 APPROVED_LABEL = "approved"
-# `Depends on #1`, `Blocked by #1, #2, and #3`, `depends on #1 / #2`. The list
-# ends at the first item that is not `#N`, so write dependencies as a plain list.
-DEPENDENCY_PATTERN = re.compile(
-    r"\b(?:depends\s+on|blocked\s+by)\s*:?\s*(#\d+(?:\s*(?:,|/|&|and)\s*(?:and\s+)?#\d+)*)", re.I
-)
 
 
 class GhError(RuntimeError):
@@ -67,16 +61,6 @@ def closing_pr_map(prs: list[dict]) -> dict[int, list[int]]:
         for ref in closing_refs(pr):
             closing.setdefault(ref, []).append(pr["number"])
     return closing
-
-
-def dependency_refs(body: str | None) -> list[int]:
-    """Issue numbers named after `Depends on` / `Blocked by` in an issue body, in order."""
-    refs: list[int] = []
-    for group in DEPENDENCY_PATTERN.findall(body or ""):
-        for number in re.findall(r"#(\d+)", group):
-            if int(number) not in refs:
-                refs.append(int(number))
-    return refs
 
 
 def sub_issues(number: int, run_gh: Callable[..., str] = gh) -> list[int]:
@@ -120,23 +104,12 @@ def exclusion_reason(
     return None
 
 
-def _open_blocked_by(number: int, run_gh: Callable[..., str]) -> list[int]:
-    """Open issues GitHub records as blocking this one, via the shared helper (issue #2995).
-
-    A 404 is a `DepsError`: a missing item is an error, not an empty list.
-    """
-    try:
-        return gh_open_blockers(number, run_gh)
-    except DepsError as e:
-        raise GhError(str(e)) from e
-
-
 def waiting_reason(
     issue: dict, labels: set[str], me: str, run_gh: Callable[..., str]
 ) -> tuple[str | None, dict | None]:
     """(reason, ownerAnswer) for an issue that passed `exclusion_reason`.
 
-    A reason means the issue waits on the owner or on an open dependency.
+    A reason means the issue waits on the owner or on an open blocker.
     `ownerAnswer` is set when a `needs-owner` question has been answered.
     """
     number = issue["number"]
@@ -147,17 +120,10 @@ def waiting_reason(
         if answer is None:
             return f"{NEEDS_OWNER_LABEL}: waiting for the owner's answer", None
 
-    blockers = []
-    for dep in dependency_refs(issue.get("body")):
-        try:
-            state = run_gh("api", f"repos/{{owner}}/{{repo}}/issues/{dep}", "--jq", ".state").strip()
-        except GhError as e:
-            if _is_not_found(e):
-                return f"dependency #{dep} not found", answer
-            raise
-        if state == "open":
-            blockers.append(dep)
-    blockers += [n for n in _open_blocked_by(number, run_gh) if n not in blockers]
+    try:
+        blockers = gh_open_blockers(number, run_gh)
+    except DepsError as e:
+        raise GhError(str(e)) from e
     if blockers:
         return f"blocked by open #{', #'.join(map(str, blockers))}", answer
     return None, answer
