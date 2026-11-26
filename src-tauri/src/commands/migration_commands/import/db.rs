@@ -11,9 +11,9 @@ use super::entities::delete_non_plugin_assistants;
 
 /// Open the import transaction.
 ///
-/// Foreign-key enforcement is already off here: the caller wraps this whole
-/// import in [`super::super::fk::with_foreign_keys_disabled`], which restores it
-/// on every exit (#3039).
+/// Foreign-key enforcement is off here because the caller opens `db` as a
+/// private connection with checks disabled and closes it afterwards, so no
+/// pooled connection is ever affected (#3039).
 pub(super) async fn begin_import_transaction(
     db: &DatabaseConnection,
 ) -> Result<DatabaseTransaction, String> {

@@ -8,6 +8,7 @@ mod tests;
 #[cfg(test)]
 mod tests_fk;
 
+use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
@@ -107,20 +108,19 @@ pub async fn import_migration(
     conflict_strategy: String, // "skip" | "overwrite" | "merge"
     password: Option<String>,
 ) -> Result<MigrationImportResult, String> {
-    // #3039: the import runs with foreign-key checks off, and the connection
-    // that ran it goes back into the pool. Wrapping the whole body means every
-    // early `?` below restores the pragma too, not only the commit and the
-    // explicit rollback.
+    // #3039: the import runs on its own connection with foreign-key checks off
+    // (see `fk`), so the shared pool keeps enforcing them and no early `?`
+    // below can leave a pooled connection with checks disabled.
     let db = get_database_connection();
-    super::fk::with_foreign_keys_disabled(
-        db,
-        run_import_migration(window, file_path, conflict_strategy, password),
-    )
+    super::fk::with_foreign_keys_disabled(db, move |import_db| async move {
+        run_import_migration(&window, &import_db, file_path, conflict_strategy, password).await
+    })
     .await
 }
 
 async fn run_import_migration(
-    window: tauri::Window,
+    window: &tauri::Window,
+    db: &DatabaseConnection,
     file_path: String,
     conflict_strategy: String, // "skip" | "overwrite" | "merge"
     password: Option<String>,
@@ -132,7 +132,6 @@ async fn run_import_migration(
         .map_err(|e| format!("올바른 ZIP 파일이 아닙니다: {}", e))?;
     validate_archive_and_strategy(&mut archive, &conflict_strategy)?;
 
-    let db = get_database_connection();
     let base_dir = crate::session::get_session_manager()?.get_base_data_dir();
     let backup_manager = BackupManager::new(base_dir.join("libragent.db"));
     let backup_file = backup_manager
@@ -183,7 +182,7 @@ async fn run_import_migration(
 
     if transaction_ok && totals.errors == 0 {
         db::commit_import_transaction(txn).await?;
-        let report_skills = skills::restore_user_skills(&window, &zip_bytes, &conflict_strategy)?;
+        let report_skills = skills::restore_user_skills(window, &zip_bytes, &conflict_strategy)?;
         totals.record(&mut reports, "user_skills", report_skills);
         window.emit("migration:progress", 100).ok();
 

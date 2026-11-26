@@ -4,7 +4,9 @@
 //! and `teamwork-artifacts/<root>/` (scaffold + deliverables).
 //! Does **not** transfer session messages or full workspace trees (v1).
 
-use sea_orm::{ConnectionTrait, DbBackend, EntityTrait, Statement, TransactionTrait};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, Statement, TransactionTrait,
+};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -477,24 +479,24 @@ pub async fn import_org_bundle(
     conflict_strategy: String,
     password: Option<String>,
 ) -> Result<OrgBundleImportResult, String> {
-    // #3039: as in `import_migration`, the import runs with foreign-key checks
-    // off on a pooled connection, so the restore must cover every early exit,
-    // not only the commit and the explicit rollback.
+    // #3039: as in `import_migration`, the import runs on its own connection
+    // with foreign-key checks off (see `fk`), so the shared pool keeps
+    // enforcing them on every exit.
     let db = get_database_connection();
-    super::fk::with_foreign_keys_disabled(
-        db,
-        run_import_org_bundle(window, file_path, conflict_strategy, password),
-    )
+    super::fk::with_foreign_keys_disabled(db, move |import_db| async move {
+        run_import_org_bundle(&window, &import_db, file_path, conflict_strategy, password).await
+    })
     .await
 }
 
 async fn run_import_org_bundle(
-    window: tauri::Window,
+    window: &tauri::Window,
+    db: &DatabaseConnection,
     file_path: String,
     conflict_strategy: String,
     password: Option<String>,
 ) -> Result<OrgBundleImportResult, String> {
-    emit_progress(&window, 5);
+    emit_progress(window, 5);
 
     if conflict_strategy != "skip"
         && conflict_strategy != "overwrite"
@@ -555,9 +557,8 @@ async fn run_import_org_bundle(
 
         (manifest, mcp_data, assistants_data)
     };
-    emit_progress(&window, 15);
+    emit_progress(window, 15);
 
-    let db = get_database_connection();
     let base_dir = get_session_manager()?.get_base_data_dir();
     let db_path = base_dir.join("libragent.db");
     let backup_manager = BackupManager::new(db_path);
@@ -567,7 +568,7 @@ async fn run_import_org_bundle(
         .map_err(|e| e.to_string())?;
 
     let txn = db.begin().await.map_err(|e| e.to_string())?;
-    emit_progress(&window, 25);
+    emit_progress(window, 25);
 
     let mut reports = HashMap::new();
     let mut total_imported = 0usize;
@@ -579,7 +580,7 @@ async fn run_import_org_bundle(
     total_skipped += report_mcp.skipped;
     total_errors += report_mcp.errors.len();
     reports.insert("mcp_servers".to_string(), report_mcp);
-    emit_progress(&window, 45);
+    emit_progress(window, 45);
 
     let report_assistants =
         import_assistants_data(&txn, assistants_data, &conflict_strategy).await?;
@@ -587,7 +588,7 @@ async fn run_import_org_bundle(
     total_skipped += report_assistants.skipped;
     total_errors += report_assistants.errors.len();
     reports.insert("assistants".to_string(), report_assistants);
-    emit_progress(&window, 60);
+    emit_progress(window, 60);
 
     let fk_violations = txn
         .query_all(Statement::from_string(
@@ -618,7 +619,7 @@ async fn run_import_org_bundle(
     }
 
     txn.commit().await.map_err(|e| e.to_string())?;
-    emit_progress(&window, 70);
+    emit_progress(window, 70);
 
     // Re-open archive for filesystem sections
     let cursor = std::io::Cursor::new(&zip_bytes[..]);
@@ -652,7 +653,7 @@ async fn run_import_org_bundle(
             errors: tw_errors,
         },
     );
-    emit_progress(&window, 85);
+    emit_progress(window, 85);
 
     let mut skills_success = 0usize;
     let mut skills_skipped = 0usize;
@@ -708,7 +709,7 @@ async fn run_import_org_bundle(
             errors: skills_errors,
         },
     );
-    emit_progress(&window, 92);
+    emit_progress(window, 92);
 
     let mut workspace_skills_import_path = None;
     if archive_has_file_prefix(&archive, "workspace_skills") {
@@ -739,7 +740,7 @@ async fn run_import_org_bundle(
         workspace_skills_import_path = Some(ws_skills_path.to_string_lossy().into_owned());
     }
 
-    emit_progress(&window, 100);
+    emit_progress(window, 100);
 
     Ok(OrgBundleImportResult {
         org_id: manifest.org_id,
