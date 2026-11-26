@@ -1,5 +1,5 @@
 mod pre_tool_hook_tests {
-    use super::super::run::{apply_pre_tool_hook_decision, PreToolHookResolution};
+    use super::super::{apply_pre_tool_hook_decision, PreToolHookResolution};
     use crate::agent::state::PendingApprovalKind;
     use crate::agent::tool_approvals::ToolApprovalRequest;
     use crate::services::hooks::HookDecision;

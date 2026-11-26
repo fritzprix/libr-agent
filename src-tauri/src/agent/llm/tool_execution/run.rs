@@ -25,6 +25,19 @@ enum GateStep {
     StopBatch,
 }
 
+struct ToolCallInput<'a> {
+    id: &'a str,
+    name: &'a str,
+    args_str: &'a str,
+    args: &'a serde_json::Value,
+}
+
+enum PreparedCall {
+    Execute(serde_json::Value),
+    NextCall,
+    StopBatch,
+}
+
 pub async fn execute_tool_calls(
     session_repo: Arc<dyn SessionRepository>,
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -66,67 +79,90 @@ pub async fn execute_tool_calls(
             break;
         }
 
-        let ToolCall {
-            id: tool_call_id,
-            function,
-            ..
-        } = &tool_calls[index];
-        let ToolCallFunction {
-            name: tool_name,
-            arguments: args_str,
-        } = function;
-
-        context.emit_tool_execution_started(tool_name);
-
-        if let Some(short_circuit) = loop_prevention_short_circuits.get(tool_call_id) {
-            let guidance = build_loop_prevention_guidance(short_circuit);
-            context
-                .continue_after_tool(
-                    tool_call_id,
-                    loop_prevention_tool_result(&guidance),
-                    "loop prevention short-circuit",
-                )
-                .await;
-            index += 1;
-            continue;
-        }
-
-        let Some(args) = parse_tool_call_args(&context, tool_call_id, tool_name, args_str).await
-        else {
-            index += 1;
-            continue;
-        };
-
-        let Some((policy_decision, unsafe_enabled)) =
-            check_security_and_root_guards(&context, tool_call_id, tool_name, &args).await
-        else {
-            index += 1;
-            continue;
-        };
-
-        match dispatch_pre_tool_hook_and_gate(
+        let tool_call = &tool_calls[index];
+        match prepare_and_gate_tool_call(
             &context,
-            tool_call_id,
-            tool_name,
-            args_str,
-            &args,
-            &policy_decision,
-            unsafe_enabled,
+            tool_call,
+            loop_prevention_short_circuits.get(&tool_call.id),
             &tool_calls[index + 1..],
         )
         .await
         {
-            GateStep::Execute => {}
-            GateStep::NextCall => {
+            PreparedCall::Execute(args) => {
+                run_and_record_tool_call(
+                    &context,
+                    &cancellation_token,
+                    &tool_call.id,
+                    &tool_call.function.name,
+                    args,
+                )
+                .await;
                 index += 1;
-                continue;
             }
-            GateStep::StopBatch => break,
+            PreparedCall::NextCall => index += 1,
+            PreparedCall::StopBatch => break,
         }
+    }
+}
 
-        run_and_record_tool_call(&context, &cancellation_token, tool_call_id, tool_name, args)
+async fn prepare_and_gate_tool_call(
+    context: &ToolExecutionContext<'_>,
+    tool_call: &ToolCall,
+    short_circuit: Option<&LoopPreventionShortCircuit>,
+    remaining_calls: &[ToolCall],
+) -> PreparedCall {
+    let ToolCall {
+        id: tool_call_id,
+        function,
+        ..
+    } = tool_call;
+    let ToolCallFunction {
+        name: tool_name,
+        arguments: args_str,
+    } = function;
+
+    context.emit_tool_execution_started(tool_name);
+
+    if let Some(short_circuit) = short_circuit {
+        let guidance = build_loop_prevention_guidance(short_circuit);
+        context
+            .continue_after_tool(
+                tool_call_id,
+                loop_prevention_tool_result(&guidance),
+                "loop prevention short-circuit",
+            )
             .await;
-        index += 1;
+        return PreparedCall::NextCall;
+    }
+
+    let Some(args) = parse_tool_call_args(context, tool_call_id, tool_name, args_str).await else {
+        return PreparedCall::NextCall;
+    };
+
+    let Some((policy_decision, unsafe_enabled)) =
+        check_security_and_root_guards(context, tool_call_id, tool_name, &args).await
+    else {
+        return PreparedCall::NextCall;
+    };
+
+    let call = ToolCallInput {
+        id: tool_call_id,
+        name: tool_name,
+        args_str,
+        args: &args,
+    };
+    match dispatch_pre_tool_hook_and_gate(
+        context,
+        &call,
+        &policy_decision,
+        unsafe_enabled,
+        remaining_calls,
+    )
+    .await
+    {
+        GateStep::Execute => PreparedCall::Execute(args),
+        GateStep::NextCall => PreparedCall::NextCall,
+        GateStep::StopBatch => PreparedCall::StopBatch,
     }
 }
 
@@ -213,13 +249,9 @@ async fn check_security_and_root_guards(
     Some((policy_decision, unsafe_enabled))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn dispatch_pre_tool_hook_and_gate(
     context: &ToolExecutionContext<'_>,
-    tool_call_id: &str,
-    tool_name: &str,
-    args_str: &str,
-    args: &serde_json::Value,
+    call: &ToolCallInput<'_>,
     policy_decision: &ToolExecutionPolicyDecision,
     unsafe_enabled: bool,
     remaining_calls: &[ToolCall],
@@ -232,11 +264,11 @@ async fn dispatch_pre_tool_hook_and_gate(
         std::path::PathBuf::from("."),
         crate::services::hooks::HookEvent::PreToolUse,
     );
-    pre_tool_params.tool_name = Some(tool_name.to_string());
-    pre_tool_params.tool_input = Some(args.clone());
+    pre_tool_params.tool_name = Some(call.name.to_string());
+    pre_tool_params.tool_input = Some(call.args.clone());
     let pre_tool_outcome = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::PreToolUse,
-        tool_name,
+        call.name,
         &pre_tool_params,
         context.session_id,
     )
@@ -258,8 +290,8 @@ async fn dispatch_pre_tool_hook_and_gate(
     .cloned();
 
     match apply_pre_tool_hook_decision(
-        tool_name,
-        args_str,
+        call.name,
+        call.args_str,
         base_approval_request,
         is_hard_approval,
         pre_tool_outcome.decision,
@@ -267,11 +299,7 @@ async fn dispatch_pre_tool_hook_and_gate(
     ) {
         PreToolHookResolution::Block { reason } => {
             context
-                .continue_after_tool(
-                    tool_call_id,
-                    error_result(reason),
-                    "hook-blocked tool execution",
-                )
+                .continue_after_tool(call.id, error_result(reason), "hook-blocked tool execution")
                 .await;
             GateStep::NextCall
         }
@@ -282,9 +310,7 @@ async fn dispatch_pre_tool_hook_and_gate(
         } => {
             handle_approval_outcome(
                 context,
-                tool_call_id,
-                tool_name,
-                args_str,
+                call,
                 &approval_request,
                 approval_kind,
                 remaining_calls,
@@ -296,18 +322,16 @@ async fn dispatch_pre_tool_hook_and_gate(
 
 async fn handle_approval_outcome(
     context: &ToolExecutionContext<'_>,
-    tool_call_id: &str,
-    tool_name: &str,
-    args_str: &str,
+    call: &ToolCallInput<'_>,
     approval_request: &crate::agent::tool_approvals::ToolApprovalRequest,
     approval_kind: PendingApprovalKind,
     remaining_calls: &[ToolCall],
 ) -> GateStep {
     match context
         .request_approval(
-            tool_call_id,
-            tool_name,
-            args_str,
+            call.id,
+            call.name,
+            call.args_str,
             approval_request,
             approval_kind,
         )
@@ -317,7 +341,7 @@ async fn handle_approval_outcome(
         ApprovalOutcome::Rejected => {
             context
                 .continue_after_tool(
-                    tool_call_id,
+                    call.id,
                     error_result("User rejected the tool execution."),
                     "tool rejection",
                 )
@@ -347,7 +371,7 @@ async fn handle_approval_outcome(
             // Cancel/terminate dropped the approval waiter while the session is still active and busy.
             // Close this call and let the cancel check at the top tombstone any remainder.
             context
-                .continue_after_tool(tool_call_id, cancelled_tool_result(), "approval cancelled")
+                .continue_after_tool(call.id, cancelled_tool_result(), "approval cancelled")
                 .await;
             GateStep::NextCall
         }

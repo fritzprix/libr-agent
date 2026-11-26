@@ -6,5 +6,5 @@ mod run;
 mod tests;
 
 pub use run::execute_tool_calls;
-#[allow(unused_imports)]
+#[cfg(test)]
 pub(crate) use run::{apply_pre_tool_hook_decision, PreToolHookResolution};
