@@ -16,9 +16,9 @@ use tokio::sync::RwLock;
 pub(crate) enum WorkspaceOverridePrep {
     /// Path is a directory — register it with the session manager when possible.
     Register(PathBuf),
-    /// Path is missing or not a directory — keep the preference, use the default
-    /// workspace until it returns.
-    KeepUnavailable,
+    /// Path is missing or not a directory — keep the preference (path string), use
+    /// the default workspace until it returns.
+    KeepUnavailable(String),
     /// Session has no override.
     None,
 }
@@ -34,8 +34,20 @@ pub(crate) fn prepare_workspace_override(
     if path.is_dir() {
         WorkspaceOverridePrep::Register(path)
     } else {
-        WorkspaceOverridePrep::KeepUnavailable
+        WorkspaceOverridePrep::KeepUnavailable(raw.to_string())
     }
+}
+
+/// Load session metadata for resume (repository lookup only).
+pub(crate) async fn load_session_for_resume(
+    session_repo: &Arc<dyn SessionRepository>,
+    session_id: &str,
+) -> Result<SessionMetadata, String> {
+    session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to get session: {}", e))?
+        .ok_or_else(|| format!("Session not found: {}", session_id))
 }
 
 /// Apply a resume into the in-memory active map.
@@ -91,12 +103,7 @@ pub async fn resume_session(
     _context_registry: Arc<ContextRegistry>,
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
-    // Get session metadata from database using injected repository
-    let session = session_repo
-        .get_session(session_id)
-        .await
-        .map_err(|e| format!("Failed to get session: {}", e))?
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let session = load_session_for_resume(session_repo, session_id).await?;
 
     match prepare_workspace_override(session.workspace_override.as_deref()) {
         WorkspaceOverridePrep::Register(path) => {
@@ -113,16 +120,14 @@ pub async fn resume_session(
                 }
             }
         }
-        WorkspaceOverridePrep::KeepUnavailable => {
+        WorkspaceOverridePrep::KeepUnavailable(workspace_override) => {
             // Keep the preference — transient path unavailability must not wipe it.
-            if let Some(workspace_override) = session.workspace_override.as_deref() {
-                log::warn!(
-                    "Persisted workspace override '{}' for session {} is unavailable or not a directory; \
-                     keeping the preference and falling back to the default workspace until it returns.",
-                    workspace_override,
-                    session_id
-                );
-            }
+            log::warn!(
+                "Persisted workspace override '{}' for session {} is unavailable or not a directory; \
+                 keeping the preference and falling back to the default workspace until it returns.",
+                workspace_override,
+                session_id
+            );
         }
         WorkspaceOverridePrep::None => {}
     }
@@ -227,16 +232,18 @@ mod tests {
     fn prepare_workspace_override_keeps_unavailable_paths() {
         let dir = TempDir::new().expect("tempdir");
         let missing = dir.path().join("gone");
+        let missing_str = missing.to_str().expect("utf8");
         assert_eq!(
-            prepare_workspace_override(Some(missing.to_str().expect("utf8"))),
-            WorkspaceOverridePrep::KeepUnavailable
+            prepare_workspace_override(Some(missing_str)),
+            WorkspaceOverridePrep::KeepUnavailable(missing_str.to_string())
         );
 
         let file = dir.path().join("file.txt");
         std::fs::write(&file, b"x").expect("write");
+        let file_str = file.to_str().expect("utf8");
         assert_eq!(
-            prepare_workspace_override(Some(file.to_str().expect("utf8"))),
-            WorkspaceOverridePrep::KeepUnavailable
+            prepare_workspace_override(Some(file_str)),
+            WorkspaceOverridePrep::KeepUnavailable(file_str.to_string())
         );
 
         assert_eq!(
@@ -246,37 +253,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resume_session_returns_not_found_for_a_missing_session() {
+    async fn load_session_for_resume_returns_not_found_for_a_missing_session() {
         let repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
-        let active = Arc::new(RwLock::new(HashMap::new()));
-        // Proxy / AppHandle are unused on the missing-session path; build the
-        // cheapest stand-ins that satisfy the signature.
-        let db = sea_orm::Database::connect("sqlite::memory:")
+        let err = load_session_for_resume(&repo, "does-not-exist")
             .await
-            .expect("db");
-        let temp = TempDir::new().expect("temp");
-        let session_manager = Arc::new(
-            crate::session::SessionManager::new_with_base_dir(temp.path().join("root"))
-                .expect("session manager"),
-        );
-        let proxy = Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager));
-        let mock_app = tauri::test::mock_app();
-        let app_handle: &AppHandle = unsafe {
-            &*(mock_app.handle() as *const tauri::AppHandle<tauri::test::MockRuntime>
-                as *const AppHandle)
-        };
-
-        let err = resume_session(
-            &repo,
-            &active,
-            &proxy,
-            app_handle,
-            Arc::new(ContextRegistry::new()),
-            "does-not-exist",
-        )
-        .await
-        .expect_err("missing session");
+            .expect_err("missing session");
         assert!(err.contains("Session not found: does-not-exist"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn load_session_for_resume_returns_stored_metadata() {
+        let repo = Arc::new(InMemorySessionRepository::new());
+        let stored = host_session("resume-me", Some("/tmp/kept-override".to_string()));
+        repo.upsert_session(&stored).await.expect("upsert");
+        let repo: Arc<dyn SessionRepository> = repo;
+        let loaded = load_session_for_resume(&repo, "resume-me")
+            .await
+            .expect("found");
+        assert_eq!(loaded.id, "resume-me");
+        assert_eq!(
+            loaded.workspace_override.as_deref(),
+            Some("/tmp/kept-override")
+        );
     }
 
     #[tokio::test]
