@@ -10,6 +10,10 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::{oneshot, RwLock};
 
+/// Claude Code's `Notification` type string for a tool-approval prompt (#3005).
+/// A plugin groups these with `"matcher": "permission_prompt"`.
+pub(crate) const NOTIFICATION_PERMISSION_PROMPT: &str = "permission_prompt";
+
 pub(super) struct ToolExecutionContext<'a> {
     pub(super) session_repo: &'a Arc<dyn SessionRepository>,
     pub(super) active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -229,13 +233,16 @@ impl ToolExecutionContext<'_> {
             );
         }
 
-        // Notification hook (#2925): run approved Notification handlers; ignore decisions.
+        // Notification hook (#2925, #3005): run approved Notification handlers;
+        // ignore decisions. The type string is the Claude Code one for a tool
+        // approval prompt (`permission_prompt`), so a plugin's
+        // `"matcher": "permission_prompt"` group matches.
         let mut notification_params = crate::services::hooks::HookEnvelopeParams::new(
             self.session_id,
             std::path::PathBuf::from("."),
             crate::services::hooks::HookEvent::Notification,
         );
-        notification_params.notification_type = Some("permission".to_string());
+        notification_params.notification_type = Some(NOTIFICATION_PERMISSION_PROMPT.to_string());
         notification_params.notification_message = Some(format!(
             "Tool {} requires approval: {}",
             tool_name,
@@ -243,7 +250,7 @@ impl ToolExecutionContext<'_> {
         ));
         let _ = crate::services::hooks::dispatch_hook_event(
             crate::services::hooks::HookEvent::Notification,
-            "permission",
+            NOTIFICATION_PERMISSION_PROMPT,
             &notification_params,
             self.session_id,
         )

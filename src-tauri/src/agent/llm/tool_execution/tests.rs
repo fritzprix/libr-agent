@@ -134,6 +134,26 @@ mod pre_tool_hook_tests {
             }
         );
     }
+
+    /// The `Notification` type string a tool-approval prompt emits is the
+    /// Claude Code one, so a plugin can match it by name (#3005).
+    #[test]
+    fn permission_prompt_is_the_claude_code_notification_type() {
+        use super::super::approval::NOTIFICATION_PERMISSION_PROMPT;
+        assert_eq!(
+            NOTIFICATION_PERMISSION_PROMPT, "permission_prompt",
+            "the emitted type string must stay the Claude Code value"
+        );
+        // Matchers are regexes, so an anchored pattern reaches it too.
+        assert!(crate::services::hooks::matcher_matches(
+            Some("permission_prompt"),
+            NOTIFICATION_PERMISSION_PROMPT
+        ));
+        assert!(crate::services::hooks::matcher_matches(
+            Some("^permission_.*$"),
+            NOTIFICATION_PERMISSION_PROMPT
+        ));
+    }
 }
 
 mod pending_approval_tests {
@@ -235,5 +255,193 @@ mod pending_approval_tests {
         };
         assert_eq!(request_id.as_deref(), Some("req-9"));
         assert_eq!(*approval_kind, PendingApprovalKind::Standard);
+    }
+}
+
+mod hook_input_rewrite_tests {
+    use super::super::approval::{build_pending_approval, ToolCallRef};
+    use super::super::run::{
+        apply_hook_input_rewrite, EffectiveCall, HookInputRewrite, PreExecutionGuards,
+    };
+    use crate::agent::events::AgentEvent;
+    use crate::agent::state::{AgentSession, PendingApprovalKind};
+    use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
+    use crate::services::hooks::{HookDecision, HookDispatchResult};
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::{oneshot, RwLock};
+
+    fn empty_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
+        Arc::new(RwLock::new(HashMap::new()))
+    }
+
+    fn allow_rewrite(updated: serde_json::Value) -> HookDispatchResult {
+        HookDispatchResult {
+            decision: Some(HookDecision::Allow),
+            updated_input: Some(updated),
+            ..HookDispatchResult::default()
+        }
+    }
+
+    fn original_guards() -> PreExecutionGuards {
+        PreExecutionGuards {
+            policy_decision: ToolExecutionPolicyDecision::Allow,
+            refusal: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn rewritten_arguments_are_what_the_tool_receives() {
+        let outcome = allow_rewrite(json!({"path": "rewritten.txt", "offset": 3}));
+        let original = json!({"path": "original.txt"});
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite",
+            false,
+            "workspace__readFile",
+            &outcome,
+            &original.to_string(),
+            original_guards(),
+        )
+        .await;
+
+        let EffectiveCall {
+            args, args_json, ..
+        } = match rewrite {
+            HookInputRewrite::Applied(effective) => effective,
+            other => panic!(
+                "expected Applied, got a {} variant",
+                match other {
+                    HookInputRewrite::Applied(_) => "Applied",
+                    HookInputRewrite::Unchanged(_) => "Unchanged",
+                    HookInputRewrite::Refused(_) => "Refused",
+                }
+            ),
+        };
+        assert_eq!(args, json!({"path": "rewritten.txt", "offset": 3}));
+        assert_eq!(
+            args_json,
+            json!({"path": "rewritten.txt", "offset": 3}).to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn rewrite_into_a_blocked_command_is_refused() {
+        let outcome = allow_rewrite(json!({"command": "rm -rf /"}));
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-block",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo safe"}"#,
+            original_guards(),
+        )
+        .await;
+
+        assert!(
+            matches!(rewrite, HookInputRewrite::Refused(_)),
+            "rewriting runShell into a blocked command must be refused"
+        );
+    }
+
+    #[tokio::test]
+    async fn rewrite_into_root_execution_is_refused() {
+        let outcome = allow_rewrite(json!({"command": "id", "asRoot": true}));
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-root",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"id"}"#,
+            original_guards(),
+        )
+        .await;
+
+        assert!(
+            matches!(rewrite, HookInputRewrite::Refused(_)),
+            "rewriting into an asRoot call on a host session must be refused"
+        );
+    }
+
+    #[tokio::test]
+    async fn block_decision_drops_the_rewrite() {
+        let outcome = HookDispatchResult {
+            decision: Some(HookDecision::Block),
+            reason: Some("denied".to_string()),
+            updated_input: Some(json!({"path": "evil.txt"})),
+            ..HookDispatchResult::default()
+        };
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-blocked-decision",
+            false,
+            "workspace__readFile",
+            &outcome,
+            r#"{"path":"original.txt"}"#,
+            original_guards(),
+        )
+        .await;
+
+        assert!(matches!(rewrite, HookInputRewrite::Unchanged(_)));
+    }
+
+    #[tokio::test]
+    async fn approval_request_shows_the_rewritten_arguments() {
+        let outcome = allow_rewrite(json!({"command": "echo rewritten"}));
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-approval",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo original"}"#,
+            original_guards(),
+        )
+        .await;
+        let HookInputRewrite::Applied(effective) = rewrite else {
+            panic!("expected the rewrite to apply");
+        };
+
+        let request = ToolApprovalRequest {
+            description: "run the thing".to_string(),
+            input_preview: "preview".to_string(),
+            masked_arguments: None,
+        };
+        let (tx, _rx) = oneshot::channel();
+        let (stored, event) = build_pending_approval(
+            &ToolCallRef {
+                session_id: "sess-rewrite-approval",
+                tool_call_id: "tc-rewrite",
+                tool_name: "workspace__runShell",
+            },
+            &effective.args_json,
+            &request,
+            PendingApprovalKind::Standard,
+            tx,
+            None,
+        );
+
+        assert!(
+            stored.arguments.contains("rewritten"),
+            "{:?}",
+            stored.arguments
+        );
+        assert!(
+            !stored.arguments.contains("original"),
+            "{:?}",
+            stored.arguments
+        );
+        let AgentEvent::ToolExecutionRequiresApproval { arguments, .. } = &event else {
+            panic!("expected a ToolExecutionRequiresApproval event");
+        };
+        assert!(arguments.contains("rewritten"), "{arguments}");
+        assert!(!arguments.contains("original"), "{arguments}");
     }
 }

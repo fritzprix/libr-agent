@@ -10,7 +10,7 @@ use crate::agent::llm::tool_args_validation::inspect_tool_call_arguments;
 use crate::agent::state::{AgentSession, PendingApprovalKind};
 use crate::agent::tool_approvals::ToolExecutionPolicyDecision;
 use crate::agent::types::{ToolCall, ToolCallFunction};
-use crate::commands::agent_commands::ToolCancellation;
+use crate::commands::agent_commands::{ToolCancellation, ToolExecutionResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
 use std::collections::HashMap;
@@ -29,7 +29,6 @@ struct ToolCallInput<'a> {
     id: &'a str,
     name: &'a str,
     args_str: &'a str,
-    args: &'a serde_json::Value,
 }
 
 enum PreparedCall {
@@ -139,31 +138,31 @@ async fn prepare_and_gate_tool_call(
         return PreparedCall::NextCall;
     };
 
-    let Some((policy_decision, unsafe_enabled)) =
-        check_security_and_root_guards(context, tool_call_id, tool_name, &args).await
-    else {
+    let unsafe_enabled = context.current_unsafe_mode().await;
+    let mut guards = pre_execution_guards(
+        context.active_sessions,
+        context.session_id,
+        unsafe_enabled,
+        tool_name,
+        &args,
+    )
+    .await;
+    if let Some((refusal, reason)) = guards.refusal.take() {
+        context
+            .continue_after_tool(tool_call_id, refusal, reason)
+            .await;
         return PreparedCall::NextCall;
-    };
+    }
 
-    let call = ToolCallInput {
-        id: tool_call_id,
-        name: tool_name,
-        args_str,
-        args: &args,
-    };
-    match dispatch_pre_tool_hook_and_gate(
+    dispatch_pre_tool_hook_and_gate(
         context,
-        &call,
-        &policy_decision,
+        tool_call,
+        args,
+        guards,
         unsafe_enabled,
         remaining_calls,
     )
     .await
-    {
-        GateStep::Execute => PreparedCall::Execute(args),
-        GateStep::NextCall => PreparedCall::NextCall,
-        GateStep::StopBatch => PreparedCall::StopBatch,
-    }
 }
 
 async fn parse_tool_call_args(
@@ -200,62 +199,141 @@ async fn parse_tool_call_args(
     }
 }
 
-async fn check_security_and_root_guards(
-    context: &ToolExecutionContext<'_>,
-    tool_call_id: &str,
+/// Pre-execution guards for one argument object (#3005).
+pub(super) struct PreExecutionGuards {
+    pub(super) policy_decision: ToolExecutionPolicyDecision,
+    /// The result to return instead of executing, plus its error context.
+    pub(super) refusal: Option<(ToolExecutionResult, &'static str)>,
+}
+
+/// Policy block and root-execution refusal for `args`.
+///
+/// A `PreToolUse` hook may rewrite the arguments (`updatedInput`), so the same
+/// guards run again on the rewritten arguments: a hook rewrite must not walk
+/// around the policy block or the host root refusal.
+async fn pre_execution_guards(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    unsafe_enabled: bool,
     tool_name: &str,
     args: &serde_json::Value,
-) -> Option<(ToolExecutionPolicyDecision, bool)> {
+) -> PreExecutionGuards {
     let policy_decision =
         crate::agent::tool_approvals::evaluate_tool_execution_policy(tool_name, args).await;
 
-    let unsafe_enabled = context.current_unsafe_mode().await;
-    if let Some(blocked) = crate::agent::tool_approvals::blocked_execution_for_runtime(
+    // Build the refusal before moving `policy_decision`: the borrow inside
+    // `blocked_execution_for_runtime` ends with this statement.
+    let blocked_refusal = crate::agent::tool_approvals::blocked_execution_for_runtime(
         &policy_decision,
         unsafe_enabled,
-    ) {
-        context
-            .continue_after_tool(
-                tool_call_id,
-                error_result(blocked.message.clone()),
-                "policy-blocked tool execution",
-            )
-            .await;
-        return None;
+    )
+    .map(|blocked| error_result(blocked.message.clone()));
+    if let Some(refusal) = blocked_refusal {
+        return PreExecutionGuards {
+            policy_decision,
+            refusal: Some((refusal, "policy-blocked tool execution")),
+        };
     }
 
     // Only the in-memory metadata is read: a session that is not loaded gets the host refusal.
     let root_refusal = {
-        let active = context.active_sessions.read().await;
+        let active = active_sessions.read().await;
         crate::agent::tool_approvals::root_execution_refusal(
             tool_name,
             args,
-            active
-                .get(context.session_id)
-                .map(|session| &session.metadata),
+            active.get(session_id).map(|session| &session.metadata),
         )
     };
-    if let Some(refusal) = root_refusal {
-        context
-            .continue_after_tool(
-                tool_call_id,
+    PreExecutionGuards {
+        policy_decision,
+        refusal: root_refusal.map(|refusal| {
+            (
                 tool_result_from_mcp_result(refusal),
                 "root execution unavailable",
             )
-            .await;
-        return None;
+        }),
     }
+}
 
-    Some((policy_decision, unsafe_enabled))
+/// The effective call inputs after the `PreToolUse` `updatedInput` step
+/// (#3005): what the guards checked, what the approval card shows, and what
+/// the tool receives.
+pub(super) struct EffectiveCall {
+    pub(super) args: serde_json::Value,
+    pub(super) args_json: String,
+    pub(super) guards: PreExecutionGuards,
+}
+
+/// Outcome of the `updatedInput` step of the tool loop. Every non-`Applied`
+/// outcome carries the original guards back so the loop keeps them.
+pub(super) enum HookInputRewrite {
+    /// No usable rewrite: the model's arguments and their guards stand.
+    Unchanged(PreExecutionGuards),
+    /// The rewrite was applied and passed the guards; these are the arguments
+    /// the tool receives and the approval card shows.
+    Applied(EffectiveCall),
+    /// The rewrite was applied but the re-run guards refused it: the tool
+    /// must not run, and this result is returned instead.
+    Refused((ToolExecutionResult, &'static str)),
+}
+
+/// One step of the tool loop (#3005, gatekeeper G1.4/G1.5): apply the hook's
+/// `updatedInput`. Only a JSON object may replace the argument object — a
+/// string, number, or array would make every key-reading guard see nothing,
+/// so anything else is ignored with a visible warning and the original
+/// arguments stand. A `Block` decision ignores any rewrite: the call never
+/// runs. A usable rewrite re-runs the same policy and root guards, so a hook
+/// cannot walk a command around them that the model could not run.
+pub(super) async fn apply_hook_input_rewrite(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    unsafe_enabled: bool,
+    tool_name: &str,
+    outcome: &crate::services::hooks::HookDispatchResult,
+    original_args_json: &str,
+    original_guards: PreExecutionGuards,
+) -> HookInputRewrite {
+    let rewrite = outcome
+        .updated_input
+        .clone()
+        .filter(|_| outcome.decision != Some(crate::services::hooks::HookDecision::Block));
+    let Some(rewritten) = rewrite else {
+        return HookInputRewrite::Unchanged(original_guards);
+    };
+    // Non-object rewrites are already rejected at parse time in
+    // `hooks/output.rs`, so `updated_input` is object-or-none by contract
+    // (#3005 G2.3): no second check here.
+    let args_json =
+        serde_json::to_string(&rewritten).unwrap_or_else(|_| original_args_json.to_string());
+    let guards = pre_execution_guards(
+        active_sessions,
+        session_id,
+        unsafe_enabled,
+        tool_name,
+        &rewritten,
+    )
+    .await;
+    match guards.refusal {
+        Some(refusal) => HookInputRewrite::Refused(refusal),
+        None => HookInputRewrite::Applied(EffectiveCall {
+            args: rewritten,
+            args_json,
+            guards,
+        }),
+    }
 }
 
 async fn dispatch_pre_tool_hook_and_gate(
     context: &ToolExecutionContext<'_>,
-    call: &ToolCallInput<'_>,
-    policy_decision: &ToolExecutionPolicyDecision,
+    tool_call: &ToolCall,
+    args: serde_json::Value,
+    guards: PreExecutionGuards,
     unsafe_enabled: bool,
     remaining_calls: &[ToolCall],
-) -> GateStep {
+) -> PreparedCall {
+    let tool_call_id = tool_call.id.as_str();
+    let tool_name = tool_call.function.name.as_str();
+    let args_str = tool_call.function.arguments.as_str();
     // PreToolUse hook (#2925): runs after hard security/root guards and before
     // approval/execution. Applies matcher on `tool_name` and `permissionDecision`
     // (allow / deny / ask).
@@ -264,11 +342,11 @@ async fn dispatch_pre_tool_hook_and_gate(
         std::path::PathBuf::from("."),
         crate::services::hooks::HookEvent::PreToolUse,
     );
-    pre_tool_params.tool_name = Some(call.name.to_string());
-    pre_tool_params.tool_input = Some(call.args.clone());
+    pre_tool_params.tool_name = Some(tool_name.to_string());
+    pre_tool_params.tool_input = Some(args.clone());
     let pre_tool_outcome = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::PreToolUse,
-        call.name,
+        tool_name,
         &pre_tool_params,
         context.session_id,
     )
@@ -276,6 +354,34 @@ async fn dispatch_pre_tool_hook_and_gate(
     if let Some(ctx) = pre_tool_outcome.joined_additional_context() {
         crate::services::hooks::push_turn_hook_context(context.session_id, &ctx);
     }
+
+    // `updatedInput` (#3005): apply the hook's rewrite through the
+    // production step `apply_hook_input_rewrite` — object-only, Block
+    // drops it, and the rewritten arguments re-run every guard.
+    let rewrite = apply_hook_input_rewrite(
+        context.active_sessions,
+        context.session_id,
+        unsafe_enabled,
+        tool_name,
+        &pre_tool_outcome,
+        args_str,
+        guards,
+    )
+    .await;
+    let (args, guards, effective_args_json) = match rewrite {
+        HookInputRewrite::Unchanged(guards) => (args, guards, args_str.to_string()),
+        HookInputRewrite::Refused((refusal, reason)) => {
+            context
+                .continue_after_tool(tool_call_id, refusal, reason)
+                .await;
+            return PreparedCall::NextCall;
+        }
+        HookInputRewrite::Applied(effective) => {
+            (effective.args, effective.guards, effective.args_json)
+        }
+    };
+    let effective_args_str = effective_args_json.as_str();
+    let policy_decision = &guards.policy_decision;
 
     let yolo_enabled = context.current_yolo_mode().await;
     let is_hard_approval = matches!(
@@ -289,6 +395,11 @@ async fn dispatch_pre_tool_hook_and_gate(
     )
     .cloned();
 
+    let call = ToolCallInput {
+        id: tool_call_id,
+        name: tool_name,
+        args_str: effective_args_str,
+    };
     match apply_pre_tool_hook_decision(
         call.name,
         call.args_str,
@@ -301,21 +412,26 @@ async fn dispatch_pre_tool_hook_and_gate(
             context
                 .continue_after_tool(call.id, error_result(reason), "hook-blocked tool execution")
                 .await;
-            GateStep::NextCall
+            PreparedCall::NextCall
         }
-        PreToolHookResolution::Execute => GateStep::Execute,
+        PreToolHookResolution::Execute => PreparedCall::Execute(args),
         PreToolHookResolution::RequestApproval {
             request: approval_request,
             kind: approval_kind,
         } => {
-            handle_approval_outcome(
+            match handle_approval_outcome(
                 context,
-                call,
+                &call,
                 &approval_request,
                 approval_kind,
                 remaining_calls,
             )
             .await
+            {
+                GateStep::Execute => PreparedCall::Execute(args),
+                GateStep::NextCall => PreparedCall::NextCall,
+                GateStep::StopBatch => PreparedCall::StopBatch,
+            }
         }
     }
 }
