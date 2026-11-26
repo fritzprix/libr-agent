@@ -280,6 +280,44 @@ class TickGateTest(unittest.TestCase):
                 fps.append(tick_gate.compute_fingerprint())
         self.assertEqual(len(set(fps)), len(variants))
 
+    def test_approved_candidate_outside_recent_window_and_claim_release_move_fingerprint(self):
+        # G1.1: approved candidate is only in `approvedIssues` (outside the 30-issue `issues` window).
+        approved_old = {
+            "number": 500,
+            "updatedAt": "2025-01-01T00:00:00Z",
+            "labels": {"nodes": [{"name": "approved"}]},
+            "comments": {"nodes": []},
+            "subIssuesSummary": {"total": 0, "completed": 0},
+            "blockedBy": {"nodes": [{"number": 499, "state": "OPEN"}]},
+        }
+        approved_unblocked = {
+            **approved_old,
+            "blockedBy": {"nodes": [{"number": 499, "state": "CLOSED"}]},
+        }
+        p1 = {"data": {"search": {"nodes": []}, "repository": {
+            "issues": {"nodes": [{"number": 999, "updatedAt": "2026-01-01T00:00:00Z"}]},
+            "approvedIssues": {"nodes": [approved_old]},
+        }}}
+        p2 = {"data": {"search": {"nodes": []}, "repository": {
+            "issues": {"nodes": [{"number": 999, "updatedAt": "2026-01-01T00:00:00Z"}]},
+            "approvedIssues": {"nodes": [approved_unblocked]},
+        }}}
+        with patch.object(tick_gate, "gh", side_effect=self._create_mock_gh([p1, p2])), \
+             patch.object(tick_gate.worker_claims, "load_claims", return_value={}):
+            fp1 = tick_gate.compute_fingerprint()
+            fp2 = tick_gate.compute_fingerprint()
+        self.assertNotEqual(fp1, fp2)
+
+        # S1.1: releasing a local claim moves the fingerprint even with identical GitHub state.
+        with patch.object(tick_gate, "gh", side_effect=self._create_mock_gh([p2, p2])), \
+             patch.object(tick_gate.worker_claims, "load_claims", side_effect=[
+                 {"issue:500": {"worker": "worker-2", "at": 0}},
+                 {},
+             ]):
+            fp_claimed = tick_gate.compute_fingerprint()
+            fp_released = tick_gate.compute_fingerprint()
+        self.assertNotEqual(fp_claimed, fp_released)
+
     def _hold_with_state(self, state):
         """Take the lease, then set state as the tick would."""
         with patch.object(tick_gate, "gh", side_effect=self._create_mock_gh([self.IDLE])):

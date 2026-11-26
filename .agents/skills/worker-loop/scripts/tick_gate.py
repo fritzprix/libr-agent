@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Preflight gate for worker-loop.
 
-Computes a fingerprint from a single GraphQL request covering:
+Computes a fingerprint from a single GraphQL request plus local claims covering:
   - Open PRs authored by @me: headRefOid, mergeable, CI statusCheckRollup state,
     updatedAt, and last comment createdAt.
-  - Candidate issues: updatedAt timestamps.
+  - Open issues (recent window plus up to 100 open `approved` issues): updatedAt,
+    labels, last comment createdAt, subIssuesSummary, and blockedBy states.
+  - Local item claims (`claims.json`), so a claim released by another worker wakes
+    an idle slot.
 
-With no 'current' work and an unchanged fingerprint, it still returns RUN when an
-open `approved` issue is free to take and no open PR closes it, so an approved
-issue is never ignored just because the tracked state did not move. It also
-returns RUN when another slot's run died with `current` work (see
-worker_slots.orphaned_slots) and prints one `ORPHANED <slot> <ref> ...` line per
-such slot; `worker_worktree.py takeover` resumes that work.
+After an idle tick (`--update --unlock`), `lastIdleFingerprint` is recorded; the
+next `--lock` with the same fingerprint returns `NOOP` even if an approved
+candidate remains, until candidate state changes or orphaned work appears. A
+non-idle tick (`--unlock` without `--update`) clears `lastIdleFingerprint`, so an
+unchanged fingerprint still checks `pending_approved_issue` and returns `RUN`
+when an approved issue is free. It also returns `RUN` when another slot's run
+died with `current` work (see `worker_slots.orphaned_slots`) and prints one
+`ORPHANED <slot> <ref> ...` line per such slot; `worker_worktree.py takeover`
+resumes that work.
 
 If state.json has no 'current' and nothing is pending and the fingerprint matches
 'lastFingerprint', outputs 'NOOP' and exits with code 1 so external schedulers
@@ -97,6 +103,32 @@ query($prQuery: String!, $prLimit: Int!, $owner: String!, $name: String!, $issue
   }
   repository(owner: $owner, name: $name) {
     issues(first: $issueLimit, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number
+        updatedAt
+        labels(first: 20) {
+          nodes {
+            name
+          }
+        }
+        comments(last: 1) {
+          nodes {
+            createdAt
+          }
+        }
+        subIssuesSummary {
+          total
+          completed
+        }
+        blockedBy(first: 20) {
+          nodes {
+            number
+            state
+          }
+        }
+      }
+    }
+    approvedIssues: issues(first: 100, states: [OPEN], labels: ["approved"], orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
         number
         updatedAt
@@ -247,11 +279,14 @@ def compute_fingerprint() -> str:
         ))
     prs_fingerprint.sort()
 
-    issue_nodes = repo_data.get("issues", {}).get("nodes") or []
+    issue_by_number: dict[int, dict] = {}
+    for i in (repo_data.get("issues", {}).get("nodes") or []) + (
+        repo_data.get("approvedIssues", {}).get("nodes") or []
+    ):
+        if i and "number" in i:
+            issue_by_number[i["number"]] = i
     issues_fingerprint = []
-    for i in issue_nodes:
-        if not i:
-            continue
+    for i in issue_by_number.values():
         labels = sorted(
             node["name"]
             for node in ((i.get("labels") or {}).get("nodes") or [])
@@ -276,8 +311,17 @@ def compute_fingerprint() -> str:
         ))
     issues_fingerprint.sort()
 
+    claims_fingerprint = sorted(
+        (ref, info.get("worker") if isinstance(info, dict) else None)
+        for ref, info in worker_claims.load_claims().items()
+    )
+
     hasher = hashlib.sha256()
-    hasher.update(json.dumps({"prs": prs_fingerprint, "issues": issues_fingerprint}).encode("utf-8"))
+    hasher.update(
+        json.dumps(
+            {"prs": prs_fingerprint, "issues": issues_fingerprint, "claims": claims_fingerprint}
+        ).encode("utf-8")
+    )
     return hasher.hexdigest()
 
 
@@ -336,18 +380,15 @@ def _gate(state: dict, state_path: Path, worker: str, locking: bool) -> tuple[in
     orphans = [o for o in worker_slots.orphaned_slots() if o["worker"] != worker]
     message = f"RUN (changes detected: {fp[:12]})"
     if last_fp and last_fp == fp:
-        if state.get("lastIdleFingerprint") == fp:
-            if orphans:
-                message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
-            else:
-                return EXIT_NOOP, "NOOP (no changes since last idle tick)"
+        if orphans:
+            message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
+        elif state.get("lastIdleFingerprint") == fp:
+            return EXIT_NOOP, "NOOP (no changes since last idle tick)"
         else:
-            # Nothing tracked moved, but an approved issue or orphaned work may still be waiting.
+            # Nothing tracked moved, but an approved issue may still be waiting.
             pending = pending_approved_issue(worker)
             if pending is not None:
                 message = f"RUN (approved issue pending: #{pending})"
-            elif orphans:
-                message = f"RUN (orphaned work: {orphans[0]['ref']} in {orphans[0]['worker']})"
             else:
                 return EXIT_NOOP, "NOOP (no changes)"
 
