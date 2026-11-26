@@ -453,3 +453,70 @@ fn session_resolution_skips_missing_or_broken_plugin_root() {
     .is_none());
     assert!(infos_from_records(&[record]).is_empty());
 }
+
+/// #3003 G2.3: the plugin matcher scope resolves to the plugin's
+/// namespace — successful lookups from BOTH stores, with the session
+/// store shadowing the global one (same rule as agent loading).
+#[test]
+fn plugin_source_namespace_resolves_global_session_and_shadowing() {
+    use super::session::resolve_plugin_source_namespace_in;
+    use crate::services::hooks::registry::{save_source_in, PluginMetadata};
+
+    let global_store = tempfile::tempdir().unwrap();
+    let source_id = "plugin-1a2b3c4d5e6f7a8b";
+    let mut manifest = record_for(Path::new("/unused"), source_id, "https://x/y").manifest;
+    manifest.plugin = Some(PluginMetadata {
+        name: "my-plugin".to_string(),
+        version: None,
+        description: None,
+        author: None,
+        homepage: None,
+        repository: None,
+        license: None,
+        keywords: Vec::new(),
+    });
+    save_source_in(global_store.path(), manifest).unwrap();
+
+    assert_eq!(
+        resolve_plugin_source_namespace_in(source_id, &[], Some(global_store.path())).as_deref(),
+        Some("my-plugin"),
+        "a global plugin resolves to its manifest name"
+    );
+
+    let session_root = tempfile::tempdir().unwrap();
+    let mut session_record = record_for(session_root.path(), source_id, "https://x/y");
+    session_record.manifest.plugin = Some(PluginMetadata {
+        name: "session-plugin".to_string(),
+        version: None,
+        description: None,
+        author: None,
+        homepage: None,
+        repository: None,
+        license: None,
+        keywords: Vec::new(),
+    });
+    assert_eq!(
+        resolve_plugin_source_namespace_in(
+            source_id,
+            std::slice::from_ref(&session_record),
+            Some(global_store.path()),
+        )
+        .as_deref(),
+        Some("session-plugin"),
+        "a session-installed plugin shadows the global install"
+    );
+
+    assert_eq!(
+        resolve_plugin_source_namespace_in(
+            "plugin-ffffffffffffffff",
+            &[],
+            Some(global_store.path())
+        ),
+        None
+    );
+    assert_eq!(
+        resolve_plugin_source_namespace_in(source_id, &[], None),
+        None,
+        "no global store base means no global lookup"
+    );
+}

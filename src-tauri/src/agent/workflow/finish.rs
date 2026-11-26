@@ -393,6 +393,107 @@ pub(crate) fn settle_stub_event(
     }
 }
 
+/// Resolve the matcher value (agent type) for `SubagentStop` (#3003 G1.5,
+/// G2.3). Plugin agents carry deterministic assistant ids
+/// `plugin:<source_id>:<agent>` where `<source_id>` is an internal
+/// `plugin-<16 hex>` id no user would write in a matcher, so the plugin's
+/// **namespace** (manifest name, else repository name — resolved from the
+/// session plugin store first, then the global store, exactly like the
+/// plugin agent definitions themselves) is used for the scope
+/// (`my-plugin:reviewer`). User agents carry an internal uuid, so the
+/// assistant's **name** from the repository is used. Falls back to the
+/// source id (plugin) or the session name (user) with a warning when the
+/// lookup fails. Returns `""` for top-level sessions (`Stop` never matches
+/// an agent type).
+pub(crate) async fn subagent_matcher_value(
+    parent_session_id: Option<&str>,
+    assistant_id: Option<&str>,
+    session_name: Option<&str>,
+) -> String {
+    let Some(parent_id) = parent_session_id else {
+        return String::new();
+    };
+    let trimmed_id = assistant_id.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(id) = trimmed_id {
+        if let Some((source_id, _agent)) = crate::services::skill_service::parse_plugin_agent_id(id)
+        {
+            // Plugin scope = the plugin namespace from the parent session's
+            // plugin store first, then the global store (#3003 G2.3):
+            // session-installed plugins live in the parent session's store,
+            // matching spawn (`load_assistant_or_plugin_agent`) and resume
+            // (`load_assistant_or_plugin`).
+            let scope = crate::services::skill_service::resolve_plugin_source_namespace(
+                source_id, parent_id,
+            );
+            if scope.is_none() {
+                log::warn!(
+                    "SubagentStop: plugin source {source_id} not found in session or global stores; matching on the source id"
+                );
+            }
+            return subagent_matcher_value_with_names(
+                parent_session_id,
+                assistant_id,
+                session_name,
+                scope.as_deref(),
+                None,
+            );
+        }
+        // User agent: the assistant configuration's name (#3003 G2.3).
+        use crate::repositories::assistant_repository::AssistantRepository;
+        let assistant_name: Option<String> = crate::state::get_assistant_repository()
+            .get_assistant(id)
+            .await
+            .ok()
+            .flatten()
+            .map(|assistant| assistant.name)
+            .filter(|name: &String| !name.trim().is_empty());
+        if assistant_name.is_none() {
+            log::warn!("SubagentStop: assistant {id} not found; matching on the session name");
+        }
+        return subagent_matcher_value_with_names(
+            parent_session_id,
+            assistant_id,
+            session_name,
+            None,
+            assistant_name.as_deref(),
+        );
+    }
+    subagent_matcher_value_with_names(parent_session_id, assistant_id, session_name, None, None)
+}
+
+/// Pure core of [`subagent_matcher_value`] with the plugin manifest name and
+/// assistant name already resolved, so unit tests cover the mapping without
+/// the plugin registry or the database.
+fn subagent_matcher_value_with_names(
+    parent_session_id: Option<&str>,
+    assistant_id: Option<&str>,
+    session_name: Option<&str>,
+    plugin_name: Option<&str>,
+    assistant_name: Option<&str>,
+) -> String {
+    if parent_session_id.is_none() {
+        return String::new();
+    }
+    if let Some(id) = assistant_id.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some((source_id, agent)) = crate::services::skill_service::parse_plugin_agent_id(id)
+        {
+            let scope = plugin_name
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(source_id);
+            return format!("{scope}:{agent}");
+        }
+        if let Some(name) = assistant_name.map(str::trim).filter(|s| !s.is_empty()) {
+            return name.to_string();
+        }
+    }
+    session_name
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("")
+        .to_string()
+}
+
 /// Dispatch `Stop` (top-level session) or `SubagentStop` (child session) before
 /// settling to Idle (#2925). Returns `Ok(true)` if a hook returned `block` and
 /// the turn was continued (bounded by `MAX_STOP_HOOK_CONTINUATIONS`).
@@ -403,13 +504,26 @@ async fn maybe_continue_from_stop_hook(
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<bool, String> {
-    let parent_session_id = {
+    let (parent_session_id, assistant_id, session_name) = {
         let active = active_sessions.read().await;
         active
             .get(session_id)
-            .and_then(|s| s.metadata.parent_session_id.clone())
+            .map(|s| {
+                (
+                    s.metadata.parent_session_id.clone(),
+                    s.metadata.assistant_id.clone(),
+                    s.metadata.name.clone(),
+                )
+            })
+            .unwrap_or((None, None, None))
     };
     let event = settle_stub_event(parent_session_id.as_deref());
+    let matcher_value = subagent_matcher_value(
+        parent_session_id.as_deref(),
+        assistant_id.as_deref(),
+        session_name.as_deref(),
+    )
+    .await;
     let mut params = crate::services::hooks::HookEnvelopeParams::new(
         session_id,
         std::path::PathBuf::from("."),
@@ -418,8 +532,16 @@ async fn maybe_continue_from_stop_hook(
     params.stop_hook_active = crate::services::hooks::stop_hook_continuation_count(session_id) > 0;
     if parent_session_id.is_some() {
         params.child_session_id = Some(session_id.to_string());
+        // Claude Code: `agent_id` is the unique subagent instance, `agent_type`
+        // is the name matchers filter on (#3003 G1.5).
+        params.agent_id = Some(session_id.to_string());
+        if !matcher_value.is_empty() {
+            params.agent_type = Some(matcher_value.clone());
+        }
     }
-    let outcome = crate::services::hooks::dispatch_hook_event(event, "", &params, session_id).await;
+    let outcome =
+        crate::services::hooks::dispatch_hook_event(event, &matcher_value, &params, session_id)
+            .await;
 
     if evaluate_stop_hook_outcome(session_id, event, outcome) {
         crate::agent::llm::request_llm_completion_with_recovery(
@@ -1005,5 +1127,234 @@ mod tests {
         );
         assert!(take_turn_hook_context(sid).is_none());
         clear_hook_context(sid);
+    }
+
+    #[test]
+    fn subagent_matcher_value_uses_agent_type_for_children_only() {
+        // Ids exactly as the app builds them: plugin source ids are
+        // `plugin-<16 hex>` (skill_service::importing::plugin_source_id), so
+        // a plugin agent row is `plugin:plugin-<16 hex>:<agent>` (#3003 G2.3).
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                None,
+                Some("Explore"),
+                Some("child"),
+                None,
+                None
+            ),
+            ""
+        );
+        // Plugin agents resolve to the plugin manifest name for the scope.
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                Some("parent-1"),
+                Some("plugin:plugin-1a2b3c4d5e6f7a8b:reviewer"),
+                Some("child-session-name"),
+                Some("my-plugin"),
+                None,
+            ),
+            "my-plugin:reviewer"
+        );
+        // A plugin whose manifest name cannot be read falls back to the
+        // source id (still better than the session name).
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                Some("parent-1"),
+                Some("plugin:plugin-1a2b3c4d5e6f7a8b:reviewer"),
+                Some("child-session-name"),
+                None,
+                None,
+            ),
+            "plugin-1a2b3c4d5e6f7a8b:reviewer"
+        );
+        // User agents resolve to the assistant configuration's name.
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                Some("parent-1"),
+                Some("b15fdf3e-6192-453d-9dc2-7b8ae6dab321"),
+                Some("child-session-name"),
+                None,
+                Some("reviewer"),
+            ),
+            "reviewer"
+        );
+        // Without an assistant row, the session name remains the fallback.
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                Some("parent-1"),
+                Some("b15fdf3e-6192-453d-9dc2-7b8ae6dab321"),
+                Some("reviewer"),
+                None,
+                None,
+            ),
+            "reviewer"
+        );
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                Some("parent-1"),
+                None,
+                Some("reviewer"),
+                None,
+                None
+            ),
+            "reviewer"
+        );
+        assert_eq!(
+            super::subagent_matcher_value_with_names(
+                Some("parent-1"),
+                Some("  "),
+                None,
+                None,
+                None
+            ),
+            ""
+        );
+    }
+
+    /// Drives the production async wrapper (not just the pure core) with an
+    /// app-built plugin id. The plugin is not installed in the unit-test
+    /// environment, so the namespace lookup misses and the scope falls back
+    /// to the source id — proving the wrapper resolves through the
+    /// session+global store path without panicking (#3003 G2.3).
+    #[tokio::test]
+    async fn subagent_matcher_value_resolves_plugin_scope_async() {
+        assert_eq!(
+            super::subagent_matcher_value(
+                Some("parent-1"),
+                Some("plugin:plugin-1a2b3c4d5e6f7a8b:reviewer"),
+                Some("child-session-name"),
+            )
+            .await,
+            "plugin-1a2b3c4d5e6f7a8b:reviewer"
+        );
+        assert_eq!(
+            super::subagent_matcher_value(
+                None,
+                Some("plugin:plugin-1a2b3c4d5e6f7a8b:reviewer"),
+                Some("child")
+            )
+            .await,
+            ""
+        );
+        assert_eq!(
+            super::subagent_matcher_value(Some("parent-1"), None, Some("reviewer")).await,
+            "reviewer"
+        );
+    }
+
+    /// #3003 G2.3: session-scoped plugin agents live in the **parent**
+    /// session's plugin store, so `subagent_matcher_value` must resolve the
+    /// plugin namespace from the parent session's store and return
+    /// `<manifest-name>:<agent>`.
+    #[tokio::test]
+    async fn subagent_matcher_value_resolves_parent_session_plugin_namespace_async() {
+        use crate::services::hooks::registry::{
+            get_session_plugins_directory, save_source_in, upsert_session_store_entry,
+            PluginMetadata, PluginSourceManifest, SessionPluginStoreEntry,
+        };
+        let parent_id = format!("test-parent-{}", uuid::Uuid::new_v4());
+        let source_id = "plugin-1a2b3c4d5e6f7a8b";
+        let plugins_dir = get_session_plugins_directory(&parent_id).expect("session plugins dir");
+        std::fs::create_dir_all(plugins_dir.join(source_id)).expect("create plugin dir");
+
+        let manifest = PluginSourceManifest {
+            source_url: "https://github.com/example/my-plugin".to_string(),
+            source_id: source_id.to_string(),
+            skill_names: Vec::new(),
+            hooks: None,
+            hooks_approved: false,
+            approval_hashes: std::collections::BTreeMap::new(),
+            created_at: 0,
+            plugin: Some(PluginMetadata {
+                name: "my-plugin".to_string(),
+                version: None,
+                description: None,
+                author: None,
+                homepage: None,
+                repository: None,
+                license: None,
+                keywords: Vec::new(),
+            }),
+            hook_files: Vec::new(),
+            inline_hooks: Vec::new(),
+            mcp_servers: Vec::new(),
+            mcp_approved: false,
+            enabled: true,
+            installed_commit: None,
+        };
+        save_source_in(&plugins_dir, manifest).expect("save plugin manifest");
+        upsert_session_store_entry(
+            &plugins_dir,
+            SessionPluginStoreEntry {
+                source_id: source_id.to_string(),
+                source_url: "https://github.com/example/my-plugin".to_string(),
+                installed_at: 0,
+            },
+        )
+        .expect("upsert session store entry");
+
+        let resolved = super::subagent_matcher_value(
+            Some(&parent_id),
+            Some("plugin:plugin-1a2b3c4d5e6f7a8b:reviewer"),
+            Some("child-session-name"),
+        )
+        .await;
+
+        // Clean up the test parent's default workspace directory.
+        if let Ok(manager) = crate::session::get_session_manager() {
+            let _ = std::fs::remove_dir_all(
+                manager.get_session_default_workspace_dir_unverified(&parent_id),
+            );
+        }
+
+        assert_eq!(resolved, "my-plugin:reviewer");
+    }
+
+    /// #3003 G2.3: a user agent's matcher value is the **assistant
+    /// configuration's name** read from the repository — a real lookup, not
+    /// an injected string.
+    #[tokio::test]
+    async fn subagent_matcher_value_resolves_user_assistant_name_async() {
+        use sea_orm_migration::MigratorTrait;
+        let _guard = crate::state::lock_test_global_state().await;
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrations");
+        crate::state::set_assistant_repository(
+            crate::repositories::assistant_repository::SqliteAssistantRepository::new(db),
+        );
+        use crate::repositories::AssistantRepository;
+        crate::state::get_assistant_repository()
+            .create_assistant(
+                "b15fdf3e-6192-453d-9dc2-7b8ae6dab321".to_string(),
+                "Code Reviewer".to_string(),
+                "{}".to_string(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            super::subagent_matcher_value(
+                Some("parent-1"),
+                Some("b15fdf3e-6192-453d-9dc2-7b8ae6dab321"),
+                Some("child-session-name"),
+            )
+            .await,
+            "Code Reviewer"
+        );
+        // Unknown assistant id → session name fallback (with a warning).
+        assert_eq!(
+            super::subagent_matcher_value(
+                Some("parent-1"),
+                Some("00000000-0000-0000-0000-000000000000"),
+                Some("child-session-name"),
+            )
+            .await,
+            "child-session-name"
+        );
     }
 }

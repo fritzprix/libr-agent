@@ -79,6 +79,9 @@ pub struct HookEnvelopeParams {
     pub stop_hook_active: bool,
     pub child_session_id: Option<String>,
     pub agent_id: Option<String>,
+    /// Agent name used for `SubagentStop` matcher filtering (#3003 G1.5).
+    /// `agent_id` is the unique subagent instance; `agent_type` is the name.
+    pub agent_type: Option<String>,
     pub compact_source: Option<String>,
     pub compact_trigger: Option<String>,
     pub custom_compact_instructions: Option<String>,
@@ -104,6 +107,7 @@ impl HookEnvelopeParams {
             stop_hook_active: false,
             child_session_id: None,
             agent_id: None,
+            agent_type: None,
             compact_source: None,
             compact_trigger: None,
             custom_compact_instructions: None,
@@ -181,6 +185,9 @@ pub fn build_envelope_value(params: &HookEnvelopeParams) -> Value {
             if let Some(id) = &params.agent_id {
                 obj.insert("agent_id".to_string(), json!(id));
             }
+            if let Some(kind) = &params.agent_type {
+                obj.insert("agent_type".to_string(), json!(kind));
+            }
             if let Some(id) = &params.child_session_id {
                 obj.insert("child_session_id".to_string(), json!(id));
             }
@@ -256,6 +263,17 @@ mod tests {
     }
 
     #[test]
+    fn subagent_stop_includes_agent_type_and_instance_id() {
+        let mut p = base_params(HookEvent::SubagentStop);
+        p.agent_id = Some("child-1".into());
+        p.agent_type = Some("my-plugin:reviewer".into());
+        p.child_session_id = Some("child-1".into());
+        let value = build_envelope_value(&p);
+        assert_eq!(value["agent_type"], "my-plugin:reviewer");
+        assert_eq!(value["agent_id"], "child-1");
+    }
+
+    #[test]
     fn all_stub_events_include_extra_fields() {
         let cases: Vec<(HookEvent, fn(&mut HookEnvelopeParams))> = vec![
             (HookEvent::SessionEnd, |p| {
@@ -276,6 +294,7 @@ mod tests {
             (HookEvent::Stop, |p| p.stop_hook_active = true),
             (HookEvent::SubagentStop, |p| {
                 p.agent_id = Some("agent-9".into());
+                p.agent_type = Some("my-plugin:reviewer".into());
                 p.child_session_id = Some("child-1".into());
             }),
             (HookEvent::PreCompact, |p| {

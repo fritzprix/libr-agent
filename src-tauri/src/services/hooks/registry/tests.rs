@@ -451,6 +451,7 @@ fn exec_handler(command: &str, args: Option<Vec<String>>) -> HookHandler {
         r#async: false,
         shell: None,
         http: None,
+        r#if: None,
     }
 }
 

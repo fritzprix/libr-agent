@@ -42,7 +42,8 @@ pub use ids::{
 pub use mapping::plugin_model_to_complexity;
 pub use preview::{plugin_agent_previews, PluginAgentPreview};
 pub use session::{
-    declared_plugin_agent_model, resolve_session_plugin_assistant, session_plugin_agent_infos,
-    session_store_source_ids, PluginAgentListInfo,
+    declared_plugin_agent_model, resolve_plugin_source_namespace,
+    resolve_plugin_source_namespace_in, resolve_session_plugin_assistant,
+    session_plugin_agent_infos, session_store_source_ids, PluginAgentListInfo,
 };
 pub use sync::{remove_global_plugin_agents, sync_global_plugin_agents};

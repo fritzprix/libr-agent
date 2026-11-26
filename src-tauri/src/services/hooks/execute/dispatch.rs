@@ -4,7 +4,9 @@
 use super::command::HookEnv;
 use super::env::{plugin_data_dir_for, prepare_session_env_file};
 use super::handler::run_matching_handler;
-use super::matcher::{matcher_matches, resolve_session_cwd, session_start_source_label};
+use super::matcher::{
+    if_condition_matches, matcher_matches, resolve_session_cwd, session_start_source_label,
+};
 use crate::services::hooks::context::{
     begin_hook_replacement, begin_hook_run, end_hook_run, finish_hook_replacement,
 };
@@ -371,6 +373,14 @@ pub async fn dispatch_hook_event_with_sources(
                 continue;
             }
             for handler in &group.handlers {
+                if !if_condition_matches(
+                    handler.r#if.as_deref(),
+                    event,
+                    envelope_params.tool_name.as_deref(),
+                    envelope_params.tool_input.as_ref(),
+                ) {
+                    continue;
+                }
                 let key = approval_hash_key(event, group.matcher.as_deref(), handler);
                 let expected = approval_hash_value(root, handler);
                 if record.manifest.approval_hashes.get(&key) != Some(&expected) {

@@ -91,6 +91,7 @@ pub struct HookHandler {
     /// Set for `type: "http"` handlers, which POST the event envelope to
     /// `url` instead of spawning a command (#3009).
     pub http: Option<HookHttpConfig>,
+    pub r#if: Option<String>,
 }
 
 /// HTTP hook handler fields from the Hooks reference: the POST target, extra
@@ -482,6 +483,8 @@ struct RawHandler {
     url: Option<String>,
     headers: Option<BTreeMap<String, String>>,
     allowed_env_vars: Option<Vec<String>>,
+    #[serde(rename = "if")]
+    if_condition: Option<String>,
 }
 
 enum ParsedHandler {
@@ -573,6 +576,11 @@ fn parse_handler(
         );
     }
 
+    let if_condition = raw
+        .if_condition
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     Ok(ParsedHandler::Handler(HookHandler {
         command,
         args: raw.args,
@@ -581,6 +589,7 @@ fn parse_handler(
         r#async: async_flag,
         shell: raw.shell,
         http,
+        r#if: if_condition,
     }))
 }
 
