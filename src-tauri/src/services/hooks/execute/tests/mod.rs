@@ -20,6 +20,7 @@ mod dispatch;
 mod events;
 mod http;
 mod http_limits;
+mod matcher;
 mod session_plugins;
 
 /// Rewrite a source's hooks.json and re-approve it, simulating a plugin

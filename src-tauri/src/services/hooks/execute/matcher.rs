@@ -121,10 +121,11 @@ pub fn if_condition_matches(
 }
 
 /// Claude Code's documented `Bash(...)` matching (#3003 G1.2): each
-/// subcommand is checked on its own, leading `VAR=value` assignments are
+/// subcommand is checked on its own, plain leading `VAR=value` assignments are
 /// stripped, `$()` and backtick contents are checked, and the hook runs
-/// anyway when the command cannot be split or the pattern specifies more
-/// than the command name while the command contains an expansion.
+/// anyway when the command cannot be split, when an assignment value is not a
+/// plain token, or when the pattern specifies more than the command name while
+/// the command contains an expansion.
 fn bash_pattern_matches(pattern: &str, command: &str) -> bool {
     let Some(subcommands) = shell_subcommands(command) else {
         return true;
@@ -143,7 +144,11 @@ fn bash_pattern_matches(pattern: &str, command: &str) -> bool {
         return true;
     }
     for subcommand in subcommands {
-        let subcommand = strip_leading_assignments(&subcommand);
+        // A leading assignment with an unmodeled (quoted) value makes the
+        // command word unidentifiable, so the guard runs (#3003 G2.1).
+        let Some(subcommand) = strip_leading_assignments(&subcommand) else {
+            return true;
+        };
         // Inverted rule (#3003 G2.1 round 3): a segment is judged only when
         // its command word — the first token after leading assignments — is
         // a plain unquoted word that is not a shell reserved word. For
@@ -199,8 +204,9 @@ fn has_dollar_var(text: &str) -> bool {
 /// contents of `$()` and backticks.
 ///
 /// Anything the parser does not fully model — unbalanced quoting, backslash
-/// escapes, bare grouping (`(`, `)`, `{`, `}`), the background operator `&` —
-/// returns `None`, and the caller additionally refuses to judge any segment
+/// escapes, bare grouping (`(`, `)`, `{`, `}`), the background operator `&`,
+/// an unquoted `#` that starts a word (a comment) — returns `None`, and the
+/// caller additionally refuses to judge any segment
 /// whose command word is not a plain unquoted word
 /// ([`bash_pattern_matches`], #3003 G2.1): every unrecognized construct runs
 /// the guard hook instead of silently skipping it.
@@ -315,6 +321,14 @@ fn shell_subcommands_into(command: &str, parts: &mut Vec<String>) -> Option<()> 
                 current.push(')');
                 expansions.push(inner);
             }
+            // A `#` that starts a word begins a comment, which this splitter
+            // does not model: two apostrophes in a comment would otherwise
+            // open and close a quoted span and swallow the command between
+            // them (`true # don't` / `rm -rf build` / `# it's done`), so the
+            // guard would silently not run (#3003 G2.1).
+            '#' if !in_double && (current.is_empty() || current.ends_with(char::is_whitespace)) => {
+                return None;
+            }
             '&' if !in_double && chars.peek() == Some(&'&') => {
                 chars.next();
                 flush_shell_part(&mut current, parts);
@@ -349,14 +363,35 @@ fn flush_shell_part(current: &mut String, parts: &mut Vec<String>) {
 
 /// Strip leading `VAR=value` assignments before matching, so
 /// `FOO=bar git push` matches `git *` (#3003 G1.2).
-fn strip_leading_assignments(subcommand: &str) -> &str {
+///
+/// Returns `None` when an assignment's value is not a plain token: this split
+/// relies on whitespace being the token boundary, and a quoted value breaks
+/// that (`MSG="fix the bug" git push` would leave `the` as the command word
+/// and silently skip the guard). Rather than grow a quote-aware parser, an
+/// unmodeled value makes the command unjudgeable, so the guard runs
+/// (#3003 G2.1).
+fn strip_leading_assignments(subcommand: &str) -> Option<&str> {
     let mut rest = subcommand;
     loop {
         match rest.split_once(char::is_whitespace) {
-            Some((head, tail)) if is_assignment(head) => rest = tail.trim_start(),
-            _ => return rest,
+            Some((head, tail)) if is_assignment(head) => {
+                if !is_plain_assignment_token(head) {
+                    return None;
+                }
+                rest = tail.trim_start();
+            }
+            _ => return Some(rest),
         }
     }
+}
+
+/// An assignment whose value is a plain unquoted token. Quotes, `$`, backtick
+/// and backslash are not modeled by the splitter, and any of them can hide a
+/// token boundary the matcher would otherwise trust (#3003 G2.1).
+fn is_plain_assignment_token(token: &str) -> bool {
+    token
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | ','))
 }
 
 fn is_assignment(token: &str) -> bool {
