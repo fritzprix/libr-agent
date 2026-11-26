@@ -28,12 +28,16 @@ if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
 from comment_markers import NEEDS_OWNER_LABEL, owner_answer  # noqa: E402
+from issue_deps import (  # noqa: E402
+    BRANCH_REF_PATTERN,
+    CLOSING_PATTERN,
+    DepsError,
+    closing_refs,
+)
+from issue_deps import open_blockers as gh_open_blockers  # noqa: E402
 
 EXCLUDED_LABELS = {"wontfix", "duplicate", "invalid", "question", "epic", "auto:e2e"}
 APPROVED_LABEL = "approved"
-CLOSING_PATTERN = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", re.I)
-# Branch names end with the issue number (`fix/keychain-fallback-stale-2588`).
-BRANCH_REF_PATTERN = re.compile(r"-(\d{3,})\b")
 # `Depends on #1`, `Blocked by #1, #2, and #3`, `depends on #1 / #2`. The list
 # ends at the first item that is not `#N`, so write dependencies as a plain list.
 DEPENDENCY_PATTERN = re.compile(
@@ -54,17 +58,6 @@ def gh(*args: str) -> str:
     if result.returncode != 0:
         raise GhError(f"gh {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout
-
-
-def closing_refs(pr: dict) -> set[int]:
-    """Issues this PR closes: `Fixes #N` style keywords in title/body, plus the branch number.
-
-    Shared with `tick_gate.py`, which must agree on what counts as an open PR for an issue.
-    """
-    text = f"{pr['title']} {pr.get('body') or ''}"
-    refs = {int(n) for n in CLOSING_PATTERN.findall(text)}
-    refs |= {int(n) for n in BRANCH_REF_PATTERN.findall(pr["headRefName"])}
-    return refs
 
 
 def closing_pr_map(prs: list[dict]) -> dict[int, list[int]]:
@@ -109,17 +102,14 @@ def exclusion_reason(
 
 
 def _open_blocked_by(number: int, run_gh: Callable[..., str]) -> list[int]:
-    """Open issues GitHub records as blocking this one; empty where the API is unavailable (404)."""
+    """Open issues GitHub records as blocking this one, via the shared helper (issue #2995).
+
+    A 404 is a `DepsError`: a missing item is an error, not an empty list.
+    """
     try:
-        out = run_gh(
-            "api", f"repos/{{owner}}/{{repo}}/issues/{number}/dependencies/blocked_by",
-            "--jq", '[.[] | select(.state == "open") | .number]',
-        )
-    except GhError as e:
-        if _is_not_found(e):
-            return []
-        raise
-    return [int(n) for n in json.loads(out or "[]")]
+        return gh_open_blockers(number, run_gh)
+    except DepsError as e:
+        raise GhError(str(e)) from e
 
 
 def waiting_reason(

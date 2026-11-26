@@ -2,7 +2,15 @@
 """Tests for issue_candidates: the `approved` gate, closing-PR detection,
 `needs-owner` answers, and open dependencies."""
 import json
+import sys
 import unittest
+from pathlib import Path
+
+_LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
+if str(_LOOP_SHARED) not in sys.path:
+    sys.path.insert(0, str(_LOOP_SHARED))
+
+from issue_deps import DepsError
 
 import issue_candidates
 
@@ -63,18 +71,24 @@ QUESTION = comment("<!-- worker-loop: needs-owner -->\nWhich one? (a) or (b)", "
 NOT_FOUND = "gh api failed: gh: Not Found (HTTP 404)"
 
 
-def fake_gh(comments=(), states=None, blocked_by=None, blocked_by_error=NOT_FOUND):
-    """gh stand-in: issue comments, issue states by number ('missing' = 404), and the blocked-by API."""
+def fake_gh(comments=(), states=None, blocked_by=(), blocked_by_error=None):
+    """gh stand-in: issue comments, issue states by number ('missing' = 404), and the blocked-by API.
+
+    `blocked_by` entries are `{"number", "state"}` dicts as the dependency API
+    returns them; `blocked_by_error` raises (default: no error, empty list).
+    """
     def _gh(*args):
         if args[:2] == ("issue", "view"):
             return json.dumps({"comments": list(comments)})
         if args[0] == "api" and args[1].endswith("/dependencies/blocked_by"):
-            if blocked_by is None:
-                raise issue_candidates.GhError(blocked_by_error)
-            return json.dumps(blocked_by)
+            if blocked_by_error:
+                # Mirrors the helper: its own gh raises DepsError on failure.
+                raise DepsError(blocked_by_error)
+            return json.dumps(list(blocked_by))
         if args[0] == "api":
             state = (states or {}).get(int(args[1].rsplit("/", 1)[1]), "closed")
             if state == "missing":
+                # Mirrors issue_candidates.gh, which raises GhError.
                 raise issue_candidates.GhError(NOT_FOUND)
             return state + "\n"
         raise ValueError(f"Unexpected gh call: {args}")
@@ -118,8 +132,9 @@ class WaitingReasonTest(unittest.TestCase):
             waiting(blocked_by_error="gh api failed: API rate limit exceeded (HTTP 403)")
 
     def test_github_blocked_by_counts_when_available(self):
-        self.assertEqual(waiting(blocked_by=[9])[0], "blocked by open #9")
-        self.assertEqual(waiting(body="Blocked by #9", states={9: "open"}, blocked_by=[9])[0],
+        api_blockers = [{"number": 9, "state": "open"}]
+        self.assertEqual(waiting(blocked_by=api_blockers)[0], "blocked by open #9")
+        self.assertEqual(waiting(body="Blocked by #9", states={9: "open"}, blocked_by=api_blockers)[0],
                          "blocked by open #9")
 
     def test_unanswered_needs_owner_waits(self):

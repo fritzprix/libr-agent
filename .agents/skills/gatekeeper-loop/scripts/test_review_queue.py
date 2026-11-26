@@ -772,5 +772,203 @@ class EscalationAndOwnerVisibilityTests(unittest.TestCase):
         self.assertEqual(entry["labelMismatch"], [], "the resume must not re-add the label")
 
 
+class BlockedStatusTests(unittest.TestCase):
+    """Issue #2995: a PR with an open blocker is parked, not reviewed."""
+
+    def test_open_blocker_is_blocked_at_priority_9(self):
+        status, reason, priority = classify(**base_args(open_blockers=[9]))
+        self.assertEqual(status, "blocked")
+        self.assertEqual(priority, 9)
+        self.assertIn("#9", reason)
+
+    def test_multiple_open_blockers_are_listed(self):
+        status, reason, _ = classify(**base_args(open_blockers=[3, 7]))
+        self.assertEqual(status, "blocked")
+        self.assertIn("#3", reason)
+        self.assertIn("#7", reason)
+
+    def test_only_closed_blockers_are_not_blocked(self):
+        status, _, priority = classify(**base_args(open_blockers=[]))
+        self.assertNotEqual(status, "blocked")
+
+    def test_escalated_outranks_blocked_outranks_conflict(self):
+        # Shared overlap order: escalated > open blocker > merge conflict.
+        escalated, _, _ = classify(**base_args(
+            open_blockers=[9],
+            last_verdict={"verdict": "escalate", "head": "head1", "createdAt": "2026-11-01T00:00:00Z"},
+            rounds_used=99,
+        ))
+        self.assertEqual(escalated, "escalate")
+        conflict, _, _ = classify(**base_args(open_blockers=[9], mergeable="CONFLICTING"))
+        self.assertEqual(conflict, "blocked")
+
+    def test_determine_status_accepts_open_blockers(self):
+        self.assertEqual(determine_status(**base_args(open_blockers=[9])), "blocked")
+
+    def test_rebase_ready_is_wait_worker_even_with_old_failing_ci(self):
+        status, reason, priority = classify(**base_args(
+            clean_head="head1",
+            failing_checks=["Test (ubuntu-latest)"],
+            rebase_ready=True,
+        ))
+        self.assertEqual(status, "wait-worker")
+        self.assertEqual(priority, 9)
+        self.assertIn("rebase", reason)
+
+    def test_summarize_reads_blockers_from_closing_issue_using_stubbed_gh(self):
+        seen_api = []
+
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3026,
+                    "title": "Test PR",
+                    "body": "Fixes #2995",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3026",
+                    "headRefName": "skills/test-2995",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "FAILURE"}],
+                    "comments": [{
+                        "author": {"login": "fritzprix"},
+                        "createdAt": "2026-11-19T01:00:00Z",
+                        "body": "<!-- gatekeeper-loop: round=1 verdict=clean head=h1 base=dev/0.9.x -->",
+                    }],
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                })
+            seen_api.append(args)
+            return json.dumps([{"number": 99, "state": "open"}])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3026, "fritzprix")
+
+        self.assertEqual(entry["status"], "blocked")
+        self.assertEqual(entry["whoseTurn"], "none")
+        self.assertEqual(seen_api, [("api", "repos/{owner}/{repo}/issues/2995/dependencies/blocked_by")])
+
+    def test_old_closed_dependency_does_not_trigger_rebase_on_green_or_failing_ci(self):
+        for conclusion in ("SUCCESS", "FAILURE"):
+            def fake_gh(*args, conclusion=conclusion):
+                if args[:2] == ("pr", "view"):
+                    return json.dumps({
+                        "number": 3026,
+                        "title": "Test PR",
+                        "body": "Fixes #2995",
+                        "url": "https://github.com/fritzprix/libr-agent/pull/3026",
+                        "headRefName": "skills/test-2995",
+                        "headRefOid": "h1",
+                        "baseRefName": "dev/0.9.x",
+                        "isDraft": False,
+                        "mergeable": "MERGEABLE",
+                        "createdAt": "2026-11-19T00:00:00Z",
+                        "statusCheckRollup": [{"name": "Test", "conclusion": conclusion}],
+                        "comments": [{
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-19T12:00:00Z",
+                            "body": "<!-- gatekeeper-loop: round=1 verdict=clean head=h1 base=dev/0.9.x -->",
+                        }],
+                        "labels": [],
+                        "files": [{"path": "src/app.ts"}],
+                    })
+                return json.dumps([{"number": 2994, "state": "closed", "closed_at": "2026-11-19T08:00:00Z"}])
+
+            with patch.object(review_queue, "gh", fake_gh):
+                entry = summarize(3026, "fritzprix")
+            self.assertEqual(entry["status"], "review")
+            self.assertEqual(entry["whoseTurn"], "gatekeeper")
+
+    def test_blocker_lookup_error_is_blocked_unknown(self):
+        """#2995 G3.1: fail closed — an unread blocker list is never "not blocked"."""
+        status, reason, priority = classify(**base_args(blocker_lookup_error="gh api -> HTTP 403"))
+        self.assertEqual(status, "blocked-unknown")
+        self.assertEqual(priority, 9)
+        self.assertIn("HTTP 403", reason)
+
+    def test_escalate_still_outranks_a_lookup_error(self):
+        status, _, _ = classify(**base_args(
+            blocker_lookup_error="gh api -> HTTP 403",
+            last_verdict={"verdict": "escalate", "head": "head1"},
+        ))
+        self.assertEqual(status, "escalate")
+
+    def test_blocker_lookup_error_parks_that_pr_and_keeps_the_queue_running(self):
+        """#2995 G3.1: a failed lookup is reported per PR and does not abort the tick."""
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                number = int(args[2])
+                return json.dumps({
+                    "number": number,
+                    "title": f"Test PR {number}",
+                    "body": f"Fixes #{number}",
+                    "url": f"https://github.com/fritzprix/libr-agent/pull/{number}",
+                    "headRefName": f"skills/test-{number}",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "comments": [],
+                    "labels": [],
+                    "files": [{"path": "src/app.ts"}],
+                })
+            if "/issues/3026/" in args[1]:
+                raise RuntimeError("gh: HTTP 403 (Forbidden)")
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            broken = summarize(3026, "fritzprix")
+            healthy = summarize(3027, "fritzprix")
+
+        self.assertIn("403", broken["blockerLookupError"])
+        self.assertEqual(broken["status"], "blocked-unknown")
+        self.assertEqual(broken["whoseTurn"], "error")
+        self.assertIsNone(healthy["blockerLookupError"])
+        self.assertEqual(healthy["status"], "review")
+
+    def test_subprocess_http_403_through_real_gh_sets_blocked_unknown_and_continues(self):
+        import subprocess
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["gh", "pr", "view"]:
+                number = int(cmd[3])
+                payload = {
+                    "number": number,
+                    "title": f"Test PR {number}",
+                    "body": f"Fixes #{number}",
+                    "url": f"https://github.com/fritzprix/libr-agent/pull/{number}",
+                    "headRefName": f"skills/test-{number}",
+                    "headRefOid": "h1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-19T00:00:00Z",
+                    "statusCheckRollup": [{"name": "Test", "conclusion": "SUCCESS"}],
+                    "comments": [],
+                    "labels": [{"name": "gatekeeper:approved"}] if number == 3026 else [],
+                    "files": [{"path": "src/app.ts"}],
+                }
+                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            if cmd[:2] == ["gh", "api"] and "/issues/3026/dependencies/blocked_by" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="gh: HTTP 403 (Forbidden)")
+            if cmd[:2] == ["gh", "api"] and "/dependencies/blocked_by" in cmd[2]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(review_queue.subprocess, "run", fake_run):
+            broken = summarize(3026, "fritzprix")
+            healthy = summarize(3027, "fritzprix")
+
+        self.assertIn("403", broken["blockerLookupError"])
+        self.assertEqual(broken["status"], "blocked-unknown")
+        self.assertFalse(broken["staleApprovedLabel"])
+        self.assertIsNone(healthy["blockerLookupError"])
+        self.assertEqual(healthy["status"], "review")
+
+
 if __name__ == "__main__":
     unittest.main()

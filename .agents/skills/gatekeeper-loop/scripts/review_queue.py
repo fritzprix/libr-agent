@@ -15,6 +15,8 @@ status values:
                retargeted). Not reviewed again.
   wait-worker- changes requested at the current head without response, or merge
                conflicts. Worker's turn to fix.
+  blocked    - the PR has an open blocker (blocked-by link to an open issue).
+               Not reviewed and not diagnosed again until it closes (issue #2995).
   approved   - approve verdict exists for the current head, base unchanged, CI
                green at the head, no newer owner comment.
   escalate   - round limit (5) reached, or the answer is a product, security, or
@@ -41,7 +43,13 @@ if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
 from comment_markers import START_MARKER, parse_markers  # noqa: E402
-from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
+from issue_deps import DepsError, pr_blockers  # noqa: E402
+from pr_turn import (  # noqa: E402
+    decide_pr_turn,
+    format_turn_report,
+    highest_overlap_state,
+    rebase_ready as is_rebase_ready,
+)
 
 MAX_ROUNDS = 5
 ESCALATED_LABEL = "gatekeeper:escalated"
@@ -173,6 +181,9 @@ def classify(
     owner_comment: bool = False,
     ci_ran: bool = True,
     escalate_label_present: bool = True,
+    open_blockers: list[int] | None = None,
+    rebase_ready: bool = False,
+    blocker_lookup_error: str | None = None,
 ) -> tuple[str, str, int]:
     """Return (status, one-line reason, priority). Lower priority number is handled first.
 
@@ -180,19 +191,39 @@ def classify(
     the limit of `MAX_ROUNDS` applies per owner-resumed run, never to the PR's lifetime.
     An approve needs green CI at the head. Stacked PRs (non-dev base) never run CI, so they
     stay at `clean` until they are retargeted and CI passes.
+
+    A PR with an open blocker is `blocked` at priority 9: the gatekeeper does
+    not review it and does not diagnose it again (issue #2995). The order
+    uses `pr_turn.highest_overlap_state`: an unresolved escalation outranks an
+    open blocker, which outranks a merge conflict.
     """
+    # An escalated PR is not reviewed until the owner removes the label (#2996 G1.3).
+    # Shared overlap precedence from `pr_turn.highest_overlap_state` (issue #2995).
+    top_overlap = highest_overlap_state(
+        (["gatekeeper:escalated"] if (last_verdict and last_verdict.get("verdict") == "escalate" and escalate_label_present) else [])
+        + (["open-blocker"] if open_blockers else [])
+        + (["merge-conflict"] if mergeable == "CONFLICTING" else [])
+    )
+    if top_overlap == "gatekeeper:escalated":
+        return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
+    if blocker_lookup_error:
+        # Fail closed (#2995 G3.1): without the blocker lookup this PR could be
+        # parked, so do not review or diagnose it; skip it and report the error.
+        return (
+            "blocked-unknown",
+            f"blocker lookup failed: {blocker_lookup_error}; skip this PR this tick and report the error",
+            9,
+        )
+    if top_overlap == "open-blocker":
+        return "blocked", f"open blocker #{', #'.join(map(str, open_blockers))}; parked until it closes", 9
+    if top_overlap == "merge-conflict":
+        return "wait-worker", "merge conflict; worker must rebase", 9
+    if rebase_ready:
+        return "wait-worker", "blockers closed; worker must rebase and push", 9
+
     ci_applies = is_dev_base(base)
     ci_failed = ci_applies and bool(failing_checks)
     ci_green = ci_applies and ci_ran and not failing_checks and not pending_checks
-
-    if mergeable == "CONFLICTING":
-        return "wait-worker", "merge conflict; worker must rebase", 9
-
-    # An escalated PR is not reviewed until the owner removes the label. This is
-    # checked before the owner-comment shortcut, so a comment cannot reopen it
-    # (#2996 G1.3).
-    if last_verdict and last_verdict.get("verdict") == "escalate" and escalate_label_present:
-        return "escalate", f"escalated; waiting for owner to remove {ESCALATED_LABEL}", 9
 
     if owner_comment:
         return "review", "owner comment after last verdict; treat as required items", 0
@@ -212,6 +243,8 @@ def classify(
     clean_at_head = clean_head == head
 
     if last_verdict and last_verdict.get("verdict") == "escalate":
+        # The label gate above still parks it while the label is on; reaching here
+        # means the owner removed the label, so the round count restarts (#2996).
         if not clean_at_head:
             return (
                 "review",
@@ -327,10 +360,22 @@ def determine_status(**kwargs) -> str:
     return classify(**kwargs)[0]
 
 
+def gh_blocked_by(pr: dict) -> tuple[list[dict], str | None]:
+    """Blockers of a PR's closing issues, via the shared helper (issue #2995).
+
+    Returns `(blockers, error)`: a lookup failure is reported on this PR
+    without aborting the rest of the queue.
+    """
+    try:
+        return pr_blockers(pr, run_gh=gh), None
+    except DepsError as e:
+        return [], str(e)
+
+
 def summarize(number: int, me: str, state: dict | None = None) -> dict:
     pr = json.loads(
         gh("pr", "view", str(number), "--json",
-           "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,createdAt,"
+           "number,title,body,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,createdAt,"
            "statusCheckRollup,comments,labels,files")
     )
     base = pr["baseRefName"]
@@ -374,6 +419,10 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
     human_only = touches_human_only_paths(paths)
     sensitive_info = classify_sensitive_paths(paths)
 
+    blockers, blocker_error = gh_blocked_by(pr)
+    open_dep = [b["number"] for b in blockers if b["state"] == "open"]
+    ready_to_rebase = is_rebase_ready(blockers, comments, me, head)
+
     status, reason, priority = classify(
         mergeable=pr.get("mergeable"),
         head=head,
@@ -392,6 +441,9 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         owner_comment=bool(owner),
         ci_ran=bool(checks),
         escalate_label_present=ESCALATED_LABEL in labels,
+        open_blockers=open_dep,
+        rebase_ready=ready_to_rebase,
+        blocker_lookup_error=blocker_error,
     )
 
     if status != "review" or not reviewed_head or reviewed_head == head:
@@ -405,6 +457,9 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         comments=comments,
         me=me,
         labels=labels,
+        open_blockers=open_dep,
+        rebase_ready=ready_to_rebase,
+        blocker_lookup_error=blocker_error,
     )
 
     # Place review state first so the model and operator see review status before CI details.
@@ -436,13 +491,14 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "securitySensitiveBehaviorHints": sensitive_info["securitySensitiveBehaviorHints"],
         "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
-        "staleApprovedLabel": "gatekeeper:approved" in labels and status != "approved",
+        "staleApprovedLabel": "gatekeeper:approved" in labels and status not in ("approved", "blocked-unknown"),
         "url": pr["url"],
         "base": base,
         "draft": pr["isDraft"],
         "createdAt": pr["createdAt"],
         "ciPending": pending,
         "ciFailing": failing,
+        "blockerLookupError": blocker_error,
     }
 
 

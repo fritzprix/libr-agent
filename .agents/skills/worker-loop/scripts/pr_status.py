@@ -7,8 +7,9 @@ that arrived after the latest commit, plus the latest gatekeeper-loop verdict
 (own marker comments only). A PR claimed by another worker yields `claimed`;
 a PR labelled `needs-owner` with no owner answer yet yields `wait-owner`.
 `ciAttempts` counts the `<!-- worker-loop: ci-attempt n=K -->` comments.
-A PR whose base moved far enough (see base_drift_needs_rebase) yields
-`rebase-base`. `mergeable == UNKNOWN` is refetched with a short backoff; if it
+A PR with an open blocker yields `wait-blocker`; a PR whose blockers are all
+closed and whose head matches the latest `clean` marker head yields `rebase`
+(issue #2995). `mergeable == UNKNOWN` is refetched with a short backoff; if it
 stays UNKNOWN, `mergeableUnknown` is true and the turn report says so.
 Bodies are truncated; fetch the full text only for items you act on.
 """
@@ -38,7 +39,13 @@ from comment_markers import (  # noqa: E402
     parse_markers,
     reply_targets,
 )
-from pr_turn import decide_pr_turn, format_turn_report  # noqa: E402
+from issue_deps import DepsError, pr_blockers  # noqa: E402
+from pr_turn import (  # noqa: E402
+    decide_pr_turn,
+    format_turn_report,
+    highest_overlap_state,
+    rebase_ready,
+)
 
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
@@ -62,7 +69,7 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PR_FIELDS = (
-    "number,title,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
+    "number,title,body,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
     "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels,files"
 )
 # Base commits missing from the PR before the worker rebases it. GitHub reports
@@ -108,6 +115,21 @@ def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | Non
     return verdict
 
 
+def fetch_until_mergeable_known(
+    fetch: Callable[[], dict],
+    sleep: Callable[[float], None] = time.sleep,
+    delays: Iterable[float] = UNKNOWN_RETRY_DELAYS,
+) -> dict:
+    """Refetch while GitHub is still computing `mergeable`; return the last PR JSON."""
+    pr = fetch()
+    for delay in delays:
+        if pr.get("mergeable") != "UNKNOWN":
+            break
+        sleep(delay)
+        pr = fetch()
+    return pr
+
+
 def base_drift_needs_rebase(
     *,
     merge_state: str | None,
@@ -128,21 +150,6 @@ def base_drift_needs_rebase(
     return not set(base_files).isdisjoint(pr_files)
 
 
-def fetch_until_mergeable_known(
-    fetch: Callable[[], dict],
-    sleep: Callable[[float], None] = time.sleep,
-    delays: Iterable[float] = UNKNOWN_RETRY_DELAYS,
-) -> dict:
-    """Refetch while GitHub is still computing `mergeable`; return the last PR JSON."""
-    pr = fetch()
-    for delay in delays:
-        if pr.get("mergeable") != "UNKNOWN":
-            break
-        sleep(delay)
-        pr = fetch()
-    return pr
-
-
 def select_next_action(
     *,
     turn: str,
@@ -152,12 +159,28 @@ def select_next_action(
     failing: list[str],
     pending: list[str],
     waiting_owner: bool = False,
+    blockers: list[int] | None = None,
+    rebase_ready: bool = False,
+    behind: bool = False,
     base_drift: bool = False,
+    blocker_lookup_error: str | None = None,
 ) -> str:
-    if waiting_owner:
+    if blocker_lookup_error:
+        # Fail closed (#2995 G3.1): skip the PR and report, never push on a guess.
+        return "report-lookup-error"
+    top_overlap = highest_overlap_state(
+        (["needs-owner"] if waiting_owner else [])
+        + (["open-blocker"] if blockers else [])
+        + (["merge-conflict"] if conflicting else [])
+    )
+    if top_overlap == "needs-owner":
         return "wait-owner"
-    if conflicting:
+    if top_overlap == "open-blocker":
+        return "wait-blocker"
+    if top_overlap == "merge-conflict":
         return "resolve-conflict"
+    if rebase_ready or behind:
+        return "rebase"
     if base_drift:
         return "rebase-base"
     if turn == "worker" and gatekeeper and gatekeeper["awaitingWorker"]:
@@ -226,12 +249,23 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
     head_sha = pr["headRefOid"]
     labels = sorted(label["name"] for label in pr.get("labels") or [])
     gatekeeper = gatekeeper_state(comments, me, head_sha)
+    blocker_error: str | None = None
+    try:
+        blockers = pr_blockers(pr, run_gh=gh)
+    except DepsError as e:
+        blockers = []
+        blocker_error = str(e)
+    open_dep = [b["number"] for b in blockers if b["state"] == "open"]
+    ready_to_rebase = rebase_ready(blockers, comments, me, head_sha)
     turn = decide_pr_turn(
         head_sha=head_sha,
         mergeable=pr.get("mergeable"),
         comments=comments,
         me=me,
         labels=labels,
+        open_blockers=open_dep,
+        rebase_ready=ready_to_rebase,
+        blocker_lookup_error=blocker_error,
     )
     checks = pr.get("statusCheckRollup") or []
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
@@ -282,7 +316,11 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         failing=failing,
         pending=pending,
         waiting_owner=NEEDS_OWNER_LABEL in labels and answer is None,
+        blockers=open_dep,
+        rebase_ready=ready_to_rebase,
+        behind=pr.get("mergeStateStatus") == "BEHIND",
         base_drift=needs_rebase,
+        blocker_lookup_error=blocker_error,
     )
     if claimed_by:
         next_action = "claimed"
@@ -307,6 +345,8 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "unresolvedThreads": threads,
         "newComments": new_comments,
         "gatekeeper": gatekeeper,
+        "openBlockers": open_dep,
+        "blockerLookupError": blocker_error,
         "whoseTurn": turn.turn,
         "currentVerdict": turn.currentVerdict,
         "verdictHeadSha": turn.verdictHead,

@@ -10,7 +10,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from pr_turn import decide_pr_turn, label_mismatches  # noqa: E402
+from pr_turn import decide_pr_turn, label_mismatches, overlap_rank  # noqa: E402
 
 
 def gk(verdict: str, head: str, round_: str = "1", created: str = "t1") -> dict:
@@ -142,6 +142,37 @@ class PrTurnTests(unittest.TestCase):
         )
         self.assertEqual(turn.turn, "worker")
 
+    def test_blocker_lookup_error_parks_the_pr_for_nobody(self) -> None:
+        """G3.1: a failed blocker lookup must never fall back to "not blocked"."""
+        turn = decide_pr_turn(
+            head_sha="sha2",
+            mergeable="MERGEABLE",
+            comments=[gk("clean", "sha2")],
+            me="me",
+            blocker_lookup_error="gh api ... -> HTTP 403",
+        )
+        self.assertEqual(turn.turn, "error")
+        self.assertIn("HTTP 403", turn.reason)
+        self.assertIsNone(turn.currentVerdict)
+        self.assertEqual(turn.labelMismatch, [])
+
+    def test_blocker_lookup_error_outranks_worker_actions(self) -> None:
+        """The error wins over an empty blocker list, a clean marker and rebase_ready."""
+        for kwargs in (
+            {"open_blockers": []},
+            {"rebase_ready": True},
+            {"open_blockers": [99]},
+        ):
+            turn = decide_pr_turn(
+                head_sha="sha2",
+                mergeable="CONFLICTING",
+                comments=[gk("clean", "sha2"), wr("1", "sha2")],
+                me="me",
+                blocker_lookup_error="boom",
+                **kwargs,
+            )
+            self.assertEqual(turn.turn, "error", kwargs)
+
 
 class FixedMarkerKindsTests(unittest.TestCase):
     """Issue #2994: unknown markers are ignored; no turn is ever a stall state."""
@@ -232,6 +263,54 @@ class FixedMarkerKindsTests(unittest.TestCase):
                 turn.turn, expected_turn,
                 f"verdict={verdict} verdictHead={head} response={response}",
             )
+
+
+class OverlapRankTest(unittest.TestCase):
+    """Issue #2995: shared order for overlapping PR/issue states."""
+
+    def test_fixed_order(self):
+        # needs-owner > escalated > open blocker > merge conflict > verdict label
+        self.assertEqual(
+            overlap_rank(["merge-conflict", "needs-owner", "open-blocker"]), 0
+        )
+        self.assertEqual(overlap_rank(["gatekeeper:escalated", "open-blocker"]), 1)
+        self.assertEqual(overlap_rank(["open-blocker", "merge-conflict"]), 2)
+        self.assertEqual(overlap_rank(["verdict-label", "merge-conflict"]), 3)
+        self.assertEqual(overlap_rank(["verdict-label"]), 4)
+
+    def test_unknown_names_are_ignored(self):
+        self.assertEqual(overlap_rank(["whatever"]), None)
+        self.assertEqual(overlap_rank([]), None)
+        self.assertIsNone(overlap_rank(None))
+
+    def test_highest_overlap_state_and_parked_turns(self):
+        from pr_turn import highest_overlap_state, rebase_ready
+
+        self.assertEqual(highest_overlap_state(["merge-conflict", "open-blocker"]), "open-blocker")
+        self.assertIsNone(highest_overlap_state([]))
+
+        blocked_turn = decide_pr_turn(
+            head_sha="sha2", mergeable="MERGEABLE", comments=[gk("clean", "sha2")], me="me",
+            open_blockers=[99],
+        )
+        self.assertEqual(blocked_turn.turn, "none")
+
+        clean_comment = {**gk("clean", "sha2"), "createdAt": "2026-11-25T12:00:00Z"}
+        # Old closed dependency (closed before clean marker) must NOT trigger rebase_ready.
+        self.assertFalse(rebase_ready(
+            [{"number": 98, "state": "closed", "closed_at": "2026-11-25T10:00:00Z"}],
+            [clean_comment], "me", "sha2",
+        ))
+        # Blocker closed after clean marker DOES trigger rebase_ready.
+        self.assertTrue(rebase_ready(
+            [{"number": 99, "state": "closed", "closed_at": "2026-11-25T13:00:00Z"}],
+            [clean_comment], "me", "sha2",
+        ))
+        rebase_turn = decide_pr_turn(
+            head_sha="sha2", mergeable="MERGEABLE", comments=[clean_comment], me="me",
+            rebase_ready=True,
+        )
+        self.assertEqual(rebase_turn.turn, "worker")
 
 
 if __name__ == "__main__":
