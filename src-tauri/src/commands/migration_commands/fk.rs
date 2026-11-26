@@ -11,55 +11,32 @@
 //! pool is never touched, so every exit — an early `?`, a failed commit, a
 //! dropped future — is safe by construction rather than by cleanup.
 use std::future::Future;
-use std::str::FromStr;
-use std::time::Duration;
 
-use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sea_orm::sqlx::sqlite::SqlitePoolOptions;
 use sea_orm::{DatabaseConnection, SqlxSqliteConnector};
 
 #[cfg(test)]
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
-use crate::utils::sqlite::format_sqlite_url;
-
-/// How long the import connection waits for the database file lock.
-const IMPORT_BUSY_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Path of the file behind the shared connection.
+/// Open one private connection to the shared pool's database with foreign-key
+/// checks off.
 ///
-/// Read from the pool's own connect options instead of rebuilding it from
-/// settings: the private connection must land on the database the app is
-/// actually using, not on a path we guessed.
-fn database_file(shared: &DatabaseConnection) -> Result<String, String> {
-    let path = shared
+/// The options are the pool's own, cloned and changed in one place: the app
+/// sets WAL, the busy timeout, the cache size and `synchronous` at connect
+/// (`lifecycle::database`), and rebuilding them here meant a second copy that
+/// drifted. Nothing is derived from a path string, so the connection cannot
+/// land on a different file than the pool's.
+async fn open_import_connection(shared: &DatabaseConnection) -> Result<DatabaseConnection, String> {
+    let options = shared
         .get_sqlite_connection_pool()
         .connect_options()
-        .get_filename()
-        .to_string_lossy()
-        .to_string();
-
-    // `src/lifecycle/database.rs` always opens a file; an in-memory URL has no
-    // file to share, so an import could not see the app's data anyway.
-    if path.is_empty() || path == ":memory:" {
-        return Err("가져오기는 파일 기반 데이터베이스에서만 동작합니다.".to_string());
-    }
-
-    Ok(path)
-}
-
-/// Open one private connection to `file` with foreign-key checks off.
-async fn open_import_connection(file: &str) -> Result<DatabaseConnection, String> {
-    let options = SqliteConnectOptions::from_str(&format_sqlite_url(file))
-        .map_err(|e| format!("가져오기용 데이터베이스 경로가 올바르지 않습니다: {e}"))?
-        .foreign_keys(false)
-        // The app pool keeps its own connections; this one queues behind them.
-        .busy_timeout(IMPORT_BUSY_TIMEOUT)
-        .create_if_missing(false);
+        .as_ref()
+        .clone()
+        .foreign_keys(false);
 
     let pool = SqlitePoolOptions::new()
         .min_connections(1)
         .max_connections(1)
-        .acquire_timeout(IMPORT_BUSY_TIMEOUT)
         .connect_with(options)
         .await
         .map_err(|e| format!("가져오기용 데이터베이스에 연결하지 못했습니다: {e}"))?;
@@ -80,8 +57,7 @@ where
     F: FnOnce(DatabaseConnection) -> Fut,
     Fut: Future<Output = Result<T, String>>,
 {
-    let file = database_file(shared)?;
-    let import_db = open_import_connection(&file).await?;
+    let import_db = open_import_connection(shared).await?;
 
     let result = body(import_db.clone()).await;
 
