@@ -4,15 +4,58 @@ on:
   push:
     branches: [main, master, 'dev/*']
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     branches: [main, master, 'dev/*']
 
+# Cancel superseded PR runs when a new push (or review-clean label) arrives.
+# Pushes to dev/*, main, and master are NOT cancelled: each push keeps its own
+# run so every merge commit has a full result. Runs on the same ref queue
+# behind each other (#3070).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  os-matrix:
+    name: Resolve OS matrix
+    # Skip labeled runs that are not gatekeeper:review-clean. Concurrency already
+    # cancels the older PR run; this avoids a useless second run for other labels.
+    if: >
+      github.event_name != 'pull_request'
+      || github.event.action != 'labeled'
+      || github.event.label.name == 'gatekeeper:review-clean'
+    runs-on: ubuntu-latest
+    outputs:
+      os: ${{ steps.resolve.outputs.os }}
+    steps:
+      - id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          include_macos=false
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Always run macOS on pushes to protected branches.
+            include_macos=true
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR macOS only after the gatekeeper marks review clean (#3070).
+            labels='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+            if printf '%s' "$labels" | grep -F '"gatekeeper:review-clean"' >/dev/null; then
+              include_macos=true
+            fi
+          fi
+          if [ "$include_macos" = true ]; then
+            echo 'os=["ubuntu-latest","windows-latest","macos-15"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'os=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: Test
+    needs: os-matrix
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-15]
+        os: ${{ fromJSON(needs.os-matrix.outputs.os) }}
 
     steps:
       - name: Checkout
@@ -157,12 +200,12 @@ jobs:
 
   build:
     name: Build
-    needs: test
+    needs: [test, os-matrix]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-15]
+        os: ${{ fromJSON(needs.os-matrix.outputs.os) }}
 
     steps:
       - name: Checkout
@@ -210,6 +253,62 @@ jobs:
       - name: Set PKG_CONFIG_PATH (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+
+      # Prefetch WiX for the locked tauri-bundler (2.10.6 uses WixTools314 +
+      # wix3141rtm SHA). Cache hit skips download; miss retries HTTP 5xx (#3070).
+      - name: Resolve WiX tools directory
+        if: matrix.os == 'windows-latest'
+        id: wix-dir
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA 'tauri\WixTools314'
+          "path=$dir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Cache WiX tools
+        if: matrix.os == 'windows-latest'
+        id: wix-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.wix-dir.outputs.path }}
+          key: wix3141rtm-WixTools314
+
+      - name: Prefetch WiX tools
+        if: matrix.os == 'windows-latest' && steps.wix-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          WIX_DIR: ${{ steps.wix-dir.outputs.path }}
+          WIX_URL: https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip
+          WIX_SHA256: 6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$WIX_DIR")"
+          zip_path="${RUNNER_TEMP}/wix314-binaries.zip"
+          attempt=1
+          max_attempts=5
+          while true; do
+            echo "WiX download attempt ${attempt}/${max_attempts}"
+            set +e
+            curl -fsSL --connect-timeout 30 --max-time 120 -o "$zip_path" "$WIX_URL"
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "::error::WiX download failed after ${max_attempts} attempts (curl exit ${status})"
+              exit 1
+            fi
+            sleep $((attempt * 5))
+            attempt=$((attempt + 1))
+          done
+          actual="$(sha256sum "$zip_path" | awk '{print $1}')"
+          if [ "$actual" != "$WIX_SHA256" ]; then
+            echo "::error::WiX SHA-256 mismatch: got ${actual}, expected ${WIX_SHA256}"
+            exit 1
+          fi
+          rm -rf "$WIX_DIR"
+          mkdir -p "$WIX_DIR"
+          unzip -q "$zip_path" -d "$WIX_DIR"
 
       - name: Build Tauri app
         # macOS GitHub runners flake in bundle_dmg.sh (hdiutil detach timeout).

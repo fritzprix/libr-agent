@@ -102,6 +102,15 @@ def check_state(check: dict) -> str:
     return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
 
 
+def has_passed_macos_check(checks: list[dict]) -> bool:
+    """True when at least one check whose name mentions macOS concluded SUCCESS (#3070)."""
+    for check in checks:
+        name = (check.get("name") or check.get("context") or "").lower()
+        if "macos" in name and check_state(check) == "SUCCESS":
+            return True
+    return False
+
+
 def is_dev_base(base: str) -> bool:
     """True if CI runs on PRs targeting this base branch."""
     return base in ("main", "master") or base.startswith("dev/")
@@ -180,6 +189,7 @@ def classify(
     rebased: bool = False,
     owner_comment: bool = False,
     ci_ran: bool = True,
+    macos_ci_passed: bool = False,
     escalate_label_present: bool = True,
     open_blockers: list[int] | None = None,
     rebase_ready: bool = False,
@@ -223,7 +233,15 @@ def classify(
 
     ci_applies = is_dev_base(base)
     ci_failed = ci_applies and bool(failing_checks)
-    ci_green = ci_applies and ci_ran and not failing_checks and not pending_checks
+    # macOS is gated behind gatekeeper:review-clean on PRs (#3070). Approve only
+    # when a passed macOS check exists at the head; ubuntu+windows alone is not green.
+    ci_green = (
+        ci_applies
+        and ci_ran
+        and not failing_checks
+        and not pending_checks
+        and macos_ci_passed
+    )
 
     if owner_comment:
         return "review", "owner comment after last verdict; treat as required items", 0
@@ -285,6 +303,8 @@ def classify(
         return "await-ci", "reviewed clean; stacked PR runs no CI until it is retargeted", 9
     if reviewed_clean and pending_checks:
         return "await-ci", "reviewed clean; waiting for pending CI", 9
+    if reviewed_clean and ci_applies and not macos_ci_passed:
+        return "await-ci", "reviewed clean; waiting for macOS CI", 9
     if reviewed_clean:
         return "await-ci", "reviewed clean; no CI run at this head yet", 9
     if failing_checks and ci_applies:
@@ -440,6 +460,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         rebased=rebased,
         owner_comment=bool(owner),
         ci_ran=bool(checks),
+        macos_ci_passed=has_passed_macos_check(checks),
         escalate_label_present=ESCALATED_LABEL in labels,
         open_blockers=open_dep,
         rebase_ready=ready_to_rebase,
@@ -492,6 +513,11 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
         "staleApprovedLabel": "gatekeeper:approved" in labels and status not in ("approved", "blocked-unknown"),
+        # Label is stale when the head moved since the clean marker that caused it (#3070).
+        "staleReviewCleanLabel": (
+            "gatekeeper:review-clean" in labels
+            and (clean is None or clean.get("head") != head)
+        ),
         "url": pr["url"],
         "base": base,
         "draft": pr["isDraft"],

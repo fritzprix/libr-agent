@@ -39,6 +39,8 @@ def base_args(**over):
         mergeable="MERGEABLE", head="head1", base="dev/0.9.x", last_verdict=None,
         worker_response=None, rounds_used=0, state_reviewed_head=None,
         state_pending_ci=False, has_open_findings=False, pending_checks=[], failing_checks=[],
+        # Default assumes a passed macOS check so existing green-path tests stay valid (#3070).
+        macos_ci_passed=True,
     )
     args.update(over)
     return args
@@ -74,6 +76,7 @@ class DetermineStatusTests(unittest.TestCase):
             has_open_findings=False,
             pending_checks=[],
             failing_checks=[],
+            macos_ci_passed=True,
         )
         self.assertEqual(status, "approved")
 
@@ -160,7 +163,7 @@ class DetermineStatusTests(unittest.TestCase):
         self.assertEqual(status, "await-ci")
 
     def test_await_ci_turns_to_review_when_ci_green(self) -> None:
-        # When pending checks clear with 0 failures, enters review to post approve verdict.
+        # When pending checks clear with 0 failures and macOS passed, enter review to approve.
         status = determine_status(
             mergeable="MERGEABLE",
             head="head1",
@@ -173,8 +176,43 @@ class DetermineStatusTests(unittest.TestCase):
             has_open_findings=False,
             pending_checks=[],
             failing_checks=[],
+            macos_ci_passed=True,
         )
         self.assertEqual(status, "review")
+
+    def test_reviewed_clean_without_macos_stays_await_ci(self) -> None:
+        # Ubuntu+Windows green without a passed macOS check is not ci_green (#3070).
+        status, reason, _ = classify(
+            mergeable="MERGEABLE",
+            head="head1",
+            base="dev/0.9.x",
+            last_verdict=None,
+            worker_response=None,
+            rounds_used=0,
+            state_reviewed_head="head1",
+            state_pending_ci=True,
+            has_open_findings=False,
+            pending_checks=[],
+            failing_checks=[],
+            macos_ci_passed=False,
+        )
+        self.assertEqual(status, "await-ci")
+        self.assertIn("macOS", reason)
+
+    def test_has_passed_macos_check(self) -> None:
+        self.assertTrue(
+            review_queue.has_passed_macos_check(
+                [{"name": "Test (macos-15)", "conclusion": "SUCCESS"}]
+            )
+        )
+        self.assertFalse(
+            review_queue.has_passed_macos_check(
+                [
+                    {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
+                    {"name": "Test (windows-latest)", "conclusion": "SUCCESS"},
+                ]
+            )
+        )
 
     def test_await_ci_turns_to_review_when_ci_fails(self) -> None:
         # When a pending check fails, enters review so gatekeeper diagnoses logs and requests changes.
@@ -865,7 +903,10 @@ class BlockedStatusTests(unittest.TestCase):
                         "isDraft": False,
                         "mergeable": "MERGEABLE",
                         "createdAt": "2026-11-19T00:00:00Z",
-                        "statusCheckRollup": [{"name": "Test", "conclusion": conclusion}],
+                        "statusCheckRollup": [
+                            {"name": "Test (ubuntu-latest)", "conclusion": conclusion},
+                            {"name": "Test (macos-15)", "conclusion": conclusion},
+                        ],
                         "comments": [{
                             "author": {"login": "fritzprix"},
                             "createdAt": "2026-11-19T12:00:00Z",
@@ -966,8 +1007,41 @@ class BlockedStatusTests(unittest.TestCase):
         self.assertIn("403", broken["blockerLookupError"])
         self.assertEqual(broken["status"], "blocked-unknown")
         self.assertFalse(broken["staleApprovedLabel"])
+        self.assertFalse(broken["staleReviewCleanLabel"])
         self.assertIsNone(healthy["blockerLookupError"])
         self.assertEqual(healthy["status"], "review")
+
+    def test_stale_review_clean_label_when_head_moved(self) -> None:
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3070,
+                    "title": "CI PR",
+                    "body": "Fixes #3070",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3070",
+                    "headRefName": "feat/ci",
+                    "headRefOid": "head-new",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-27T00:00:00Z",
+                    "statusCheckRollup": [
+                        {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
+                        {"name": "Test (windows-latest)", "conclusion": "SUCCESS"},
+                    ],
+                    "comments": [{
+                        "author": {"login": "fritzprix"},
+                        "createdAt": "2026-11-27T01:00:00Z",
+                        "body": "<!-- gatekeeper-loop: verdict=clean head=head-old base=dev/0.9.x -->",
+                    }],
+                    "labels": [{"name": "gatekeeper:review-clean"}],
+                    "files": [{"path": ".github/workflows/ci.yml"}],
+                })
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3070, "fritzprix")
+        self.assertTrue(entry["staleReviewCleanLabel"])
 
 
 if __name__ == "__main__":
