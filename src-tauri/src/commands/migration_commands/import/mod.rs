@@ -5,7 +5,10 @@ mod tables;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_fk;
 
+use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
@@ -105,6 +108,23 @@ pub async fn import_migration(
     conflict_strategy: String, // "skip" | "overwrite" | "merge"
     password: Option<String>,
 ) -> Result<MigrationImportResult, String> {
+    // #3039: the import runs on its own connection with foreign-key checks off
+    // (see `fk`), so the shared pool keeps enforcing them and no early `?`
+    // below can leave a pooled connection with checks disabled.
+    let db = get_database_connection();
+    super::fk::with_foreign_keys_disabled(db, move |import_db| async move {
+        run_import_migration(&window, &import_db, file_path, conflict_strategy, password).await
+    })
+    .await
+}
+
+async fn run_import_migration(
+    window: &tauri::Window,
+    db: &DatabaseConnection,
+    file_path: String,
+    conflict_strategy: String, // "skip" | "overwrite" | "merge"
+    password: Option<String>,
+) -> Result<MigrationImportResult, String> {
     window.emit("migration:progress", 5).ok();
 
     let zip_bytes = read_and_decrypt_zip(&file_path, password.as_deref())?;
@@ -112,7 +132,6 @@ pub async fn import_migration(
         .map_err(|e| format!("올바른 ZIP 파일이 아닙니다: {}", e))?;
     validate_archive_and_strategy(&mut archive, &conflict_strategy)?;
 
-    let db = get_database_connection();
     let base_dir = crate::session::get_session_manager()?.get_base_data_dir();
     let backup_manager = BackupManager::new(base_dir.join("libragent.db"));
     let backup_file = backup_manager
@@ -162,8 +181,8 @@ pub async fn import_migration(
     let transaction_ok = db::validate_foreign_keys(&txn).await;
 
     if transaction_ok && totals.errors == 0 {
-        db::commit_and_restore_fk(db, txn).await?;
-        let report_skills = skills::restore_user_skills(&window, &zip_bytes, &conflict_strategy)?;
+        db::commit_import_transaction(txn).await?;
+        let report_skills = skills::restore_user_skills(window, &zip_bytes, &conflict_strategy)?;
         totals.record(&mut reports, "user_skills", report_skills);
         window.emit("migration:progress", 100).ok();
 
@@ -174,6 +193,6 @@ pub async fn import_migration(
             total_errors: totals.errors,
         })
     } else {
-        db::rollback_and_restore_backup(db, txn, &backup_manager, &backup_file, totals.errors).await
+        db::rollback_and_restore_backup(txn, &backup_manager, &backup_file, totals.errors).await
     }
 }

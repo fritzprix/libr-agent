@@ -9,17 +9,14 @@ use crate::lifecycle::database_backup::BackupManager;
 
 use super::entities::delete_non_plugin_assistants;
 
+/// Open the import transaction.
+///
+/// Foreign-key enforcement is off here because the caller opens `db` as a
+/// private connection with checks disabled and closes it afterwards, so no
+/// pooled connection is ever affected (#3039).
 pub(super) async fn begin_import_transaction(
     db: &DatabaseConnection,
 ) -> Result<DatabaseTransaction, String> {
-    // Disable Foreign Keys on database connection *outside* transaction
-    db.execute(Statement::from_string(
-        DbBackend::Sqlite,
-        "PRAGMA foreign_keys = OFF;".to_string(),
-    ))
-    .await
-    .map_err(|e| e.to_string())?;
-
     db.begin().await.map_err(|e| e.to_string())
 }
 
@@ -75,34 +72,17 @@ pub(super) async fn validate_foreign_keys(txn: &DatabaseTransaction) -> bool {
     }
 }
 
-pub(super) async fn commit_and_restore_fk(
-    db: &DatabaseConnection,
-    txn: DatabaseTransaction,
-) -> Result<(), String> {
-    txn.commit().await.map_err(|e| e.to_string())?;
-    db.execute(Statement::from_string(
-        DbBackend::Sqlite,
-        "PRAGMA foreign_keys = ON;".to_string(),
-    ))
-    .await
-    .ok();
-    Ok(())
+pub(super) async fn commit_import_transaction(txn: DatabaseTransaction) -> Result<(), String> {
+    txn.commit().await.map_err(|e| e.to_string())
 }
 
 pub(super) async fn rollback_and_restore_backup<T>(
-    db: &DatabaseConnection,
     txn: DatabaseTransaction,
     backup_manager: &BackupManager,
     backup_file: &Path,
     total_errors: usize,
 ) -> Result<T, String> {
     txn.rollback().await.ok();
-    db.execute(Statement::from_string(
-        DbBackend::Sqlite,
-        "PRAGMA foreign_keys = ON;".to_string(),
-    ))
-    .await
-    .ok();
     backup_manager.restore_from_backup(backup_file).ok();
 
     let err_msg = if total_errors > 0 {
