@@ -122,16 +122,22 @@ export function subscribeToAuthFlow(
 export function ensureOAuthFlowEndedListener(): void {
   if (listenStarted) return;
   listenStarted = true;
-  void listen<OAuthFlowEndedPayload>('mcp-oauth-flow-ended', (event) => {
-    applyBackendFlowOutcome(event.payload);
-  })
-    .then((unlisten) => {
-      unlistenFlowEnded = unlisten;
-    })
-    .catch(() => {
-      // Non-Tauri / test environments: cards still use applyBackendFlowOutcome.
-      listenStarted = false;
-    });
+  try {
+    void Promise.resolve(
+      listen<OAuthFlowEndedPayload>('mcp-oauth-flow-ended', (event) => {
+        applyBackendFlowOutcome(event.payload);
+      }),
+    )
+      .then((unlisten) => {
+        unlistenFlowEnded = unlisten;
+      })
+      .catch(() => {
+        // Non-Tauri / test environments: cards still use applyBackendFlowOutcome.
+        listenStarted = false;
+      });
+  } catch {
+    listenStarted = false;
+  }
 }
 
 /** Test hook: forget every flow. Production code must not call this. */

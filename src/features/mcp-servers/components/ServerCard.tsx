@@ -113,8 +113,11 @@ export const ServerCard = React.memo(
     // Identity of the flow record whose outcome has already been applied to
     // this card, so a settled outcome is never applied twice.
     const appliedRecordRef = useRef<AuthFlowRecord | null>(null);
-    // Avoid re-querying a durable last-outcome in a sync loop (#3040 G3.1).
-    const recoveredLastOutcomeRef = useRef(false);
+    // True only while this card is waiting on a backend-held flow (#3040 G4.1).
+    // Cold remounts must not replay a stored success/error.
+    const waitingForBackendFlowRef = useRef(false);
+    const onRevalidateRef = useRef(onRevalidate);
+    onRevalidateRef.current = onRevalidate;
     const [isRetryingVerify, setIsRetryingVerify] = useState(false);
     const [pendingElapsedSec, setPendingElapsedSec] = useState(0);
     const [isOpeningWizard, setIsOpeningWizard] = useState(false);
@@ -122,7 +125,7 @@ export const ServerCard = React.memo(
     useEffect(() => {
       if (server.authentication?.type !== 'oauth2.1') return;
       // Cards without a local promise learn endings from the backend emit
-      // (and a queryable last outcome for the mount race) (#3040 G3.1).
+      // (and a takeable last outcome only while waiting) (#3040 G3.1 / G4.1).
       ensureOAuthFlowEndedListener();
       hasOAuthToken(server.id)
         .then(setHasToken)
@@ -131,8 +134,26 @@ export const ServerCard = React.memo(
       // Sync from the flow store first (flows started in this app session,
       // including ones begun by a card that has since unmounted, #3040 G2.2),
       // then fall back to the backend's single-flight slot (flows still
-      // running across an app reload, #3040 G1.5). When the slot is empty,
-      // recover any terminal outcome the emit already recorded.
+      // running across an app reload, #3040 G1.5).
+      const applySettledOutcome = (record: AuthFlowRecord) => {
+        if (appliedRecordRef.current === record || !record.settled) return;
+        appliedRecordRef.current = record;
+        waitingForBackendFlowRef.current = false;
+        if (record.settled.kind === 'success') {
+          setAuthNotice(null);
+          // Connected state always comes from the keychain (#3040 G4.1).
+          void hasOAuthToken(server.id)
+            .then(setHasToken)
+            .catch(() => setHasToken(false));
+          // Ownerless success must still probe / revalidate (#3040 G4.2).
+          void safeInvoke('probe_mcp_server', { serverId: server.id })
+            .then(() => onRevalidateRef.current?.())
+            .catch(() => undefined);
+        } else {
+          setAuthNotice(classifyAuthFailure(record.settled.message));
+        }
+      };
+
       const sync = () => {
         const record = getAuthFlow(server.id);
         if (record && record.settled === null) {
@@ -140,15 +161,7 @@ export const ServerCard = React.memo(
           return;
         }
         if (record && record.settled) {
-          if (appliedRecordRef.current !== record) {
-            appliedRecordRef.current = record;
-            setAuthNotice(
-              record.settled.kind === 'success'
-                ? null
-                : classifyAuthFailure(record.settled.message),
-            );
-            if (record.settled.kind === 'success') setHasToken(true);
-          }
+          applySettledOutcome(record);
           setIsAuthorizing(false);
           return;
         }
@@ -158,25 +171,29 @@ export const ServerCard = React.memo(
             // flight; never override it with a stale answer.
             if (getAuthFlow(server.id) !== null) return;
             if (backendActive) {
+              waitingForBackendFlowRef.current = true;
               setIsAuthorizing(true);
               return;
             }
             setIsAuthorizing(false);
-            if (recoveredLastOutcomeRef.current) return;
+            // Only a card that was waiting may take the last outcome (#3040 G4.1).
+            if (!waitingForBackendFlowRef.current) return;
             try {
               const last = await getOAuthFlowLastOutcome(server.id);
               if (getAuthFlow(server.id) !== null) return;
-              if (!last) return;
-              recoveredLastOutcomeRef.current = true;
+              if (!last) {
+                waitingForBackendFlowRef.current = false;
+                return;
+              }
               applyBackendFlowOutcome(last);
             } catch {
-              // Backend unreachable: keep the card as-is.
+              // Backend unreachable: keep waiting until the emit arrives.
             }
           })
           .catch(() => setIsAuthorizing(false));
       };
 
-      recoveredLastOutcomeRef.current = false;
+      waitingForBackendFlowRef.current = false;
       const unsubscribe = subscribeToAuthFlow(server.id, sync);
       sync();
       return unsubscribe;
@@ -329,9 +346,9 @@ export const ServerCard = React.memo(
             defaultValue: 'Could not cancel: {{error}}',
           }),
         );
-        // Refused / failed cancel: do not guess the ending. The backend
-        // emit (or last-outcome query) delivers timeout / provider /
-        // success to every card (#3040 G3.1).
+        // Refused / failed cancel: this card is waiting. Take the terminal
+        // outcome if the flow already ended (#3040 G3.1 / G4.1).
+        waitingForBackendFlowRef.current = true;
         try {
           const last = await getOAuthFlowLastOutcome(server.id);
           if (last && getAuthFlow(server.id) === null) {

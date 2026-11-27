@@ -95,6 +95,8 @@ pub async fn get_oauth_token(server_id: String) -> Result<Option<String>, String
 #[tauri::command]
 pub async fn revoke_oauth_token(server_id: String) -> Result<String, String> {
     crate::mcp::keychain::delete_token(&server_id).await?;
+    // Retire any stored success so a remount cannot show Authorized (#3040 G4.1).
+    crate::mcp::oauth::clear_oauth_flow_last_outcome(&server_id).await;
     Ok(format!(
         "OAuth token revoked successfully for server: {server_id}"
     ))
@@ -117,13 +119,14 @@ pub async fn is_oauth_flow_active(server_id: String) -> bool {
     crate::mcp::oauth::is_oauth_flow_active(&server_id).await
 }
 
-/// Last terminal OAuth outcome for `server_id`, if the flow already ended
-/// (#3040 G3.1): cards that mount after the emit still recover the ending.
+/// Take the last terminal OAuth outcome for `server_id` (#3040 G3.1 / G4.1).
+/// Only a card that was waiting for the flow should call this; the outcome
+/// is consumed so it cannot resurrect Authorized / old notices on remount.
 #[tauri::command]
 pub async fn get_oauth_flow_last_outcome(
     server_id: String,
 ) -> Option<crate::mcp::oauth::OAuthFlowEndedPayload> {
-    crate::mcp::oauth::get_oauth_flow_last_outcome(&server_id).await
+    crate::mcp::oauth::take_oauth_flow_last_outcome(&server_id).await
 }
 
 /// Starts the OAuth 2.1 authorization flow: opens browser, runs loopback listener,

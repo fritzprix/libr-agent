@@ -105,7 +105,29 @@ pub async fn record_oauth_flow_outcome(
     payload
 }
 
-/// Last terminal outcome for `server_id`, if any (#3040 G3.1 mount race).
+/// Take the last terminal outcome for `server_id`, if any (#3040 G3.1 / G4.1).
+/// Consuming it prevents a later remount (or Disconnect → remount) from
+/// replaying a stale success or error notice.
+pub async fn take_oauth_flow_last_outcome(server_id: &str) -> Option<OAuthFlowEndedPayload> {
+    let mut slot = last_oauth_outcome().lock().await;
+    match slot.as_ref() {
+        Some(outcome) if outcome.server_id == server_id => slot.take(),
+        _ => None,
+    }
+}
+
+/// Drop a stored terminal outcome for `server_id` (e.g. on revoke, #3040 G4.1).
+pub async fn clear_oauth_flow_last_outcome(server_id: &str) {
+    let mut slot = last_oauth_outcome().lock().await;
+    if slot
+        .as_ref()
+        .is_some_and(|outcome| outcome.server_id == server_id)
+    {
+        *slot = None;
+    }
+}
+
+/// Peek without consuming — used by tests and the command wrapper.
 pub async fn get_oauth_flow_last_outcome(server_id: &str) -> Option<OAuthFlowEndedPayload> {
     last_oauth_outcome()
         .lock()
@@ -1059,10 +1081,25 @@ mod tests {
         assert!(!ended.success);
         assert_eq!(
             get_oauth_flow_last_outcome("srv-outcome").await,
-            Some(ended)
+            Some(ended.clone())
         );
         assert!(get_oauth_flow_last_outcome("other").await.is_none());
+        assert_eq!(
+            take_oauth_flow_last_outcome("srv-outcome").await,
+            Some(ended)
+        );
+        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
+
+        let success = record_oauth_flow_outcome("srv-outcome", &Ok("ok".to_string())).await;
+        assert!(success.success);
+        clear_oauth_flow_last_outcome("srv-outcome").await;
+        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
+
         let _ = begin_oauth_flow("srv-outcome").await.expect("next begin");
+        let _ = record_oauth_flow_outcome("srv-outcome", &Ok("ok".to_string())).await;
+        end_oauth_flow("srv-outcome").await;
+        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_some());
+        let _ = begin_oauth_flow("srv-outcome").await.expect("begin clears outcome");
         assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
         end_oauth_flow("srv-outcome").await;
     }
