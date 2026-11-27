@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -95,10 +97,28 @@ class WorkerStateTest(unittest.TestCase):
         self.assertEqual(list(self.root.iterdir()), [])
 
     @unittest.skipUnless(sys.platform == "win32", "only Windows holds a rename back")
-    def test_write_succeeds_while_this_process_holds_the_file_open(self):
+    def test_write_succeeds_while_a_reader_holds_the_file_open(self):
+        # The real shape of #3079: a reader opens the file, reads it and closes it.
+        # On Windows that handle blocks the rename until it goes, so the write waits.
+        # A handle that is held for the whole call is a different case and raises
+        # (see test_write_fails_when_the_file_never_closes).
         worker_state.atomic_write_json(self.claims, {"a": 1})
-        with self.claims.open("rb"):
+        reading = threading.Event()
+
+        def read_once():
+            with self.claims.open("rb") as handle:
+                reading.set()
+                json.load(handle)  # a partial file would raise here
+                time.sleep(0.3)  # keep the handle open past the first rename attempt
+
+        reader = threading.Thread(target=read_once)
+        reader.start()
+        try:
+            self.assertTrue(reading.wait(5), "the reader never opened the file")
             worker_state.atomic_write_json(self.claims, {"a": 2})
+        finally:
+            reader.join()
+
         self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 2})
 
     def test_read_json_tolerates_utf8_bom(self):
