@@ -27,6 +27,7 @@ For each finding you plan to put under `### Required`:
 | Naming, comment noise, style | **minor** / **nit** | `S` only |
 | Wrong behavior, security leak, acceptance criteria not met | **blocker** / **major** | `G` |
 | Technical debt in the diff (duplication, dead code, workaround, unneeded fallback, lint suppression, stale test) | **major** | `G` with a concrete refactor |
+| New or changed fixed-delay wait (`setTimeout`, `setInterval`, `sleep`) used for ordering in production code or tests | **major** | `G` naming the waited event/state (`file:line`) and requesting event/state synchronization |
 
 If every open issue is minor/nit **and** the score is 86 or higher, verdict is `clean` or `approve`, not `changes-requested`. A score of 85 or lower is always `changes-requested`.
 
