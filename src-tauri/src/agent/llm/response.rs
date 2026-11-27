@@ -342,8 +342,16 @@ pub async fn handle_llm_response(
         }
     }
 
-    // `MessageDisplay` runs before the cancellation check below, so a cancel
-    // that arrives while a hook runs still discards the response.
+    // The `MessageDisplay` hook can take up to its handler timeout, so the turn
+    // is captured before it runs: a terminate, or a Stop followed by a new
+    // message, cancels *and replaces* the session's token while the hook runs,
+    // and only this snapshot can prove the admitted turn was dropped.
+    let Some(admitted_cancellation) =
+        response_display::admitted_turn_token(active_sessions, &session_id).await
+    else {
+        return Err(format!("Session not found: {}", session_id));
+    };
+
     let display_text = match tool_loop_resample {
         Some(_) => None,
         None => {
@@ -352,18 +360,26 @@ pub async fn handle_llm_response(
         }
     };
 
-    // [Race Mitigation] Verify session has not been reset/cancelled during async yields
+    // [Race Mitigation] The admitted turn must still be the live one after the
+    // display hook: a response whose turn was terminated, or stopped and
+    // restarted, while the hook ran is discarded even though the session now
+    // holds a fresh, uncancelled token.
+    match response_display::check_admitted_turn(
+        active_sessions,
+        &session_id,
+        &admitted_cancellation,
+    )
+    .await
     {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
-                log::info!(
-                    "Workflow was cancelled or reset for session {} after admission. Discarding LLM response.",
-                    session_id
-                );
-                return Ok(());
-            }
-        } else {
+        response_display::TurnGate::Continue => {}
+        response_display::TurnGate::Discard => {
+            log::info!(
+                "Workflow was cancelled or reset for session {} after admission. Discarding LLM response.",
+                session_id
+            );
+            return Ok(());
+        }
+        response_display::TurnGate::SessionGone => {
             return Err(format!("Session not found: {}", session_id));
         }
     }
