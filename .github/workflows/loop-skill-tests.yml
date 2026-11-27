@@ -1,7 +1,11 @@
 name: Loop skill tests
 
+# Like LibrAgent CI/CD, PR runs start only when the gatekeeper adds
+# gatekeeper:review-clean. Other events produce all-skipped runs. The paths
+# filter also applies to the labeled event.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - '.agents/skills/loop-shared/**'
       - '.agents/skills/worker-loop/**'
@@ -14,6 +18,7 @@ permissions:
 
 jobs:
   test:
+    if: github.event.action == 'labeled' && github.event.label.name == 'gatekeeper:review-clean'
     strategy:
       fail-fast: false
       matrix:

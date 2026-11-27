@@ -7,72 +7,43 @@ on:
     types: [opened, synchronize, reopened, labeled]
     branches: [main, master, 'dev/*']
 
-# Cancel superseded PR runs when a new push (or review-clean label) arrives.
-# Pushes to dev/*, main, and master are NOT cancelled: each push uses a
-# per-SHA group so every merge commit has a full result and a later push
-# cannot drop a pending run (#3070 G1.3).
-# Labeled events for any label other than gatekeeper:review-clean use a
-# unique group so they never cancel an in-progress PR build (#3070 G1.1).
+# PR CI runs only after the gatekeeper marks the head review-clean, because CI
+# is the bottleneck. On pull_request events, only the labeled event for
+# gatekeeper:review-clean runs jobs. opened, reopened, synchronize, and other
+# labels produce all-skipped runs, which the loop scripts ignore.
+# Pushes to main, master, and dev/* always run on every OS.
+#
+# Concurrency:
+# - push: one group per SHA, so a later push never cancels a pending run.
+# - PR review-clean label or synchronize: one group per PR with
+#   cancel-in-progress. A new push cancels the run for the old head; the next
+#   review-clean label starts a run for the new head.
+# - Other PR events: one group per run, so they never cancel a real run.
 concurrency:
   group: >-
     ${{
       github.event_name == 'push'
       && format('{0}-{1}-{2}', github.workflow, github.ref, github.sha)
       || (
-        github.event_name == 'pull_request'
-        && github.event.action == 'labeled'
-        && github.event.label.name != 'gatekeeper:review-clean'
-        && format('{0}-pr-{1}-skip-label-{2}', github.workflow, github.event.pull_request.number, github.run_id)
-        || format('{0}-pr-{1}', github.workflow, github.event.pull_request.number || github.ref)
+        (github.event.action == 'synchronize' || github.event.label.name == 'gatekeeper:review-clean')
+        && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number)
+        || format('{0}-pr-{1}-run-{2}', github.workflow, github.event.pull_request.number, github.run_id)
       )
     }}
-  # Keep on one line: a multiline `${{ ... }}` scalar breaks YAML parsing (G2.1).
-  cancel-in-progress: ${{ github.event_name == 'pull_request' && !(github.event.action == 'labeled' && github.event.label.name != 'gatekeeper:review-clean') }}
+  # Keep on one line: a multiline `${{ ... }}` scalar breaks YAML parsing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  os-matrix:
-    name: Resolve OS matrix
-    # Skip labeled runs that are not gatekeeper:review-clean. Those runs use a
-    # unique concurrency group (above), so they do not cancel real CI.
-    if: >
-      github.event_name != 'pull_request'
-      || github.event.action != 'labeled'
-      || github.event.label.name == 'gatekeeper:review-clean'
-    runs-on: ubuntu-latest
-    outputs:
-      os: ${{ steps.resolve.outputs.os }}
-    steps:
-      - id: resolve
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          # JSON array of label names; keep out of the script text (G1 S1.1).
-          PR_LABELS_JSON: ${{ github.event_name == 'pull_request' && toJSON(github.event.pull_request.labels.*.name) || '[]' }}
-        run: |
-          set -euo pipefail
-          include_macos=false
-          if [ "$EVENT_NAME" = "push" ]; then
-            # Always run macOS on pushes to protected branches.
-            include_macos=true
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            # PR macOS only after the gatekeeper marks review clean (#3070).
-            if printf '%s' "$PR_LABELS_JSON" | grep -F '"gatekeeper:review-clean"' >/dev/null; then
-              include_macos=true
-            fi
-          fi
-          if [ "$include_macos" = true ]; then
-            echo 'os=["ubuntu-latest","windows-latest","macos-15"]' >> "$GITHUB_OUTPUT"
-          else
-            echo 'os=["ubuntu-latest","windows-latest"]' >> "$GITHUB_OUTPUT"
-          fi
-
   test:
     name: Test
-    needs: os-matrix
+    # On PRs, run only for the gatekeeper:review-clean labeled event (see above).
+    if: >
+      github.event_name != 'pull_request'
+      || (github.event.action == 'labeled' && github.event.label.name == 'gatekeeper:review-clean')
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ${{ fromJSON(needs.os-matrix.outputs.os) }}
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - name: Checkout
@@ -217,12 +188,12 @@ jobs:
 
   build:
     name: Build
-    needs: [test, os-matrix]
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(needs.os-matrix.outputs.os) }}
+        os: [ubuntu-latest, windows-latest, macos-15]
 
     steps:
       - name: Checkout
