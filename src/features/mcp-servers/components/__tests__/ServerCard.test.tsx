@@ -8,9 +8,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { ServerCard } from '../ServerCard';
-import { __resetAuthFlowsForTest } from '../../authFlowStore';
+import {
+  __resetAuthFlowsForTest,
+  applyBackendFlowOutcome,
+} from '../../authFlowStore';
 import {
   cancelOAuthFlow,
+  getOAuthFlowLastOutcome,
   hasOAuthToken,
   isOAuthFlowActive,
   revokeOAuthToken,
@@ -61,6 +65,10 @@ vi.mock('@/lib/backend/assistants', () => ({
   listAssistants: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => undefined),
+}));
+
 vi.mock('@/lib/backend', () => ({
   hasOAuthToken: vi.fn().mockResolvedValue(false),
   startOAuthFlow: vi.fn(
@@ -71,6 +79,7 @@ vi.mock('@/lib/backend', () => ({
   cancelOAuthFlow: vi.fn().mockResolvedValue('cancelled'),
   revokeOAuthToken: vi.fn().mockResolvedValue('revoked'),
   isOAuthFlowActive: vi.fn().mockResolvedValue(false),
+  getOAuthFlowLastOutcome: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/backend/core', () => ({
@@ -497,6 +506,7 @@ describe('ServerCard', () => {
       vi.clearAllMocks();
       vi.mocked(hasOAuthToken).mockResolvedValue(false);
       vi.mocked(isOAuthFlowActive).mockResolvedValue(false);
+      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue(null);
       vi.mocked(cancelOAuthFlow).mockResolvedValue('cancelled');
       vi.mocked(revokeOAuthToken).mockResolvedValue('revoked');
       vi.mocked(startOAuthFlow).mockImplementation(
@@ -543,11 +553,14 @@ describe('ServerCard', () => {
     });
 
     it('after a refused cancel with no token, reports failure — never cancelled (#3068 G2.1)', async () => {
-      // Mount sync sees the backend holding the flow; the poll after the
-      // refused cancel reports it gone and the token re-read finds none.
-      vi.mocked(isOAuthFlowActive)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValue(false);
+      // Mount sync sees the backend holding the flow; the refused cancel
+      // then recovers the terminal provider ending via last-outcome (#3040 G3.1).
+      vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
+      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue({
+        serverId: oauthServer.id,
+        success: false,
+        message: 'the authorization ended without storing a token',
+      });
       renderOauthCard();
 
       expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
@@ -567,16 +580,12 @@ describe('ServerCard', () => {
 
     it('after a refused cancel that ended in success, shows the connected state (#3068 G2.1)', async () => {
       // The cancel is refused because the token is being stored; the flow
-      // then ends with success. The poll must re-read the token and land
-      // the card on the connected (Disconnect) state, not on a notice.
-      vi.mocked(isOAuthFlowActive)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValue(false);
-      // First call is the mount sync (no token yet); later calls are the
-      // post-flow re-read, which finds the stored token.
-      vi.mocked(hasOAuthToken)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValue(true);
+      // then ends with success and the last-outcome query lands Disconnect.
+      vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
+      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue({
+        serverId: oauthServer.id,
+        success: true,
+      });
       renderOauthCard();
 
       expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
@@ -590,10 +599,6 @@ describe('ServerCard', () => {
         await screen.findByTestId('oauth-disconnect'),
       ).toBeInTheDocument();
       expect(screen.queryByTestId('oauth-result')).not.toBeInTheDocument();
-      const toast = await import('sonner');
-      expect(toast.toast.success).toHaveBeenCalledWith(
-        'Successfully authenticated!',
-      );
     });
 
     it('shows the cancelled notice when a cancel succeeds on a remounted card (#3068 G2.1)', async () => {
@@ -734,6 +739,66 @@ describe('ServerCard', () => {
       expect(notice).toHaveTextContent(
         'OAuth provider error (access_denied): The user cancelled the request',
       );
+    });
+
+    it('applies a backend timeout ending with no local promise (#3040 G3.1)', async () => {
+      vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
+      renderOauthCard();
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      await act(async () => {
+        applyBackendFlowOutcome({
+          serverId: oauthServer.id,
+          success: false,
+          message: 'AUTH_TIMEOUT: OAuth authorization timed out after 5 minutes',
+        });
+      });
+
+      expect(await screen.findByTestId('oauth-authorize')).toBeInTheDocument();
+      expect(await screen.findByTestId('oauth-result')).toHaveTextContent(
+        'timed out',
+      );
+      expect(screen.queryByTestId('oauth-cancel')).not.toBeInTheDocument();
+    });
+
+    it('applies a backend provider-error ending with no local promise (#3040 G3.1)', async () => {
+      vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
+      renderOauthCard();
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      await act(async () => {
+        applyBackendFlowOutcome({
+          serverId: oauthServer.id,
+          success: false,
+          message:
+            'OAuth provider error (access_denied): The user cancelled the request',
+        });
+      });
+
+      const notice = await screen.findByTestId('oauth-result');
+      expect(notice).toHaveTextContent(
+        'OAuth provider error (access_denied): The user cancelled the request',
+      );
+      expect(notice).not.toHaveTextContent('Authorization cancelled');
+    });
+
+    it('applies a backend success ending with no local promise (#3040 G3.1)', async () => {
+      vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
+      renderOauthCard();
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      await act(async () => {
+        applyBackendFlowOutcome({
+          serverId: oauthServer.id,
+          success: true,
+        });
+      });
+
+      expect(
+        await screen.findByTestId('oauth-disconnect'),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-cancel')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('oauth-result')).not.toBeInTheDocument();
     });
   });
 });

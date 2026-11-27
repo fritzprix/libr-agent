@@ -117,6 +117,15 @@ pub async fn is_oauth_flow_active(server_id: String) -> bool {
     crate::mcp::oauth::is_oauth_flow_active(&server_id).await
 }
 
+/// Last terminal OAuth outcome for `server_id`, if the flow already ended
+/// (#3040 G3.1): cards that mount after the emit still recover the ending.
+#[tauri::command]
+pub async fn get_oauth_flow_last_outcome(
+    server_id: String,
+) -> Option<crate::mcp::oauth::OAuthFlowEndedPayload> {
+    crate::mcp::oauth::get_oauth_flow_last_outcome(&server_id).await
+}
+
 /// Starts the OAuth 2.1 authorization flow: opens browser, runs loopback listener,
 /// exchanges code, and saves token in keychain.
 #[tauri::command]
@@ -125,6 +134,7 @@ pub async fn start_oauth_flow(
     server_id: String,
     config: crate::mcp::types::OAuthConfig,
 ) -> Result<String, String> {
+    use tauri::Emitter;
     use tauri_plugin_opener::OpenerExt;
 
     // Single-flight: a second start must not bind the shared callback port (#3040).
@@ -211,6 +221,10 @@ pub async fn start_oauth_flow(
     .await;
 
     crate::mcp::oauth::end_oauth_flow(&server_id).await;
+    // Broadcast the terminal outcome before returning so cards without a
+    // local promise (reload / remount) learn the ending (#3040 G3.1).
+    let ended = crate::mcp::oauth::record_oauth_flow_outcome(&server_id, &result).await;
+    let _ = app_handle.emit("mcp-oauth-flow-ended", &ended);
     result
 }
 

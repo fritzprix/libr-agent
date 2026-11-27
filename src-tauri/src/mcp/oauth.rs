@@ -6,6 +6,7 @@ use oauth2::{
     basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -41,9 +42,28 @@ struct ActiveOAuthFlow {
 }
 
 static ACTIVE_OAUTH_FLOW: OnceLock<Mutex<Option<ActiveOAuthFlow>>> = OnceLock::new();
+/// Last terminal outcome per process, kept so a card that mounts after the
+/// flow ends (or misses the emit) can still read the ending (#3040 G3.1).
+static LAST_OAUTH_OUTCOME: OnceLock<Mutex<Option<OAuthFlowEndedPayload>>> = OnceLock::new();
 
 fn active_oauth_flow() -> &'static Mutex<Option<ActiveOAuthFlow>> {
     ACTIVE_OAUTH_FLOW.get_or_init(|| Mutex::new(None))
+}
+
+fn last_oauth_outcome() -> &'static Mutex<Option<OAuthFlowEndedPayload>> {
+    LAST_OAUTH_OUTCOME.get_or_init(|| Mutex::new(None))
+}
+
+/// Payload for `mcp-oauth-flow-ended` and `get_oauth_flow_last_outcome` (#3040 G3.1).
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthFlowEndedPayload {
+    pub server_id: String,
+    pub success: bool,
+    /// Present on failure: the same `AUTH_*` / provider string returned by
+    /// `start_oauth_flow`, so the UI reuses its prefix classifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Begin a single-flight OAuth wait. Fails if another flow already holds the port.
@@ -52,6 +72,8 @@ pub async fn begin_oauth_flow(server_id: &str) -> Result<CancellationToken, Stri
     if slot.is_some() {
         return Err(ERR_IN_PROGRESS.to_string());
     }
+    // A new flow supersedes any previous terminal outcome for this slot.
+    *last_oauth_outcome().lock().await = None;
     let cancel = CancellationToken::new();
     *slot = Some(ActiveOAuthFlow {
         server_id: server_id.to_string(),
@@ -59,6 +81,38 @@ pub async fn begin_oauth_flow(server_id: &str) -> Result<CancellationToken, Stri
         storing: false,
     });
     Ok(cancel)
+}
+
+/// Record and return the terminal outcome so every card (including ones
+/// without a local promise) can show the correct ending (#3040 G3.1).
+pub async fn record_oauth_flow_outcome(
+    server_id: &str,
+    result: &Result<String, String>,
+) -> OAuthFlowEndedPayload {
+    let payload = match result {
+        Ok(_) => OAuthFlowEndedPayload {
+            server_id: server_id.to_string(),
+            success: true,
+            message: None,
+        },
+        Err(message) => OAuthFlowEndedPayload {
+            server_id: server_id.to_string(),
+            success: false,
+            message: Some(message.clone()),
+        },
+    };
+    *last_oauth_outcome().lock().await = Some(payload.clone());
+    payload
+}
+
+/// Last terminal outcome for `server_id`, if any (#3040 G3.1 mount race).
+pub async fn get_oauth_flow_last_outcome(server_id: &str) -> Option<OAuthFlowEndedPayload> {
+    last_oauth_outcome()
+        .lock()
+        .await
+        .as_ref()
+        .filter(|outcome| outcome.server_id == server_id)
+        .cloned()
 }
 
 /// Signal cancel for the in-progress flow for `server_id` (#3040).
@@ -990,6 +1044,27 @@ mod tests {
         assert!(!is_oauth_flow_active("srv-a").await);
         begin_oauth_flow("srv-b").await.expect("after end");
         end_oauth_flow("srv-b").await;
+    }
+
+    #[tokio::test]
+    async fn last_outcome_survives_end_and_clears_on_next_begin() {
+        let _guard = flow_test_lock().lock().await;
+        let _ = begin_oauth_flow("srv-outcome").await.expect("begin");
+        end_oauth_flow("srv-outcome").await;
+        let ended = record_oauth_flow_outcome(
+            "srv-outcome",
+            &Err("AUTH_TIMEOUT: OAuth authorization timed out".to_string()),
+        )
+        .await;
+        assert!(!ended.success);
+        assert_eq!(
+            get_oauth_flow_last_outcome("srv-outcome").await,
+            Some(ended)
+        );
+        assert!(get_oauth_flow_last_outcome("other").await.is_none());
+        let _ = begin_oauth_flow("srv-outcome").await.expect("next begin");
+        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
+        end_oauth_flow("srv-outcome").await;
     }
 
     #[tokio::test]

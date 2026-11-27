@@ -24,6 +24,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ServerToolsModal } from './ServerToolsModal';
 import {
   cancelOAuthFlow,
+  getOAuthFlowLastOutcome,
   hasOAuthToken,
   isOAuthFlowActive,
   revokeOAuthToken,
@@ -37,7 +38,9 @@ import {
   pendingVerificationHint,
 } from '../utils/verification-feedback';
 import {
+  applyBackendFlowOutcome,
   beginAuthFlow,
+  ensureOAuthFlowEndedListener,
   getAuthFlow,
   subscribeToAuthFlow,
   type AuthFlowRecord,
@@ -110,12 +113,17 @@ export const ServerCard = React.memo(
     // Identity of the flow record whose outcome has already been applied to
     // this card, so a settled outcome is never applied twice.
     const appliedRecordRef = useRef<AuthFlowRecord | null>(null);
+    // Avoid re-querying a durable last-outcome in a sync loop (#3040 G3.1).
+    const recoveredLastOutcomeRef = useRef(false);
     const [isRetryingVerify, setIsRetryingVerify] = useState(false);
     const [pendingElapsedSec, setPendingElapsedSec] = useState(0);
     const [isOpeningWizard, setIsOpeningWizard] = useState(false);
 
     useEffect(() => {
       if (server.authentication?.type !== 'oauth2.1') return;
+      // Cards without a local promise learn endings from the backend emit
+      // (and a queryable last outcome for the mount race) (#3040 G3.1).
+      ensureOAuthFlowEndedListener();
       hasOAuthToken(server.id)
         .then(setHasToken)
         .catch(() => setHasToken(false));
@@ -123,7 +131,8 @@ export const ServerCard = React.memo(
       // Sync from the flow store first (flows started in this app session,
       // including ones begun by a card that has since unmounted, #3040 G2.2),
       // then fall back to the backend's single-flight slot (flows still
-      // running across an app reload, #3040 G1.5).
+      // running across an app reload, #3040 G1.5). When the slot is empty,
+      // recover any terminal outcome the emit already recorded.
       const sync = () => {
         const record = getAuthFlow(server.id);
         if (record && record.settled === null) {
@@ -144,15 +153,30 @@ export const ServerCard = React.memo(
           return;
         }
         isOAuthFlowActive(server.id)
-          .then((backendActive) => {
+          .then(async (backendActive) => {
             // A flow may have started in the store while this check was in
             // flight; never override it with a stale answer.
             if (getAuthFlow(server.id) !== null) return;
-            setIsAuthorizing(backendActive);
+            if (backendActive) {
+              setIsAuthorizing(true);
+              return;
+            }
+            setIsAuthorizing(false);
+            if (recoveredLastOutcomeRef.current) return;
+            try {
+              const last = await getOAuthFlowLastOutcome(server.id);
+              if (getAuthFlow(server.id) !== null) return;
+              if (!last) return;
+              recoveredLastOutcomeRef.current = true;
+              applyBackendFlowOutcome(last);
+            } catch {
+              // Backend unreachable: keep the card as-is.
+            }
           })
           .catch(() => setIsAuthorizing(false));
       };
 
+      recoveredLastOutcomeRef.current = false;
       const unsubscribe = subscribeToAuthFlow(server.id, sync);
       sync();
       return unsubscribe;
@@ -282,57 +306,6 @@ export const ServerCard = React.memo(
       }
     }, [server.id, server.authentication, t, onRevalidate, authNoticeText]);
 
-    // A card remounted onto a backend-held flow has no local promise, so
-    // nothing else tells it when the flow ends. After a failed cancel,
-    // re-check the backend until the flow is gone, then reset the card
-    // (#3040 G3.1). A card that owns the store record is left alone — its
-    // own promise settles the card.
-    const syncBackendFlowEnd = useCallback(async () => {
-      if (getAuthFlow(server.id) !== null) return;
-      for (let attempt = 0; attempt < 20; attempt++) {
-        let active = true;
-        try {
-          active = await isOAuthFlowActive(server.id);
-        } catch {
-          return; // backend unreachable: keep the card as-is
-        }
-        if (!active) {
-          setIsAuthorizing(false);
-          // #3068 G2.1: this path only runs after a cancel that was
-          // refused or failed, so the ending must never be reported as
-          // "cancelled" — this card never saw a cancel succeed. Re-read
-          // the token: a refused cancel usually means the token was
-          // already being stored, and the flow then ends in success.
-          let tokenStored = false;
-          try {
-            tokenStored = await hasOAuthToken(server.id);
-          } catch {
-            tokenStored = false;
-          }
-          if (tokenStored) {
-            setHasToken(true);
-            toast.success(
-              t('mcpServer.toasts.authSuccess', 'Successfully authenticated!'),
-            );
-            await safeInvoke('probe_mcp_server', {
-              serverId: server.id,
-            }).catch(() => undefined);
-            onRevalidate?.();
-          } else {
-            setAuthNotice({
-              kind: 'providerError',
-              message: t(
-                'mcpServer.toasts.authEndedWithoutToken',
-                'the authorization ended without storing a token',
-              ),
-            });
-          }
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }, [server.id, t, onRevalidate]);
-
     const handleCancelAuthorize = useCallback(async () => {
       try {
         await cancelOAuthFlow(server.id);
@@ -356,11 +329,19 @@ export const ServerCard = React.memo(
             defaultValue: 'Could not cancel: {{error}}',
           }),
         );
-        // The cancel was refused or failed — the flow may already have ended
-        // without this card knowing (#3040 G3.1).
-        await syncBackendFlowEnd();
+        // Refused / failed cancel: do not guess the ending. The backend
+        // emit (or last-outcome query) delivers timeout / provider /
+        // success to every card (#3040 G3.1).
+        try {
+          const last = await getOAuthFlowLastOutcome(server.id);
+          if (last && getAuthFlow(server.id) === null) {
+            applyBackendFlowOutcome(last);
+          }
+        } catch {
+          // Keep spinner until the emit arrives.
+        }
       }
-    }, [server.id, t, syncBackendFlowEnd]);
+    }, [server.id, t]);
 
     const handleDisconnect = useCallback(async () => {
       try {
