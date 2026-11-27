@@ -26,10 +26,8 @@ concurrency:
         || format('{0}-pr-{1}', github.workflow, github.event.pull_request.number || github.ref)
       )
     }}
-  cancel-in-progress: ${{
-    github.event_name == 'pull_request'
-    && !(github.event.action == 'labeled' && github.event.label.name != 'gatekeeper:review-clean')
-  }}
+  # Keep on one line: a multiline `${{ ... }}` scalar breaks YAML parsing (G2.1).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && !(github.event.action == 'labeled' && github.event.label.name != 'gatekeeper:review-clean') }}
 
 jobs:
   os-matrix:
