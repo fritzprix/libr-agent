@@ -12,11 +12,15 @@ use std::collections::BTreeMap;
 /// Timeout a hook handler gets when its config sets none, in milliseconds (#3005).
 ///
 /// Claude Code defaults a `command` hook to 600 s, lowers that to 30 s on
-/// `UserPromptSubmit`, and gives `SessionEnd` hooks a 1.5 s budget.
+/// `UserPromptSubmit`, `PreModelSwitch`, and `PostModelSwitch` and to 10 s on
+/// `MessageDisplay`, and gives `SessionEnd` hooks a 1.5 s budget.
 /// <https://code.claude.com/docs/en/hooks#timeouts>
 pub fn default_hook_timeout_ms(event: HookEvent) -> u64 {
     match event {
-        HookEvent::UserPromptSubmit => 30_000,
+        HookEvent::UserPromptSubmit | HookEvent::PreModelSwitch | HookEvent::PostModelSwitch => {
+            30_000
+        }
+        HookEvent::MessageDisplay => 10_000,
         HookEvent::SessionEnd => 1_500,
         _ => 600_000,
     }
@@ -43,6 +47,13 @@ pub enum HookEvent {
     PreCompact,
     PostCompact,
     Notification,
+    UserPromptExpansion,
+    MessageDisplay,
+    InstructionsLoaded,
+    ConfigChange,
+    CwdChanged,
+    PreModelSwitch,
+    PostModelSwitch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +81,37 @@ impl HookEvent {
             Self::PreCompact => "PreCompact",
             Self::PostCompact => "PostCompact",
             Self::Notification => "Notification",
+            Self::UserPromptExpansion => "UserPromptExpansion",
+            Self::MessageDisplay => "MessageDisplay",
+            Self::InstructionsLoaded => "InstructionsLoaded",
+            Self::ConfigChange => "ConfigChange",
+            Self::CwdChanged => "CwdChanged",
+            Self::PreModelSwitch => "PreModelSwitch",
+            Self::PostModelSwitch => "PostModelSwitch",
         }
+    }
+
+    /// `false` for events that fire on every occurrence: a configured
+    /// `matcher` is ignored, as in Claude Code.
+    pub fn supports_matcher(self) -> bool {
+        !matches!(self, Self::MessageDisplay | Self::CwdChanged)
+    }
+
+    /// Events where a command hook's exit code 2 blocks the action. Every
+    /// other event keeps treating exit 2 as a non-blocking error.
+    pub fn exit_code_2_blocks(self) -> bool {
+        matches!(
+            self,
+            Self::UserPromptExpansion | Self::ConfigChange | Self::PreModelSwitch
+        )
+    }
+
+    /// Events whose plain (non-JSON) stdout is added to the model's context.
+    pub fn plain_stdout_is_context(self) -> bool {
+        matches!(
+            self,
+            Self::SessionStart | Self::UserPromptExpansion | Self::PostModelSwitch
+        )
     }
 
     pub fn dispatch_mode(self) -> HookDispatchMode {

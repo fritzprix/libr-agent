@@ -167,6 +167,28 @@ LibrAgent는 **Skills** 화면에서 전역으로, 또는 채팅에서 현재 �
   - **MCP 서버** (설치 시 승인 후 실행)
   - **라이프사이클 훅** (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`)
 
+  - **추가 훅 이벤트**: `UserPromptExpansion`(플러그인 슬래시 명령 확장), `MessageDisplay`(응답 표시), `InstructionsLoaded`(워크스페이스 지침 파일 로드), `ConfigChange`(앱 설정 변경), `CwdChanged`(셸 명령의 디렉터리 이동), `PreModelSwitch`, `PostModelSwitch`
+
+### Claude Code와 다른 점
+
+- `MessageDisplay`는 완성된 응답마다 한 번 실행됩니다. `displayContent`는 실시간 화면만 바꾸며, 세션을 다시 불러오면 저장된 원문이 보입니다.
+- `ConfigChange`는 `user_settings`만 보고하고, 전역 플러그인만 실행하며, `session_id`가 비어 있습니다.
+- `InstructionsLoaded`는 워크스페이스 지침 파일의 `session_start`와 `compact` 로드를 보고합니다.
+- 모델 전환 이벤트에는 프롬프트 캐시와 비용 필드가 없습니다. `PreModelSwitch`의 `ask` 결정은 전환을 취소합니다.
+- `systemMessage`와 `watchPaths`는 무시합니다.
+
+LibrAgent는 아래 이벤트를 실행하지 않습니다. 이를 선언한 플러그인도 설치되며, 미리보기에 지원하지 않음으로 표시됩니다.
+
+| 이벤트                             | 이유                                                     |
+| ---------------------------------- | -------------------------------------------------------- |
+| `PreSkillShellCommand`             | 스킬이 인라인 셸 명령을 실행하지 않음                    |
+| `TeammateIdle`                     | 에이전트 팀의 팀원 라이프사이클이 없음                   |
+| `DirectoryAdded`                   | 세션의 워크스페이스는 하나이며 디렉터리 추가 동작이 없음 |
+| `FileChanged`                      | 워크스페이스 파일 감시 기능이 없음                       |
+| `WorktreeCreate`, `WorktreeRemove` | git worktree를 관리하지 않음                             |
+| `Elicitation`, `ElicitationResult` | MCP 클라이언트가 elicitation을 지원하지 않음             |
+| `TaskCreated`, `TaskCompleted`     | planning todo와 연결할지 제품 판단이 필요함              |
+
 **Skills** 화면이나 세션 도구 모달에서 언제든 플러그인을 켜고 끄거나 제거할 수 있습니다.
 
 ---

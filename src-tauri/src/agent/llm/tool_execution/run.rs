@@ -1177,6 +1177,7 @@ mod hook_stop_and_tool_response_tests {
             updated_input: None,
             stop_reason: None,
             stops_processing: false,
+            display_content: None,
         }
     }
 

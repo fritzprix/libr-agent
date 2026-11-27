@@ -162,7 +162,7 @@ pub(super) async fn run_http_hook(
             return HookRunOutcome::Skipped(format!("http hook request failed: {error}"));
         }
         Err(_) => {
-            return HookRunOutcome::Skipped(format!(
+            return HookRunOutcome::TimedOut(format!(
                 "http hook timed out after {}s",
                 deadline.as_secs()
             ));

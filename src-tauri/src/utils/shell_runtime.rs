@@ -122,9 +122,20 @@ pub fn shell_single_quote(path: &Path) -> Option<String> {
     Some(format!("'{}'", path.replace('\'', "'\\''")))
 }
 
-#[cfg(windows)]
+/// Quote a value for a PowerShell single-quoted string literal.
+///
+/// PowerShell closes single-quoted strings not only at ASCII `'` but also at
+/// the Unicode look-alike quotes U+2018..U+201B, so all five are doubled to
+/// keep hook-supplied values from escaping the literal (#3008 G1.1).
 pub fn powershell_single_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
+    let escaped: String = value.chars().fold(String::new(), |mut out, ch| {
+        if matches!(ch, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(ch);
+        }
+        out.push(ch);
+        out
+    });
+    format!("'{escaped}'")
 }
 
 #[cfg(windows)]
@@ -157,6 +168,29 @@ mod tests {
     fn shell_single_quote_escapes_single_quotes() {
         let quoted = shell_single_quote(Path::new("/tmp/a'b/c")).expect("utf-8 path");
         assert_eq!(quoted, "'/tmp/a'\\''b/c'");
+    }
+
+    #[test]
+    fn powershell_single_quote_doubles_every_string_delimiter() {
+        // #3008 G1.1: U+2018..U+201B also close a PowerShell single-quoted
+        // string, so they must be doubled like ASCII '.
+        let value = "C:\\hooks\\it's\u{2018}l\u{2019}o\u{201A}k\u{201B}";
+        let quoted = powershell_single_quote(value);
+        assert!(quoted.starts_with('\'') && quoted.ends_with('\''));
+        let inner = &quoted[1..quoted.len() - 1];
+        let mut recovered = String::new();
+        let mut chars = inner.chars();
+        while let Some(ch) = chars.next() {
+            if matches!(ch, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+                assert_eq!(
+                    chars.next(),
+                    Some(ch),
+                    "delimiter {ch:?} must be doubled in {inner:?}"
+                );
+            }
+            recovered.push(ch);
+        }
+        assert_eq!(recovered, value);
     }
 
     #[test]

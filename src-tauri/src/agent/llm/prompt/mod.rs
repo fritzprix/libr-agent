@@ -141,6 +141,25 @@ async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, Str
         .collect()
 }
 
+/// Fire `InstructionsLoaded` for the loaded workspace instruction files. The
+/// hooks only observe, so they run off the prompt path.
+fn announce_instructions_loaded(session_id: &str, instructions: &[(String, String)]) {
+    use crate::services::hooks::lifecycle::{instructions_loaded, HookSources};
+
+    let Some(workspace) = get_session_workspace_dir(session_id) else {
+        return;
+    };
+    for (filename, _) in instructions {
+        let path = workspace.join(filename);
+        let session_id = session_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            if let Some(sources) = HookSources::for_session(&session_id) {
+                instructions_loaded(&sources, &session_id, &path).await;
+            }
+        });
+    }
+}
+
 /// Reads the first persona / tone instruction file that exists for the session.
 async fn load_soul_instruction(session_id: &str) -> Option<(String, String)> {
     let workspace = get_session_workspace_dir(session_id)?;
@@ -178,6 +197,12 @@ pub(crate) async fn build_session_system_prompt_split(
     };
 
     let agent_config = crate::agent::resolve_agent_config(&session_metadata).await?;
+    // After compaction or `/clear` the cached prefix may be reused, but the
+    // instructions are loaded into a new context (#3008).
+    if crate::services::hooks::lifecycle::take_instruction_reload(session_id) {
+        let reloaded = load_workspace_agent_instructions(session_id).await;
+        announce_instructions_loaded(session_id, &reloaded);
+    }
     let file_fingerprint = instruction_files_fingerprint(session_id).await;
     let source_key = format!(
         "{}:{:016x}",
@@ -266,6 +291,7 @@ async fn build_and_cache_stable_prefix(
 
     let soul_instruction = load_soul_instruction(session_id).await;
     let workspace_instructions = load_workspace_agent_instructions(session_id).await;
+    announce_instructions_loaded(session_id, &workspace_instructions);
     // Placeholder ids (e.g. build_system_prompt without a real session) stay path-free.
     let workspace_root = if session_id.starts_with('(') {
         None

@@ -682,6 +682,7 @@ mod tests {
             updated_input: None,
             stop_reason: None,
             stops_processing: false,
+            display_content: None,
         };
         assert!(apply_pre_compact_hook_outcome(sid, &outcome).is_ok());
         assert_eq!(
@@ -702,6 +703,7 @@ mod tests {
             updated_input: None,
             stop_reason: None,
             stops_processing: false,
+            display_content: None,
         };
         let err = apply_pre_compact_hook_outcome(sid, &outcome).unwrap_err();
         assert_eq!(err, "active transaction in progress");
@@ -720,6 +722,7 @@ mod tests {
             updated_input: None,
             stop_reason: Some("budget limit reached".to_string()),
             stops_processing: true,
+            display_content: None,
         };
         let err = apply_pre_compact_hook_outcome(sid, &outcome).unwrap_err();
         assert_eq!(err, "budget limit reached");

@@ -167,6 +167,28 @@ LibrAgent supports installing Claude Code plugins globally from **Skills** or fo
   - **MCP servers** (started after install-time approval)
   - **Lifecycle hooks** (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `PreCompact`, `SessionEnd`, `Notification`)
 
+  - **Further hook events**: `UserPromptExpansion` (a plugin slash command expands), `MessageDisplay` (a reply is shown), `InstructionsLoaded` (a workspace instruction file is loaded), `ConfigChange` (app settings change), `CwdChanged` (a shell command changes directory), `PreModelSwitch`, `PostModelSwitch`
+
+### Differences from Claude Code
+
+- `MessageDisplay` runs once per completed reply. `displayContent` changes the live view only; the stored message is shown again after the session reloads.
+- `ConfigChange` reports `user_settings` only, runs global plugins, and has an empty `session_id`.
+- `InstructionsLoaded` reports `session_start` and `compact` loads of the workspace instruction file.
+- The model switch events omit the prompt-cache and cost fields. A `PreModelSwitch` `ask` decision cancels the switch.
+- `systemMessage` and `watchPaths` are ignored.
+
+LibrAgent does not run these events. A plugin that declares one still installs, and the preview marks it as not supported:
+
+| Event                              | Reason                                                  |
+| ---------------------------------- | ------------------------------------------------------- |
+| `PreSkillShellCommand`             | Skills do not run inline shell commands                 |
+| `TeammateIdle`                     | No agent-team teammate lifecycle                        |
+| `DirectoryAdded`                   | A session has one workspace and no add-directory action |
+| `FileChanged`                      | No workspace file watcher                               |
+| `WorktreeCreate`, `WorktreeRemove` | Git worktrees are not managed                           |
+| `Elicitation`, `ElicitationResult` | The MCP client does not support elicitation             |
+| `TaskCreated`, `TaskCompleted`     | Mapping them to planning todos needs product judgment   |
+
 You can enable, disable, or uninstall plugins at any time from **Skills** or the session tools modal.
 
 ---

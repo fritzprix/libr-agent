@@ -490,6 +490,7 @@ mod user_prompt_hook_tests {
             updated_input: None,
             stop_reason: None,
             stops_processing: false,
+            display_content: None,
         };
         let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
         assert_eq!(err, "prompt rejected by policy");
@@ -507,6 +508,7 @@ mod user_prompt_hook_tests {
             updated_input: None,
             stop_reason: Some("budget exhausted".to_string()),
             stops_processing: true,
+            display_content: None,
         };
         let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
         assert_eq!(err, "budget exhausted");
@@ -524,6 +526,7 @@ mod user_prompt_hook_tests {
             updated_input: None,
             stop_reason: None,
             stops_processing: true,
+            display_content: None,
         };
         let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
         assert_eq!(err, "Prompt stopped by UserPromptSubmit hook.");
@@ -540,6 +543,7 @@ mod user_prompt_hook_tests {
             updated_input: None,
             stop_reason: None,
             stops_processing: false,
+            display_content: None,
         };
         evaluate_user_prompt_hook_outcome(sid, outcome).unwrap();
         assert_eq!(

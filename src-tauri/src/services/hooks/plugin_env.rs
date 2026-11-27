@@ -22,6 +22,38 @@ fn store() -> &'static RwLock<BTreeMap<String, BTreeMap<String, String>>> {
     &STORE
 }
 
+/// Variables set by the last `CwdChanged` run, layered over the
+/// `SessionStart` ones and replaced on the next directory change.
+fn cwd_store() -> &'static RwLock<BTreeMap<String, BTreeMap<String, String>>> {
+    static STORE: once_cell::sync::Lazy<RwLock<BTreeMap<String, BTreeMap<String, String>>>> =
+        once_cell::sync::Lazy::new(|| RwLock::new(BTreeMap::new()));
+    &STORE
+}
+
+/// Replace the session's `CwdChanged` variables with the ones in `path`. A
+/// missing or unreadable file clears them.
+pub fn apply_cwd_env_file(session_id: &str, path: &Path) {
+    let vars = match std::fs::read_to_string(path) {
+        Ok(raw) => parse_env_file(&raw),
+        Err(error) => {
+            log::warn!(
+                "CLAUDE_ENV_FILE {} for session {} could not be read: {}",
+                path.display(),
+                session_id,
+                error
+            );
+            BTreeMap::new()
+        }
+    };
+    if let Ok(mut store) = cwd_store().write() {
+        if vars.is_empty() {
+            store.remove(session_id);
+        } else {
+            store.insert(session_id.to_string(), vars);
+        }
+    }
+}
+
 /// Whether `name` is a portable environment-variable name (`POSIX`-style:
 /// letter or `_`, then letters, digits, `_`).
 fn is_env_name(name: &str) -> bool {
@@ -109,18 +141,28 @@ pub fn set_session_plugin_env(session_id: &str, vars: BTreeMap<String, String>) 
     }
 }
 
-/// The plugin environment of one session (empty when it has none).
+/// The plugin environment of one session (empty when it has none):
+/// `SessionStart` variables overlaid with the `CwdChanged` ones.
 pub fn session_plugin_env(session_id: &str) -> BTreeMap<String, String> {
-    store()
+    let mut vars = store()
         .read()
         .ok()
         .and_then(|store| store.get(session_id).cloned())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Ok(store) = cwd_store().read() {
+        if let Some(cwd_vars) = store.get(session_id) {
+            vars.extend(cwd_vars.clone());
+        }
+    }
+    vars
 }
 
 /// Drop a session's plugin environment (session end / termination).
 pub fn clear_session_plugin_env(session_id: &str) {
     if let Ok(mut store) = store().write() {
+        store.remove(session_id);
+    }
+    if let Ok(mut store) = cwd_store().write() {
         store.remove(session_id);
     }
 }
@@ -180,6 +222,31 @@ mod tests {
             !vars.contains_key("EXPORTED"),
             "a re-run replaces, not merges, the previous variables"
         );
+        clear_session_plugin_env(session);
+        assert!(session_plugin_env(session).is_empty());
+    }
+
+    #[test]
+    fn cwd_variables_layer_over_session_start_and_are_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cwd-changed.env");
+        let session = "test-env-file-cwd-layer";
+        set_session_plugin_env(
+            session,
+            BTreeMap::from([("BASE".into(), "1".into()), ("DIR".into(), "root".into())]),
+        );
+        std::fs::write(&path, "DIR=sub\nONLY=sub\n").unwrap();
+        apply_cwd_env_file(session, &path);
+        let vars = session_plugin_env(session);
+        assert_eq!(vars.get("BASE").map(String::as_str), Some("1"));
+        assert_eq!(vars.get("DIR").map(String::as_str), Some("sub"));
+        assert_eq!(vars.get("ONLY").map(String::as_str), Some("sub"));
+
+        std::fs::write(&path, "").unwrap();
+        apply_cwd_env_file(session, &path);
+        let vars = session_plugin_env(session);
+        assert_eq!(vars.get("DIR").map(String::as_str), Some("root"));
+        assert!(!vars.contains_key("ONLY"));
         clear_session_plugin_env(session);
         assert!(session_plugin_env(session).is_empty());
     }

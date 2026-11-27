@@ -1,7 +1,7 @@
 //! Slash-command behaviour, moved here by the #3043 split.
 
 use super::discovery::discover_command_files;
-use super::expansion::{expand_in_dirs, substitute_arguments};
+use super::expansion::{expand_named_in_dirs, substitute_arguments};
 use super::listing::list_in_dirs;
 use super::*;
 use crate::services::hooks::registry::{
@@ -243,23 +243,26 @@ fn expansion_reads_body_and_args() {
         "https://github.com/acme/e",
         &[("commands/hello.md", HELLO)],
     );
-    let expanded = expand_in_dirs(
+    let expanded = expand_named_in_dirs(
         &global,
         list_session_store_sources(None, &session),
         "/hello world",
     )
     .unwrap();
-    assert_eq!(expanded, "Hello world!");
-    let namespaced = expand_in_dirs(
+    assert_eq!(expanded.body, "Hello world!");
+    let namespaced = expand_named_in_dirs(
         &global,
         list_session_store_sources(None, &session),
         "/e:hello world",
     )
     .unwrap();
-    assert_eq!(namespaced, "Hello world!");
-    assert!(expand_in_dirs(&global, list_session_store_sources(None, &session), "/nope").is_none());
+    assert_eq!(namespaced.body, "Hello world!");
+    assert!(
+        expand_named_in_dirs(&global, list_session_store_sources(None, &session), "/nope")
+            .is_none()
+    );
     // Built-ins are never expanded by plugin resolution.
-    assert!(expand_in_dirs(
+    assert!(expand_named_in_dirs(
         &global,
         list_session_store_sources(None, &session),
         "/clear"

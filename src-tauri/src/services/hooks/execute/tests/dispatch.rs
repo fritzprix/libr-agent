@@ -155,6 +155,13 @@ fn all_supported_events_use_execute_dispatch_mode() {
         HookEvent::SubagentStop,
         HookEvent::PreCompact,
         HookEvent::Notification,
+        HookEvent::UserPromptExpansion,
+        HookEvent::MessageDisplay,
+        HookEvent::InstructionsLoaded,
+        HookEvent::ConfigChange,
+        HookEvent::CwdChanged,
+        HookEvent::PreModelSwitch,
+        HookEvent::PostModelSwitch,
     ] {
         assert_eq!(event.dispatch_mode(), HookDispatchMode::Execute);
     }
@@ -412,6 +419,7 @@ fn updated_input_from_a_blocking_handler_is_dropped() {
         continue_loop: None,
         stop_reason: None,
         updated_input: Some(serde_json::json!({"path": "changed.txt"})),
+        display_content: None,
     });
     assert_eq!(result.updated_input, None);
 }
@@ -429,6 +437,7 @@ fn last_allow_rewrite_wins() {
             continue_loop: None,
             stop_reason: None,
             updated_input: Some(serde_json::json!({ "path": path })),
+            display_content: None,
         });
     }
     assert_eq!(

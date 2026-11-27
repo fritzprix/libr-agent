@@ -1,4 +1,5 @@
 mod bootstrap;
+mod env_sync;
 pub mod manager;
 pub mod secrets;
 pub mod session;

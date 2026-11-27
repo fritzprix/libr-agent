@@ -103,6 +103,7 @@ pub async fn delete_session_with_dispatcher(
     for id in std::iter::once(&session_id).chain(&descendant_ids) {
         notify_session_end_stub(id).await;
         crate::services::hooks::clear_hook_context(id);
+        crate::services::hooks::lifecycle::clear_instruction_state(id);
         // #2926 gatekeeper G1.3: a deleted session must not keep its
         // `CLAUDE_ENV_FILE` variables in memory either.
         crate::services::hooks::plugin_env::clear_session_plugin_env(id);
@@ -184,6 +185,7 @@ pub async fn delete_session_only_with_dispatcher(
     // SessionEnd hook stub (#2812), same rationale as the cascade path.
     notify_session_end_stub(&session_id).await;
     crate::services::hooks::clear_hook_context(&session_id);
+    crate::services::hooks::lifecycle::clear_instruction_state(&session_id);
     // #2926 gatekeeper G1.3: drop the deleted session's in-memory
     // `CLAUDE_ENV_FILE` variables too.
     crate::services::hooks::plugin_env::clear_session_plugin_env(&session_id);

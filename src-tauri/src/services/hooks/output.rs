@@ -21,6 +21,9 @@ pub struct HookOutput {
     pub updated_input: Option<serde_json::Value>,
     /// `stopReason`: the text shown to the user when `continue` is `false` (#3004).
     pub stop_reason: Option<String>,
+    /// `hookSpecificOutput.displayContent`: the text a `MessageDisplay` hook
+    /// wants shown instead of the message. Display only.
+    pub display_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +51,7 @@ struct RawHookSpecificOutput {
     /// Claude Code `PermissionRequest` decision object:
     /// `{ "behavior": "allow" | "deny" | "ask", "message": "...", "updatedInput": {...} }` (#3006).
     decision: Option<RawPermissionDecision>,
+    display_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,7 +77,7 @@ pub fn parse_hook_stdout(event: HookEvent, stdout: &str) -> HookOutput {
         return normalize_raw(raw);
     }
 
-    if event == HookEvent::SessionStart {
+    if event.plain_stdout_is_context() {
         return HookOutput {
             additional_context: Some(trimmed.to_string()),
             ..HookOutput::default()
@@ -154,7 +158,13 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
             }
         });
 
+    let display_content = raw
+        .hook_specific_output
+        .as_ref()
+        .and_then(|h| h.display_content.clone());
+
     HookOutput {
+        display_content,
         additional_context,
         decision,
         reason,

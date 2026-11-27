@@ -4,7 +4,7 @@
 use super::command::{build_hook_command, HookEnv};
 use super::http::run_http_hook;
 use crate::services::hooks::context::append_hook_context;
-use crate::services::hooks::output::{normalize, HookOutput};
+use crate::services::hooks::output::{normalize, HookDecision, HookOutput};
 use crate::services::hooks::schema::{HookEvent, HookHandler, DEFAULT_HOOK_TIMEOUT_MS};
 use std::process::Stdio;
 use std::time::Duration;
@@ -32,7 +32,20 @@ pub(super) async fn run_matching_handler(
             }
             Some(output)
         }
-        HookRunOutcome::Skipped(reason) => {
+        // Claude Code blocks a model switch whose hook does not answer in time.
+        HookRunOutcome::TimedOut(reason) if event == HookEvent::PreModelSwitch => {
+            log::warn!(
+                "PreModelSwitch hook blocked the switch for session {}: {}",
+                session_id,
+                reason
+            );
+            Some(HookOutput {
+                decision: Some(HookDecision::Block),
+                reason: Some(reason),
+                ..HookOutput::default()
+            })
+        }
+        HookRunOutcome::Skipped(reason) | HookRunOutcome::TimedOut(reason) => {
             log::debug!(
                 "hook handler ({}) skipped for session {}: {}",
                 event.as_str(),
@@ -47,6 +60,7 @@ pub(super) async fn run_matching_handler(
 pub(super) enum HookRunOutcome {
     Applied(HookOutput),
     Skipped(String),
+    TimedOut(String),
 }
 
 async fn run_hook_handler(
@@ -145,12 +159,20 @@ async fn run_hook_handler(
                 })
                 .await;
             }
-            return HookRunOutcome::Skipped("hook timed out".to_string());
+            return HookRunOutcome::TimedOut("hook timed out".to_string());
         }
     };
 
     let status = output.status;
     let code = status.code().unwrap_or(-1);
+    if code == 2 && event.exit_code_2_blocks() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return HookRunOutcome::Applied(HookOutput {
+            decision: Some(HookDecision::Block),
+            reason: (!stderr.is_empty()).then_some(stderr),
+            ..HookOutput::default()
+        });
+    }
     if code == 2 {
         return HookRunOutcome::Skipped("hook exit 2 (fail-open)".to_string());
     }

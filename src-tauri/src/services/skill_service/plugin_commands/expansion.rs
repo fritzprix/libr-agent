@@ -17,19 +17,32 @@ use std::path::Path;
 pub fn expand_plugin_command(
     session_id: &str,
     command_text: &str,
-) -> Result<Option<String>, String> {
+) -> Result<Option<ExpandedCommand>, String> {
     let global_dir = get_user_plugins_directory()?;
     // #2942 gatekeeper G1.3: one session plugin read path (see list_plugin_commands).
     let session_records =
         crate::services::skill_service::session_plugins::load_session_plugins(session_id)?;
-    Ok(expand_in_dirs(&global_dir, session_records, command_text))
+    Ok(expand_named_in_dirs(
+        &global_dir,
+        session_records,
+        command_text,
+    ))
 }
 
-pub(super) fn expand_in_dirs(
+/// A typed plugin command and the prompt it expands into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpandedCommand {
+    /// `plugin:command`, whichever form was typed.
+    pub name: String,
+    pub args: String,
+    pub body: String,
+}
+
+pub(super) fn expand_named_in_dirs(
     global_dir: &Path,
     session_records: Vec<PluginSourceRecord>,
     command_text: &str,
-) -> Option<String> {
+) -> Option<ExpandedCommand> {
     let trimmed = command_text.trim();
     let head = trimmed.strip_prefix('/')?;
     if head.is_empty()
@@ -81,13 +94,17 @@ pub(super) fn expand_in_dirs(
     match candidate_bodies.len() {
         0 => None,
         1 => {
-            let (_, command) = candidate_bodies.pop().unwrap();
+            let (namespace, command) = candidate_bodies.pop().unwrap();
             if !is_plain_file(&command.path) {
                 return None;
             }
             let raw = fs::read_to_string(&command.path).ok()?;
             let (_frontmatter, body) = split_frontmatter(&raw);
-            Some(substitute_arguments(body.trim(), args))
+            Some(ExpandedCommand {
+                name: format!("{namespace}:{}", command.name),
+                args: args.to_string(),
+                body: substitute_arguments(body.trim(), args),
+            })
         }
         _ => {
             // Bare-name ambiguity across distinct plugins: namespaced form

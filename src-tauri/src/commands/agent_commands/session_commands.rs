@@ -279,6 +279,7 @@ pub async fn agent_update_session_config(
             request.provider,
             request.assistant_id,
             request.recursive,
+            "picker",
         )
         .await?;
 
@@ -603,10 +604,22 @@ pub async fn agent_execute_command(
             if let Some(expanded) =
                 crate::services::skill_service::expand_plugin_command(&session_id, &command_text)?
             {
+                if let Some(sources) =
+                    crate::services::hooks::lifecycle::HookSources::for_session(&session_id)
+                {
+                    crate::services::hooks::lifecycle::user_prompt_expansion(
+                        &sources,
+                        &session_id,
+                        &expanded.name,
+                        &expanded.args,
+                        command_text.trim(),
+                    )
+                    .await?;
+                }
                 return Ok(CommandResult {
                     success: true,
                     message: String::new(),
-                    expanded_prompt: Some(expanded),
+                    expanded_prompt: Some(expanded.body),
                 });
             }
             return Err(format!("Invalid or unrecognized command: {}", command_text));

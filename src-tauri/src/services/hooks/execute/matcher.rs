@@ -463,7 +463,7 @@ fn wildcard_matches(pattern: &str, text: &str) -> bool {
     Regex::new(&format!("(?s){regex}")).is_ok_and(|re| re.is_match(text))
 }
 
-pub(super) async fn resolve_session_cwd(
+pub(in crate::services::hooks) async fn resolve_session_cwd(
     session_id: &str,
     override_cwd: Option<PathBuf>,
 ) -> Result<PathBuf, String> {

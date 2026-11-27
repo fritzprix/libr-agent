@@ -134,6 +134,7 @@ async fn message_to_session_inner(
                     Some(resolved.provider.clone()),
                     None,
                     None,
+                    "sdk",
                 )
                 .await?;
         }

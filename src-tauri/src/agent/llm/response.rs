@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 
 use super::response_admission;
 use super::response_circuit_breaker;
+use super::response_display;
 use super::response_persist::{
     assistant_message_has_only_ui_tool_calls, cache_assistant_message, extract_prompt_tokens,
     persist_assistant_message_to_db, persist_prompt_token_checkpoint,
@@ -341,18 +342,44 @@ pub async fn handle_llm_response(
         }
     }
 
-    // [Race Mitigation] Verify session has not been reset/cancelled during async yields
+    // The `MessageDisplay` hook can take up to its handler timeout, so the turn
+    // is captured before it runs: a terminate, or a Stop followed by a new
+    // message, cancels *and replaces* the session's token while the hook runs,
+    // and only this snapshot can prove the admitted turn was dropped.
+    let Some(admitted_cancellation) =
+        response_display::admitted_turn_token(active_sessions, &session_id).await
+    else {
+        return Err(format!("Session not found: {}", session_id));
+    };
+
+    let display_text = match tool_loop_resample {
+        Some(_) => None,
+        None => {
+            response_display::display_override(active_sessions, &session_id, &assistant_message)
+                .await
+        }
+    };
+
+    // [Race Mitigation] The admitted turn must still be the live one after the
+    // display hook: a response whose turn was terminated, or stopped and
+    // restarted, while the hook ran is discarded even though the session now
+    // holds a fresh, uncancelled token.
+    match response_display::check_admitted_turn(
+        active_sessions,
+        &session_id,
+        &admitted_cancellation,
+    )
+    .await
     {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
-                log::info!(
-                    "Workflow was cancelled or reset for session {} after admission. Discarding LLM response.",
-                    session_id
-                );
-                return Ok(());
-            }
-        } else {
+        response_display::TurnGate::Continue => {}
+        response_display::TurnGate::Discard => {
+            log::info!(
+                "Workflow was cancelled or reset for session {} after admission. Discarding LLM response.",
+                session_id
+            );
+            return Ok(());
+        }
+        response_display::TurnGate::SessionGone => {
             return Err(format!("Session not found: {}", session_id));
         }
     }
@@ -419,7 +446,10 @@ pub async fn handle_llm_response(
     // 2. Emit MessageAdded event
     let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
         session_id: session_id.clone(),
-        message: Box::new(assistant_message.clone()),
+        message: Box::new(match display_text {
+            Some(text) => response_display::with_display_text(&assistant_message, text),
+            None => assistant_message.clone(),
+        }),
     };
     TauriEventDispatcher::from_handle(app_handle)
         .emit_agent_event(message_added_event)

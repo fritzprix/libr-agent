@@ -7,6 +7,17 @@ use std::path::{Path, PathBuf};
 /// failure only costs the plugin-variable feature, so it is logged, not fatal.
 pub(super) fn prepare_session_env_file(session_id: &str) -> Option<PathBuf> {
     let path = crate::services::hooks::registry::get_session_plugin_env_file(session_id).ok()?;
+    truncate_env_file(session_id, path)
+}
+
+/// The `CwdChanged` counterpart of [`prepare_session_env_file`]: a sibling
+/// file, so a directory change never erases the `SessionStart` variables.
+pub(super) fn prepare_cwd_env_file(session_id: &str) -> Option<PathBuf> {
+    let path = crate::services::hooks::registry::get_session_plugin_env_file(session_id).ok()?;
+    truncate_env_file(session_id, path.with_file_name("cwd-changed.env"))
+}
+
+fn truncate_env_file(session_id: &str, path: PathBuf) -> Option<PathBuf> {
     if let Some(parent) = path.parent() {
         if let Err(error) = std::fs::create_dir_all(parent) {
             log::warn!(

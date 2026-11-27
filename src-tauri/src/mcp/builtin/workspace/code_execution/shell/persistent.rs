@@ -33,6 +33,34 @@ impl WorkspaceServer {
         Ok(result)
     }
 
+    /// Fire `CwdChanged` (#3008) and apply the variables its hooks wrote to
+    /// the running shell.
+    async fn run_cwd_changed_hooks(
+        &self,
+        session_id: &str,
+        previous_cwd: Option<&str>,
+        cwd: &str,
+        workspace_path: &std::path::Path,
+        docker_path_mapper: Option<&PathMappingLayer>,
+    ) {
+        use crate::services::hooks::lifecycle::{cwd_changed, HookSources};
+
+        let Some((old_cwd, new_cwd)) =
+            shell_cwd_change(previous_cwd, cwd, workspace_path, docker_path_mapper)
+        else {
+            return;
+        };
+        let Some(sources) = HookSources::for_session(session_id) else {
+            return;
+        };
+        let before = self.shell_manager.session_secrets(session_id).await;
+        cwd_changed(&sources, session_id, &old_cwd, new_cwd).await;
+        let after = self.shell_manager.session_secrets(session_id).await;
+        self.shell_manager
+            .sync_session_env(session_id, &before, &after)
+            .await;
+    }
+
     async fn execute_shell_persistent_once(
         &self,
         command: &str,
@@ -76,6 +104,15 @@ impl WorkspaceServer {
             Ok(Ok((stdout, stderr, exit_code, cwd))) => {
                 // Measure duration
                 let duration_ms = execution_start.elapsed().as_millis() as u64;
+
+                self.run_cwd_changed_hooks(
+                    &session_id,
+                    previous_cwd.as_deref(),
+                    &cwd,
+                    &workspace_path,
+                    docker_path_mapper.as_ref(),
+                )
+                .await;
 
                 let success = exit_code == 0;
                 let interrupted = super::super::validation::is_signal_interrupt_exit(exit_code);
@@ -346,6 +383,22 @@ async fn docker_path_mapper_for_session(
     )))
 }
 
+/// `(old, new)` when a command moved the shell. Before its first command the
+/// shell is at the workspace root.
+fn shell_cwd_change<'a>(
+    previous_cwd: Option<&'a str>,
+    cwd: &'a str,
+    workspace_path: &'a std::path::Path,
+    docker_path_mapper: Option<&'a PathMappingLayer>,
+) -> Option<(std::borrow::Cow<'a, str>, &'a str)> {
+    let old = match (previous_cwd, docker_path_mapper) {
+        (Some(previous), _) => previous.into(),
+        (None, Some(mapper)) => mapper.container_workspace().to_string_lossy(),
+        (None, None) => workspace_path.to_string_lossy(),
+    };
+    (std::path::Path::new(old.as_ref()) != std::path::Path::new(cwd)).then_some((old, cwd))
+}
+
 fn display_shell_cwd(
     cwd: &str,
     workspace_path: &std::path::Path,
@@ -383,6 +436,25 @@ fn display_relative_path(relative_cwd: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cwd_change_compares_against_the_previous_or_workspace_directory() {
+        let workspace = std::path::Path::new("/work");
+        let change = |previous, cwd| {
+            super::shell_cwd_change(previous, cwd, workspace, None)
+                .map(|(old, new)| (old.into_owned(), new.to_string()))
+        };
+        assert_eq!(change(None, "/work"), None);
+        assert_eq!(change(Some("/work/src"), "/work/src"), None);
+        assert_eq!(
+            change(None, "/work/src"),
+            Some(("/work".to_string(), "/work/src".to_string()))
+        );
+        assert_eq!(
+            change(Some("/work/src"), "/tmp"),
+            Some(("/work/src".to_string(), "/tmp".to_string()))
+        );
+    }
+
     use super::*;
 
     fn texts(result: &MCPResult) -> Vec<String> {

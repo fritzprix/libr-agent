@@ -1,6 +1,7 @@
 pub mod context;
 pub mod envelope;
 pub mod execute;
+pub mod lifecycle;
 pub mod output;
 pub mod plugin_env;
 pub mod registry;

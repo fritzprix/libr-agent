@@ -2,7 +2,7 @@
 //! dispatch with its result aggregation (#2825).
 
 use super::command::HookEnv;
-use super::env::{plugin_data_dir_for, prepare_session_env_file};
+use super::env::{plugin_data_dir_for, prepare_cwd_env_file, prepare_session_env_file};
 use super::handler::run_matching_handler;
 use super::matcher::{
     if_condition_matches, matcher_matches, resolve_session_cwd, session_start_source_label,
@@ -63,6 +63,7 @@ impl Drop for HookRunGuard {
 /// first LLM request of a new session sees the wait even when it arrives
 /// before the spawned task starts (#2812 G3.1).
 pub fn spawn_session_start(session_id: &str, source: SessionStartSource) {
+    crate::services::hooks::lifecycle::note_session_start(session_id, source);
     begin_hook_run(session_id);
     let hook_session_id = session_id.to_string();
     tauri::async_runtime::spawn(async move {
@@ -140,6 +141,8 @@ pub struct HookDispatchResult {
     /// processing, a later `continue: true` cannot undo it.
     pub stop_reason: Option<String>,
     pub stops_processing: bool,
+    /// `displayContent` from the last `MessageDisplay` handler that set one.
+    pub display_content: Option<String>,
 }
 
 impl HookDispatchResult {
@@ -174,6 +177,10 @@ impl HookDispatchResult {
             }
         } else if self.reason.is_none() && output.reason.is_some() {
             self.reason = output.reason;
+        }
+
+        if output.display_content.is_some() {
+            self.display_content = output.display_content;
         }
 
         // Claude Code applies one rewrite per call, so the last allowed
@@ -320,17 +327,16 @@ pub async fn dispatch_hook_event_with_sources(
         }
     };
 
-    // `CLAUDE_ENV_FILE` (#2926): only a SessionStart run gets one, and it is
-    // truncated first so a stale file from an earlier run cannot leak values
-    // into this session. Its `NAME=value` lines are applied to later shell
-    // tool calls of the session once the hooks have run. Claude Code also sets
-    // it for `Setup`, `CwdChanged`, and `FileChanged`; LibrAgent does not
-    // implement those events yet (#3005), so `SessionStart` is the whole scope
-    // that exists.
-    let env_file = if event == HookEvent::SessionStart {
-        prepare_session_env_file(session_id)
-    } else {
-        None
+    // `CLAUDE_ENV_FILE` (#2926): `SessionStart` and `CwdChanged` runs get one,
+    // each in its own file. It is truncated first so a stale file from an
+    // earlier run cannot leak values into this session. Its `NAME=value` lines
+    // are applied to later shell tool calls of the session once the hooks have
+    // run. Claude Code also sets it for `Setup` and `FileChanged`, which
+    // LibrAgent does not emit.
+    let env_file = match event {
+        HookEvent::SessionStart => prepare_session_env_file(session_id),
+        HookEvent::CwdChanged => prepare_cwd_env_file(session_id),
+        _ => None,
     };
 
     for record in
@@ -388,7 +394,8 @@ pub async fn dispatch_hook_event_with_sources(
             options,
         };
         for group in groups {
-            if !matcher_matches(group.matcher.as_deref(), matcher_value) {
+            if event.supports_matcher() && !matcher_matches(group.matcher.as_deref(), matcher_value)
+            {
                 continue;
             }
             for handler in &group.handlers {
@@ -419,7 +426,12 @@ pub async fn dispatch_hook_event_with_sources(
         }
     }
     if let Some(path) = env_file {
-        crate::services::hooks::plugin_env::apply_env_file(session_id, &path);
+        use crate::services::hooks::plugin_env::{apply_cwd_env_file, apply_env_file};
+        if event == HookEvent::CwdChanged {
+            apply_cwd_env_file(session_id, &path);
+        } else {
+            apply_env_file(session_id, &path);
+        }
     }
     aggregated
 }

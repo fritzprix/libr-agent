@@ -74,6 +74,8 @@ export function useStatusBarModelConfig() {
             'agent.statusBar.configUpdateError',
             'Failed to update the model configuration.',
           ),
+          // The backend error names the cause, e.g. a PreModelSwitch hook.
+          { description: String(e) },
         );
       }
     },
