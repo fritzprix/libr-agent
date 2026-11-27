@@ -228,7 +228,7 @@ class DetermineStatusTests(unittest.TestCase):
                 [{"name": "Test (macos-15)", "conclusion": "SUCCESS"}]
             )
         )
-        # Older cancelled/failed macOS runs do not hide a newer success.
+        # Older cancelled/failed macOS run does not hide a newer green run.
         self.assertTrue(
             review_queue.has_passed_macos_check(
                 [
@@ -236,21 +236,29 @@ class DetermineStatusTests(unittest.TestCase):
                         "name": "Test (macos-15)",
                         "conclusion": "CANCELLED",
                         "startedAt": "2026-11-27T01:00:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/1",
                     },
                     {
                         "name": "Build (macos-15)",
                         "conclusion": "FAILURE",
                         "startedAt": "2026-11-27T01:00:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/2",
                     },
                     {
                         "name": "Test (macos-15)",
                         "conclusion": "SUCCESS",
                         "startedAt": "2026-11-27T01:05:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/1",
                     },
                     {
                         "name": "Build (macos-15)",
                         "conclusion": "SUCCESS",
                         "startedAt": "2026-11-27T01:06:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/2",
                     },
                 ]
             )
@@ -263,17 +271,23 @@ class DetermineStatusTests(unittest.TestCase):
                         "name": "Test (macos-15)",
                         "conclusion": "SUCCESS",
                         "startedAt": "2026-11-27T01:00:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/1",
                     },
                     {
                         "name": "Build (macos-15)",
                         "conclusion": "SUCCESS",
                         "startedAt": "2026-11-27T01:00:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/2",
                     },
                     {
                         "name": "Test (macos-15)",
                         "status": "IN_PROGRESS",
                         "startedAt": "2026-11-27T01:05:00Z",
                         "completedAt": "0001-01-01T00:00:00Z",
+                        "workflowName": "LibrAgent CI/CD",
+                        "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/1",
                     },
                 ]
             )
@@ -1232,6 +1246,7 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "startedAt": "2026-11-27T01:00:00Z",
                 "completedAt": "2026-11-27T01:01:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/1",
             },
             {
                 "name": "Test (ubuntu-latest)",
@@ -1239,6 +1254,7 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "startedAt": "2026-11-27T01:02:00Z",
                 "completedAt": "2026-11-27T01:03:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/1",
             },
             {
                 "name": "Test (ubuntu-latest)",
@@ -1246,18 +1262,21 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "startedAt": "2026-11-27T01:05:00Z",
                 "completedAt": "2026-11-27T01:07:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/3/job/1",
             },
             {
                 "name": "Test (macos-15)",
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:05:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/3/job/2",
             },
             {
                 "name": "Build (macos-15)",
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:06:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/3/job/3",
             },
         ])
         self.assertEqual(entry["ciFailing"], [])
@@ -1270,16 +1289,84 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "completedAt": "2026-11-27T01:02:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/1",
             },
             {
                 "name": "Test (ubuntu-latest)",
                 "status": "IN_PROGRESS",
                 "startedAt": "2026-11-27T01:05:00Z",
                 "completedAt": "0001-01-01T00:00:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/1",
             },
         ])
         self.assertEqual(entry["ciFailing"], [])
         self.assertEqual(entry["ciPending"], ["Test (ubuntu-latest)"])
+
+    def test_matrix_parent_cancelled_in_old_run_is_not_failing(self) -> None:
+        entry = self._summarize([
+            {
+                "name": "Test",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T07:07:12Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/10/job/1",
+            },
+            {
+                "name": "Build",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T07:07:12Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/10/job/2",
+            },
+            {
+                "name": "Test (ubuntu-latest)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T07:28:38Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/11/job/1",
+            },
+            {
+                "name": "Test (macos-15)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T07:30:01Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/11/job/2",
+            },
+            {
+                "name": "Build (macos-15)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T08:48:06Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/11/job/3",
+            },
+        ])
+        self.assertEqual(entry["ciFailing"], [])
+        self.assertEqual(entry["ciPending"], [])
+        self.assertTrue(review_queue.has_passed_macos_check([
+            {
+                "name": "Test",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T07:07:12Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/10/job/1",
+            },
+            {
+                "name": "Test (macos-15)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T07:30:01Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/11/job/2",
+            },
+            {
+                "name": "Build (macos-15)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T08:48:06Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/11/job/3",
+            },
+        ]))
 
     def test_same_name_in_two_workflows_is_independent(self) -> None:
         entry = self._summarize([
@@ -1288,12 +1375,14 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "conclusion": "FAILURE",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "workflowName": "Loop skill tests",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/30/job/1",
             },
             {
                 "name": "test",
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/31/job/1",
             },
         ])
         self.assertEqual(entry["ciFailing"], ["test"])

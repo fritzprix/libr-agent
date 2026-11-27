@@ -458,18 +458,24 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "conclusion": "CANCELLED",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "completedAt": "2026-11-27T01:01:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/1",
             },
             {
                 "name": "Test",
                 "conclusion": "FAILURE",
                 "startedAt": "2026-11-27T01:02:00Z",
                 "completedAt": "2026-11-27T01:03:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/1",
             },
             {
                 "name": "Test",
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:05:00Z",
                 "completedAt": "2026-11-27T01:07:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/3/job/1",
             },
         ])
         self.assertEqual(entry["failingChecks"], [])
@@ -483,16 +489,48 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "completedAt": "2026-11-27T01:02:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/1/job/1",
             },
             {
                 "name": "Test",
                 "status": "IN_PROGRESS",
                 "startedAt": "2026-11-27T01:05:00Z",
                 "completedAt": "0001-01-01T00:00:00Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/2/job/1",
             },
         ])
         self.assertEqual(entry["failingChecks"], [])
         self.assertEqual(entry["pendingChecks"], ["Test"])
+        self.assertNotEqual(entry["nextAction"], "fix-ci")
+
+    def test_matrix_parent_cancelled_in_old_run_is_not_fix_ci(self):
+        entry = self._summarize([
+            {
+                "name": "Test",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T07:07:12Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/10/job/1",
+            },
+            {
+                "name": "Build",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T07:07:12Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/10/job/2",
+            },
+            {
+                "name": "Test (ubuntu-latest)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T07:28:38Z",
+                "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/11/job/1",
+            },
+        ])
+        self.assertEqual(entry["failingChecks"], [])
+        self.assertEqual(entry["pendingChecks"], [])
         self.assertNotEqual(entry["nextAction"], "fix-ci")
 
     def test_same_name_in_two_workflows_is_independent(self):
@@ -502,12 +540,14 @@ class LatestCheckRunSummarizeTests(unittest.TestCase):
                 "conclusion": "FAILURE",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "workflowName": "Loop skill tests",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/30/job/1",
             },
             {
                 "name": "test",
                 "conclusion": "SUCCESS",
                 "startedAt": "2026-11-27T01:00:00Z",
                 "workflowName": "LibrAgent CI/CD",
+                "detailsUrl": "https://github.com/fritzprix/libr-agent/actions/runs/31/job/1",
             },
         ])
         self.assertEqual(entry["failingChecks"], ["test"])
