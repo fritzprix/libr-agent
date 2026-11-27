@@ -11,14 +11,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# The reader in test_write_succeeds_while_a_reader_holds_the_file_open waits for a
-# blocked rename; a rename that is never blocked is a failure, not a slow test.
-READER_HOLD_TIMEOUT_SECONDS = 10.0
-
 import worker_claims
 import worker_slots
 import worker_state
 from worker_state import Owner
+
+# The reader in test_write_succeeds_while_a_reader_holds_the_file_open waits for a
+# blocked rename; a rename that is never blocked is a failure, not a slow test.
+READER_HOLD_TIMEOUT_SECONDS = 10.0
 
 
 class WorkerStateTest(unittest.TestCase):
@@ -108,6 +108,7 @@ class WorkerStateTest(unittest.TestCase):
         # different case and still raises (test_write_fails_when_the_file_never_closes).
         worker_state.atomic_write_json(self.claims, {"a": 1})
         blocked = threading.Event()
+        reading = threading.Event()
         reader_problems: list[str] = []
         real_replace = os.replace
 
@@ -121,7 +122,10 @@ class WorkerStateTest(unittest.TestCase):
         def read_once():
             try:
                 with self.claims.open("rb") as handle:
+                    reading.set()
                     json.load(handle)  # a partial file would raise here
+                    # Close only after a rename has been blocked, so a passing write
+                    # proves the retry waited for this reader.
                     if not blocked.wait(READER_HOLD_TIMEOUT_SECONDS):
                         reader_problems.append("no rename was blocked while the file was open")
             except BaseException as e:  # reported by the assertions below
@@ -130,6 +134,7 @@ class WorkerStateTest(unittest.TestCase):
         reader = threading.Thread(target=read_once)
         reader.start()
         try:
+            self.assertTrue(reading.wait(5), "the reader never opened the file")
             with patch.object(worker_state.os, "replace", replace_reporting_the_block):
                 worker_state.atomic_write_json(self.claims, {"a": 2})
         finally:
