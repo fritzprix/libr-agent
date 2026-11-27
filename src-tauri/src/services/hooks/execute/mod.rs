@@ -14,10 +14,12 @@ mod matcher;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) use dispatch::RecordingHookDispatcher;
 pub use dispatch::{
     dispatch_hook_event, dispatch_hook_event_in, dispatch_hook_event_with_sources,
     notify_stub_event, run_session_start, run_session_start_in, run_session_start_with_sources,
-    spawn_session_start, HookDispatchResult,
+    spawn_session_start, DefaultHookDispatcher, HookDispatchResult, HookDispatcher,
 };
 pub use matcher::matcher_matches;
 pub(super) use matcher::resolve_session_cwd;

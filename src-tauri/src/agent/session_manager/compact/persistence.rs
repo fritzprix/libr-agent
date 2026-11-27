@@ -16,10 +16,74 @@ use tokio::sync::RwLock;
 const MAX_COMPACTION_SUMMARY_RETRY_ATTEMPTS: u32 = 3;
 
 pub(super) struct CompactSummaryPersistenceContext<'a> {
-    pub active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+    /// The fields the testable path needs; declared once, in the data type.
+    pub data: CompactSummaryPersistenceData<'a>,
+    /// Production-only handles used to build the Tauri runtime.
     pub app_handle: &'a AppHandle,
     pub session_repo: &'a Arc<dyn SessionRepository>,
     pub proxy_manager: &'a Arc<MCPServiceProxyManager>,
+}
+
+/// Injectable runtime effects for compaction persistence so production uses
+/// Tauri `AppHandle` while tests can drive the real path without optional skip branches.
+#[async_trait::async_trait]
+pub(super) trait CompactPersistenceRuntime: Send + Sync {
+    fn emit_compact_finished(
+        &self,
+        session_id: String,
+        session_name: Option<String>,
+        phase: CompactStatePhase,
+        error: Option<String>,
+    ) -> Result<(), String>;
+    fn spawn_resume_completion(&self, session_id: &str, log_label: &'static str);
+    async fn start_workflow_from_pending_queue(&self, session_id: &str) -> Result<(), String>;
+}
+
+struct TauriCompactPersistenceRuntime<'a> {
+    session_repo: &'a Arc<dyn SessionRepository>,
+    active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &'a Arc<MCPServiceProxyManager>,
+    app_handle: &'a AppHandle,
+}
+
+#[async_trait::async_trait]
+impl CompactPersistenceRuntime for TauriCompactPersistenceRuntime<'_> {
+    fn emit_compact_finished(
+        &self,
+        session_id: String,
+        session_name: Option<String>,
+        phase: CompactStatePhase,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        let dispatcher = TauriEventDispatcher::from_handle(self.app_handle);
+        dispatcher.emit_compact_finished(session_id, session_name, phase, error)
+    }
+
+    fn spawn_resume_completion(&self, session_id: &str, log_label: &'static str) {
+        spawn_resume_completion(
+            self.session_repo,
+            self.active_sessions,
+            self.proxy_manager,
+            self.app_handle,
+            session_id,
+            log_label,
+        );
+    }
+
+    async fn start_workflow_from_pending_queue(&self, session_id: &str) -> Result<(), String> {
+        crate::agent::workflow::compact_pending::start_workflow_from_pending_queue(
+            self.session_repo,
+            self.active_sessions,
+            self.proxy_manager,
+            self.app_handle,
+            session_id,
+        )
+        .await
+    }
+}
+
+pub(super) struct CompactSummaryPersistenceData<'a> {
+    pub active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
     pub session_id: &'a str,
     pub session_name: Option<String>,
     pub to_id: String,
@@ -192,25 +256,37 @@ pub(super) async fn retry_invalid_compact_summary_if_possible(
 pub(super) async fn abort_empty_delta_compaction_and_resume(
     context: CompactSummaryPersistenceContext<'_>,
 ) -> Result<CompactResponseOutcome, String> {
+    let CompactSummaryPersistenceContext {
+        data,
+        app_handle,
+        session_repo,
+        proxy_manager,
+    } = context;
+    let active_sessions = data.active_sessions;
+    let session_id = data.session_id;
+    let to_id = data.to_id;
+    let session_name = data.session_name;
+    let compacted_delta_count = data.compacted_delta_count;
+
     log::warn!(
         "⏭️ Aborting empty-delta compaction without persist: session={}, to_id={}, compacted_delta_count={}",
-        context.session_id,
-        context.to_id,
-        context.compacted_delta_count
+        session_id,
+        to_id,
+        compacted_delta_count
     );
 
     let resume_action = {
         let compaction = {
-            let active = context.active_sessions.read().await;
+            let active = active_sessions.read().await;
             active
-                .get(context.session_id)
+                .get(session_id)
                 .map(|session| session.compaction.clone())
         };
         if let Some(compaction) = compaction {
             compaction
                 .push_telemetry_event(CompactionTelemetryEventDraft {
                     phase: CompactionTelemetryPhase::Failed,
-                    to_id: Some(context.to_id.clone()),
+                    to_id: Some(to_id.clone()),
                     condensed_count: Some(0),
                     error: Some(
                         crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR
@@ -234,39 +310,39 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
 
     // Still emit Failed so UI clears compacting/awaiting flags; frontend silences
     // the toast for EMPTY_DELTA_NOOP_ERROR (intentional skip, not a user error).
-    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
+    let dispatcher = TauriEventDispatcher::from_handle(app_handle);
     if let Err(error) = dispatcher.emit_compact_finished(
-        context.session_id.to_string(),
-        context.session_name,
+        session_id.to_string(),
+        session_name,
         CompactStatePhase::Failed,
         Some(crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string()),
     ) {
         log::warn!(
             "Failed to emit compact finished state for session {} after empty-delta abort: {}",
-            context.session_id,
+            session_id,
             error
         );
     }
 
-    let session_repo = context.session_repo.clone();
-    let active_sessions = context.active_sessions.clone();
-    let proxy_manager = context.proxy_manager.clone();
-    let app_handle = context.app_handle.clone();
-    let session_id = context.session_id.to_string();
+    let resume_repo = session_repo.clone();
+    let resume_active_sessions = active_sessions.clone();
+    let resume_proxy_manager = proxy_manager.clone();
+    let resume_app_handle = app_handle.clone();
+    let resume_session_id = session_id.to_string();
     crate::agent::workflow::continue_pending_after_compaction(
-        context.session_repo,
-        context.active_sessions,
-        context.proxy_manager,
-        context.app_handle,
-        context.session_id,
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id,
         resume_action,
         || {
             spawn_resume_completion(
-                &session_repo,
-                &active_sessions,
-                &proxy_manager,
-                &app_handle,
-                &session_id,
+                &resume_repo,
+                &resume_active_sessions,
+                &resume_proxy_manager,
+                &resume_app_handle,
+                &resume_session_id,
                 "LLM completion after empty-delta compaction abort",
             );
         },
@@ -278,6 +354,28 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
 
 pub(super) async fn persist_compact_summary_and_resume(
     context: CompactSummaryPersistenceContext<'_>,
+    summary: String,
+) -> Result<CompactResponseOutcome, String> {
+    let CompactSummaryPersistenceContext {
+        data,
+        app_handle,
+        session_repo,
+        proxy_manager,
+    } = context;
+    let runtime = TauriCompactPersistenceRuntime {
+        session_repo,
+        active_sessions: data.active_sessions,
+        proxy_manager,
+        app_handle,
+    };
+    let hook_dispatcher = crate::services::hooks::execute::DefaultHookDispatcher;
+    persist_compact_summary_and_resume_with_runtime(data, &runtime, &hook_dispatcher, summary).await
+}
+
+pub(super) async fn persist_compact_summary_and_resume_with_runtime(
+    context: CompactSummaryPersistenceData<'_>,
+    runtime: &dyn CompactPersistenceRuntime,
+    hook_dispatcher: &dyn crate::services::hooks::execute::HookDispatcher,
     summary: String,
 ) -> Result<CompactResponseOutcome, String> {
     let record = CompactContextRecord {
@@ -342,8 +440,7 @@ pub(super) async fn persist_compact_summary_and_resume(
             CompactionResumeAction::ResumeCompletion => "resume_completion",
         }
     );
-    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
-    if let Err(error) = dispatcher.emit_compact_finished(
+    if let Err(error) = runtime.emit_compact_finished(
         context.session_id.to_string(),
         context.session_name,
         CompactStatePhase::Succeeded,
@@ -356,41 +453,27 @@ pub(super) async fn persist_compact_summary_and_resume(
         );
     }
 
-    let session_repo = context.session_repo.clone();
-    let active_sessions = context.active_sessions.clone();
-    let proxy_manager = context.proxy_manager.clone();
-    let app_handle = context.app_handle.clone();
-    let session_id = context.session_id.to_string();
     // #3007: the `PostCompact` matcher value is the compaction trigger
     // ("auto" / "manual"), matching the `PreCompact` convention: a resumed
     // completion means the compaction was auto-triggered by context
     // pressure, a bare settle means the user asked for it. Computed here
-    // because `resume_action` is moved into `continue_pending_after_compaction`.
+    // because `resume_action` is moved into `continue_pending_after_compaction_with`.
     let post_compact_trigger = match &resume_action {
         CompactionResumeAction::ResumeCompletion => "auto",
         CompactionResumeAction::Nothing => "manual",
     };
-    crate::agent::workflow::continue_pending_after_compaction(
-        context.session_repo,
+    crate::agent::workflow::compact_pending::continue_pending_after_compaction_with(
         context.active_sessions,
-        context.proxy_manager,
-        context.app_handle,
         context.session_id,
         resume_action,
         || {
-            spawn_resume_completion(
-                &session_repo,
-                &active_sessions,
-                &proxy_manager,
-                &app_handle,
-                &session_id,
-                "LLM completion",
-            );
+            runtime.spawn_resume_completion(context.session_id, "LLM completion");
         },
+        || runtime.start_workflow_from_pending_queue(context.session_id),
     )
     .await?;
 
-    crate::services::hooks::spawn_session_start(
+    hook_dispatcher.spawn_session_start(
         context.session_id,
         crate::services::hooks::SessionStartSource::Compact,
     );
@@ -403,13 +486,141 @@ pub(super) async fn persist_compact_summary_and_resume(
     );
     post_compact_params.compact_source = Some(post_compact_trigger.to_string());
     post_compact_params.compact_trigger = Some(post_compact_trigger.to_string());
-    let _ = crate::services::hooks::dispatch_hook_event(
-        crate::services::hooks::HookEvent::PostCompact,
-        post_compact_trigger,
-        &post_compact_params,
-        context.session_id,
-    )
-    .await;
+    let _ = hook_dispatcher
+        .dispatch(
+            crate::services::hooks::HookEvent::PostCompact,
+            post_compact_trigger,
+            &post_compact_params,
+            context.session_id,
+        )
+        .await;
 
     Ok(CompactResponseOutcome { retried: false })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::context::registry::ContextRegistry;
+    use crate::agent::lifecycle::creation::test_support::init_isolated_test_env;
+    use crate::agent::state::CompactionKind;
+    use crate::repositories::{SessionMetadata, SqliteSessionRepository};
+    use crate::services::hooks::execute::RecordingHookDispatcher;
+    use crate::services::hooks::HookEvent;
+
+    #[derive(Default)]
+    struct RecordingCompactRuntime {
+        finished_phases: std::sync::Mutex<Vec<CompactStatePhase>>,
+        resumed_sessions: std::sync::Mutex<Vec<String>>,
+        started_pending_sessions: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl CompactPersistenceRuntime for RecordingCompactRuntime {
+        fn emit_compact_finished(
+            &self,
+            _session_id: String,
+            _session_name: Option<String>,
+            phase: CompactStatePhase,
+            _error: Option<String>,
+        ) -> Result<(), String> {
+            self.finished_phases
+                .lock()
+                .expect("finished_phases lock")
+                .push(phase);
+            Ok(())
+        }
+
+        fn spawn_resume_completion(&self, session_id: &str, _log_label: &'static str) {
+            self.resumed_sessions
+                .lock()
+                .expect("resumed_sessions lock")
+                .push(session_id.to_string());
+        }
+
+        async fn start_workflow_from_pending_queue(&self, session_id: &str) -> Result<(), String> {
+            self.started_pending_sessions
+                .lock()
+                .expect("started_pending_sessions lock")
+                .push(session_id.to_string());
+            Ok(())
+        }
+    }
+
+    async fn run_compaction_with_kind(
+        kind: CompactionKind,
+        expected_trigger: &str,
+        expect_resume: bool,
+    ) {
+        let _lock = crate::state::lock_test_global_state().await;
+        let env = init_isolated_test_env().await;
+        let session_repo: Arc<dyn SessionRepository> =
+            Arc::new(SqliteSessionRepository::new(env.db.as_ref().clone()));
+
+        let sid = format!("compact-hook-{}-{}", expected_trigger, uuid::Uuid::new_v4());
+        let session = SessionMetadata::test_fixture(&sid);
+        session_repo
+            .upsert_session(&session)
+            .await
+            .expect("insert test session");
+        let agent_session = AgentSession::new(session, Arc::new(ContextRegistry::new()), None);
+        agent_session
+            .compaction
+            .try_begin(kind, Some("msg-1".to_string()), 1_000)
+            .await;
+
+        let active_sessions = Arc::new(RwLock::new(HashMap::from([(sid.clone(), agent_session)])));
+        let runtime = RecordingCompactRuntime::default();
+        let hooks = RecordingHookDispatcher::new();
+
+        persist_compact_summary_and_resume_with_runtime(
+            CompactSummaryPersistenceData {
+                active_sessions: &active_sessions,
+                session_id: &sid,
+                session_name: Some("compact-test".to_string()),
+                to_id: "msg-1".to_string(),
+                compacted_delta_count: 1,
+                telemetry_phase: CompactionTelemetryPhase::Succeeded,
+                epoch_path: None,
+                fallback_path: None,
+                raw_output_path: None,
+            },
+            &runtime,
+            &hooks,
+            "compacted summary".to_string(),
+        )
+        .await
+        .expect("persist_compact_summary_and_resume should succeed without AppHandle");
+
+        assert!(matches!(
+            runtime
+                .finished_phases
+                .lock()
+                .expect("finished_phases")
+                .as_slice(),
+            [CompactStatePhase::Succeeded]
+        ));
+        assert_eq!(
+            !runtime
+                .resumed_sessions
+                .lock()
+                .expect("resumed_sessions")
+                .is_empty(),
+            expect_resume
+        );
+
+        let observed = hooks.events_for_session(&sid);
+        assert!(
+            observed.iter().any(|entry| {
+                entry.event == HookEvent::PostCompact && entry.matcher_value == expected_trigger
+            }),
+            "expected PostCompact with trigger '{expected_trigger}', observed: {observed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn persist_compact_summary_and_resume_dispatches_post_compact_for_auto_and_manual() {
+        run_compaction_with_kind(CompactionKind::Preflight, "auto", true).await;
+        run_compaction_with_kind(CompactionKind::Manual, "manual", false).await;
+    }
 }

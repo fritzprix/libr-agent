@@ -1,4 +1,6 @@
-use super::persistence::{spawn_resume_completion, CompactSummaryPersistenceContext};
+use super::persistence::{
+    spawn_resume_completion, CompactSummaryPersistenceContext, CompactSummaryPersistenceData,
+};
 use super::{complete_compaction_with_hard_fallback, dump_partial_compaction_output_if_any};
 use crate::agent::compact_recovery::handle_compact_error_state_with_raw_output;
 use crate::agent::events::AgentEventDispatcher;
@@ -157,18 +159,20 @@ pub async fn handle_compact_error_with_dispatcher(
             if let Some(compact_event) = compaction.current_request().await {
                 return complete_compaction_with_hard_fallback(
                     CompactSummaryPersistenceContext {
-                        active_sessions,
+                        data: CompactSummaryPersistenceData {
+                            active_sessions,
+                            session_id: &session_id,
+                            session_name: Some(session_name),
+                            to_id: compact_event.to_id.clone(),
+                            compacted_delta_count: compact_event.compacted_delta_count,
+                            telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
+                            epoch_path: None,
+                            fallback_path: None,
+                            raw_output_path: raw_output_path.clone(),
+                        },
                         app_handle,
                         session_repo,
                         proxy_manager,
-                        session_id: &session_id,
-                        session_name: Some(session_name),
-                        to_id: compact_event.to_id.clone(),
-                        compacted_delta_count: compact_event.compacted_delta_count,
-                        telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
-                        epoch_path: None,
-                        fallback_path: None,
-                        raw_output_path: raw_output_path.clone(),
                     },
                     &error.display_message,
                     Some(&snapshot),

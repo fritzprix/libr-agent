@@ -15,5 +15,5 @@ pub use status::{
     end_fence_refused_wake, end_fence_refused_wake_with_dispatcher, promote_queued_session_to_busy,
     promote_queued_session_to_busy_with_dispatcher, record_session_error_with_dispatcher,
     update_session_status, update_session_status_with_dispatcher,
-    update_session_status_with_reason,
+    update_session_status_with_reason, update_session_status_with_reason_and_dispatcher,
 };

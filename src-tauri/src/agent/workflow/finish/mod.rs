@@ -324,11 +324,12 @@ async fn run_stop_failure(
 
 /// Fire-and-forget `SubagentStart` for a child session (#3007 / #3071 G1.3).
 /// No-op when `parent_session_id` is absent. Matcher value is the agent type.
-pub fn spawn_subagent_start(
+pub fn spawn_subagent_start_with_dispatcher(
     session_id: &str,
     parent_session_id: &str,
     assistant_id: Option<&str>,
     session_name: Option<&str>,
+    hook_dispatcher: Arc<dyn crate::services::hooks::execute::HookDispatcher>,
 ) {
     let child_session_id = session_id.to_string();
     let parent_id = parent_session_id.to_string();
@@ -354,13 +355,14 @@ pub fn spawn_subagent_start(
         if !matcher_value.is_empty() {
             params.agent_type = Some(matcher_value.clone());
         }
-        let _ = crate::services::hooks::dispatch_hook_event(
-            crate::services::hooks::HookEvent::SubagentStart,
-            &matcher_value,
-            &params,
-            &child_session_id,
-        )
-        .await;
+        let _ = hook_dispatcher
+            .dispatch(
+                crate::services::hooks::HookEvent::SubagentStart,
+                &matcher_value,
+                &params,
+                &child_session_id,
+            )
+            .await;
     });
 }
 

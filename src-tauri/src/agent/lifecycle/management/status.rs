@@ -38,10 +38,29 @@ pub async fn update_session_status_with_reason(
     reason: &str,
 ) -> Result<(), String> {
     let dispatcher = TauriEventDispatcher::new(app_handle);
-    apply_session_status(
+    update_session_status_with_reason_and_dispatcher(
         session_repo,
         active_sessions,
         &dispatcher,
+        session_id,
+        status,
+        reason,
+    )
+    .await
+}
+
+pub async fn update_session_status_with_reason_and_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    status: SessionStatus,
+    reason: &str,
+) -> Result<(), String> {
+    apply_session_status(
+        session_repo,
+        active_sessions,
+        dispatcher,
         session_id,
         status,
         Some(reason),

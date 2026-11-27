@@ -11,12 +11,69 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-/// Parameters for session creation
-pub struct CreateSessionParams {
-    pub session_repo: Arc<dyn SessionRepository>,
-    pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+/// Parameters for session creation: the fields the testable core needs, plus
+/// the production handles used to build the Tauri runtime.
+pub(crate) struct CreateSessionParams {
+    pub core: CreateSessionCoreParams,
     pub proxy_manager: Arc<MCPServiceProxyManager>,
     pub app_handle: AppHandle,
+}
+
+/// Injectable runtime effects for session creation so production uses Tauri
+/// `AppHandle` while tests can drive the full creation path without one.
+#[async_trait::async_trait]
+pub(crate) trait SessionCreationRuntime: Send + Sync {
+    fn spawn_docker_provisioning(&self, session: SessionMetadata, delete_session_on_failure: bool);
+    async fn spawn_create_proxy(
+        &self,
+        session_id: String,
+        tool_ids: Vec<String>,
+        mcp_server_ids: Vec<String>,
+    );
+}
+
+struct TauriSessionCreationRuntime {
+    session_repo: Arc<dyn SessionRepository>,
+    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: Arc<MCPServiceProxyManager>,
+    app_handle: AppHandle,
+}
+
+#[async_trait::async_trait]
+impl SessionCreationRuntime for TauriSessionCreationRuntime {
+    fn spawn_docker_provisioning(&self, session: SessionMetadata, delete_session_on_failure: bool) {
+        crate::services::docker_provisioning::spawn_docker_provisioning(
+            crate::services::docker_provisioning::DockerProvisioningDeps::tauri(
+                Arc::clone(&self.session_repo),
+                Arc::clone(&self.active_sessions),
+                Arc::clone(&self.proxy_manager),
+                self.app_handle.clone(),
+            ),
+            session,
+            delete_session_on_failure,
+        );
+    }
+
+    async fn spawn_create_proxy(
+        &self,
+        session_id: String,
+        tool_ids: Vec<String>,
+        mcp_server_ids: Vec<String>,
+    ) {
+        crate::agent::lifecycle::spawn_create_proxy_for_session(
+            Arc::clone(&self.proxy_manager),
+            self.app_handle.clone(),
+            session_id,
+            tool_ids,
+            mcp_server_ids,
+        )
+        .await;
+    }
+}
+
+pub(crate) struct CreateSessionCoreParams {
+    pub session_repo: Arc<dyn SessionRepository>,
+    pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     pub context_registry: Arc<ContextRegistry>,
     pub session_id: String,
     pub name: Option<String>,
@@ -119,12 +176,31 @@ pub async fn resolve_workspace_override(
 }
 
 /// Create or update a session in the database
-pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
+pub(crate) async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
     let CreateSessionParams {
-        session_repo,
-        active_sessions,
+        core,
         proxy_manager,
         app_handle,
+    } = params;
+    let runtime: Arc<dyn SessionCreationRuntime> = Arc::new(TauriSessionCreationRuntime {
+        session_repo: Arc::clone(&core.session_repo),
+        active_sessions: Arc::clone(&core.active_sessions),
+        proxy_manager,
+        app_handle,
+    });
+    let hook_dispatcher: Arc<dyn crate::services::hooks::execute::HookDispatcher> =
+        Arc::new(crate::services::hooks::execute::DefaultHookDispatcher);
+    create_session_with_runtime(core, runtime, hook_dispatcher).await
+}
+
+pub(crate) async fn create_session_with_runtime(
+    params: CreateSessionCoreParams,
+    runtime: Arc<dyn SessionCreationRuntime>,
+    hook_dispatcher: Arc<dyn crate::services::hooks::execute::HookDispatcher>,
+) -> Result<SessionMetadata, String> {
+    let CreateSessionCoreParams {
+        session_repo,
+        active_sessions,
         context_registry,
         session_id,
         name,
@@ -252,16 +328,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     let spawn_session_start_hooks = session.status != SessionStatus::Provisioning;
 
     if session.workspace_isolation == WorkspaceIsolationMode::Docker {
-        crate::services::docker_provisioning::spawn_docker_provisioning(
-            crate::services::docker_provisioning::DockerProvisioningDeps {
-                session_repo: Arc::clone(&session_repo),
-                active_sessions: Arc::clone(&active_sessions),
-                proxy_manager: Arc::clone(&proxy_manager),
-                app_handle: app_handle.clone(),
-            },
-            session.clone(),
-            false,
-        );
+        runtime.spawn_docker_provisioning(session.clone(), false);
     }
 
     // SSOT: MCP activation is session → assistant → mcpServerIds (not create-request payload).
@@ -296,21 +363,16 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     drop(active);
 
     // MCP proxy creation must not block session create — same soft-wait model as resume/open.
-    crate::agent::lifecycle::spawn_create_proxy_for_session(
-        Arc::clone(&proxy_manager),
-        app_handle.clone(),
-        session_id.clone(),
-        tool_ids,
-        mcp_server_ids,
-    )
-    .await;
+    runtime
+        .spawn_create_proxy(session_id.clone(), tool_ids, mcp_server_ids)
+        .await;
 
     log::info!("Created agent session: {}", session_id);
 
     if spawn_session_start_hooks {
         // #2812 G3.1: the marker is registered here, synchronously, before
         // the spawn — the first prompt of this session waits on it.
-        crate::services::hooks::spawn_session_start(
+        hook_dispatcher.spawn_session_start(
             &session_id,
             crate::services::hooks::SessionStartSource::Startup,
         );
@@ -318,11 +380,12 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         if let Some(parent_id) = session.parent_session_id.as_deref() {
             // #3007 / #3071 G1.3: shared fire-and-forget SubagentStart helper
             // (Docker children call the same helper after provisioning).
-            crate::agent::workflow::finish::spawn_subagent_start(
+            crate::agent::workflow::finish::spawn_subagent_start_with_dispatcher(
                 &session_id,
                 parent_id,
                 session.assistant_id.as_deref(),
                 session.name.as_deref(),
+                Arc::clone(&hook_dispatcher),
             );
         }
     }
@@ -335,4 +398,170 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     );
 
     Ok(session)
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use crate::agent::events::{AgentEvent, AgentEventDispatcher};
+    use crate::agent::llm::types::{CompactStateEvent, CompletionCancelRequest};
+    use crate::mcp::MCPServiceProxyManager;
+    use crate::repositories::{
+        SqliteAssistantRepository, SqliteCompactContextRepository, SqliteMCPServerRepository,
+        SqlitePlanningRepository, SqliteSettingsRepository,
+    };
+    use sea_orm::Database;
+    use sea_orm_migration::MigratorTrait;
+    use std::sync::Arc;
+
+    pub(crate) struct IsolatedTestEnv {
+        pub db: Arc<sea_orm::DatabaseConnection>,
+        pub proxy_manager: Arc<MCPServiceProxyManager>,
+        pub _temp_dir: tempfile::TempDir,
+    }
+
+    pub(crate) async fn init_isolated_test_env() -> IsolatedTestEnv {
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("run migrations");
+        crate::state::set_settings_repository(SqliteSettingsRepository::new(db.clone()));
+        crate::state::set_compact_context_repository(SqliteCompactContextRepository::new(
+            db.clone(),
+        ));
+        crate::state::set_assistant_repository(SqliteAssistantRepository::new(db.clone()));
+        crate::state::set_mcp_server_repository(SqliteMCPServerRepository::new(db.clone()));
+        crate::state::set_planning_repository(SqlitePlanningRepository::new(db.clone()));
+
+        let temp_dir = tempfile::tempdir().expect("create isolated test temp dir");
+        let session_manager = Arc::new(
+            crate::session::SessionManager::new_with_base_dir(temp_dir.path().to_path_buf())
+                .expect("isolated SessionManager"),
+        );
+        let db = Arc::new(db);
+        let proxy_manager = Arc::new(MCPServiceProxyManager::new(
+            Arc::clone(&db),
+            session_manager,
+        ));
+        IsolatedTestEnv {
+            db,
+            proxy_manager,
+            _temp_dir: temp_dir,
+        }
+    }
+
+    #[derive(Default)]
+    pub(crate) struct RecordingEventDispatcher {
+        pub agent_events: std::sync::Mutex<Vec<AgentEvent>>,
+        pub compact_events: std::sync::Mutex<Vec<CompactStateEvent>>,
+    }
+
+    impl AgentEventDispatcher for RecordingEventDispatcher {
+        fn emit_agent_event(&self, event: AgentEvent) -> Result<(), String> {
+            self.agent_events
+                .lock()
+                .expect("agent_events lock")
+                .push(event);
+            Ok(())
+        }
+
+        fn emit_compact_state(&self, event: CompactStateEvent) -> Result<(), String> {
+            self.compact_events
+                .lock()
+                .expect("compact_events lock")
+                .push(event);
+            Ok(())
+        }
+
+        fn emit_completion_cancel(&self, _request: CompletionCancelRequest) -> Result<(), String> {
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::init_isolated_test_env;
+    use super::*;
+    use crate::repositories::InMemorySessionRepository;
+    use crate::services::hooks::execute::RecordingHookDispatcher;
+    use crate::services::hooks::HookEvent;
+    use std::time::Duration;
+
+    #[derive(Default)]
+    struct RecordingCreationRuntime {
+        proxy_calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl SessionCreationRuntime for RecordingCreationRuntime {
+        fn spawn_docker_provisioning(
+            &self,
+            _session: SessionMetadata,
+            _delete_session_on_failure: bool,
+        ) {
+        }
+
+        async fn spawn_create_proxy(
+            &self,
+            session_id: String,
+            _tool_ids: Vec<String>,
+            _mcp_server_ids: Vec<String>,
+        ) {
+            self.proxy_calls
+                .lock()
+                .expect("proxy_calls lock")
+                .push(session_id);
+        }
+    }
+
+    #[tokio::test]
+    async fn create_session_dispatches_subagent_start_for_child_session() {
+        let _lock = crate::state::lock_test_global_state().await;
+        let _env = init_isolated_test_env().await;
+        let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+        let context_registry = Arc::new(ContextRegistry::new());
+        let child_id = format!("child-create-{}", uuid::Uuid::new_v4());
+
+        let runtime = Arc::new(RecordingCreationRuntime::default());
+        let hooks = Arc::new(RecordingHookDispatcher::new());
+
+        let mut agent_config = crate::agent::AgentConfig::default();
+        agent_config.parent_session_id = Some("parent-session".to_string());
+
+        let created = create_session_with_runtime(
+            CreateSessionCoreParams {
+                session_repo,
+                active_sessions,
+                context_registry,
+                session_id: child_id.clone(),
+                name: Some("worker-child".to_string()),
+                model: Some("gpt-4".to_string()),
+                provider: Some("openai".to_string()),
+                agent_config,
+                workspace_isolation: WorkspaceIsolationMode::default(),
+                docker_config: None,
+            },
+            runtime.clone(),
+            hooks.clone(),
+        )
+        .await
+        .expect("create_session should succeed without AppHandle");
+
+        assert_eq!(created.id, child_id);
+        assert_eq!(
+            runtime.proxy_calls.lock().expect("proxy_calls").as_slice(),
+            &[child_id.clone()]
+        );
+        let observed = hooks
+            .wait_for(&child_id, HookEvent::SubagentStart, Duration::from_secs(2))
+            .await
+            .expect("SubagentStart must be dispatched for newly created child session");
+        assert_eq!(observed.event, HookEvent::SubagentStart);
+        assert_eq!(observed.session_id, child_id);
+        assert_eq!(observed.matcher_value, "worker-child");
+    }
 }

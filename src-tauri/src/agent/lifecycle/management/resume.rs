@@ -137,12 +137,12 @@ pub async fn resume_session(
     {
         if session.status == SessionStatus::Provisioning {
             crate::services::docker_provisioning::ensure_provisioning_task_for_session(
-                &crate::services::docker_provisioning::DockerProvisioningDeps {
-                    session_repo: Arc::clone(session_repo),
-                    active_sessions: Arc::clone(active_sessions),
-                    proxy_manager: Arc::clone(proxy_manager),
-                    app_handle: app_handle.clone(),
-                },
+                &crate::services::docker_provisioning::DockerProvisioningDeps::tauri(
+                    Arc::clone(session_repo),
+                    Arc::clone(active_sessions),
+                    Arc::clone(proxy_manager),
+                    app_handle.clone(),
+                ),
                 &session,
             )
             .await?;

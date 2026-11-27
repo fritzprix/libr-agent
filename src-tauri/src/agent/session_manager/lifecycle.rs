@@ -40,18 +40,20 @@ impl AgentSessionManager {
         docker_config: Option<crate::models::workspace_isolation::DockerWorkspaceConfig>,
     ) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
-            session_repo,
-            active_sessions: self.active_sessions.clone(),
+            core: crate::agent::lifecycle::CreateSessionCoreParams {
+                session_repo,
+                active_sessions: self.active_sessions.clone(),
+                context_registry: self.context_registry.clone(),
+                session_id,
+                name,
+                model,
+                provider,
+                agent_config,
+                workspace_isolation,
+                docker_config,
+            },
             proxy_manager: self.proxy_manager.clone(),
             app_handle: self.app_handle.clone(),
-            context_registry: self.context_registry.clone(),
-            session_id,
-            name,
-            model,
-            provider,
-            agent_config,
-            workspace_isolation,
-            docker_config,
         })
         .await
     }
@@ -144,12 +146,12 @@ impl AgentSessionManager {
         .await?;
 
         crate::services::docker_provisioning::recover_provisioning_sessions(
-            &crate::services::docker_provisioning::DockerProvisioningDeps {
-                session_repo: Arc::clone(&self.session_repo),
-                active_sessions: Arc::clone(&self.active_sessions),
-                proxy_manager: Arc::clone(&self.proxy_manager),
-                app_handle: self.app_handle.clone(),
-            },
+            &crate::services::docker_provisioning::DockerProvisioningDeps::tauri(
+                Arc::clone(&self.session_repo),
+                Arc::clone(&self.active_sessions),
+                Arc::clone(&self.proxy_manager),
+                self.app_handle.clone(),
+            ),
         )
         .await
     }
