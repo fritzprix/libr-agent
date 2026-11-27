@@ -9,6 +9,7 @@ pub mod request_layout;
 pub mod response;
 pub(crate) mod response_admission;
 pub(crate) mod response_circuit_breaker;
+mod response_display;
 pub(crate) mod response_persist;
 pub(crate) mod response_recovery;
 pub mod rust_executor;

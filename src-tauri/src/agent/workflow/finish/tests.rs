@@ -612,6 +612,7 @@ fn evaluate_stop_hook_outcome_continues_up_to_cap_then_settles() {
                 updated_input: None,
                 stop_reason: None,
                 stops_processing: false,
+                display_content: None,
             },
         );
         assert_eq!(
@@ -634,6 +635,7 @@ fn evaluate_stop_hook_outcome_continues_up_to_cap_then_settles() {
             updated_input: None,
             stop_reason: None,
             stops_processing: false,
+            display_content: None,
         },
     );
     assert_eq!(
@@ -662,6 +664,7 @@ fn stop_hook_continue_false_settles_with_user_visible_reason_even_with_block() {
             updated_input: None,
             stop_reason: Some("budget exhausted".to_string()),
             stops_processing: true,
+            display_content: None,
         },
     );
     assert_eq!(

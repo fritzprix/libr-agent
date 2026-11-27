@@ -20,6 +20,7 @@ mod dispatch;
 mod events;
 mod http;
 mod http_limits;
+mod lifecycle;
 mod matcher;
 mod session_plugins;
 

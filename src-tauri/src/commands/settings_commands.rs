@@ -53,8 +53,40 @@ fn apply_system_settings_side_effects(value: &Value) {
     });
 }
 
+/// Run the `ConfigChange` hooks before app settings change (#3008). `Err`
+/// keeps the settings as they are. Rewriting a stored value is not a change.
+async fn guard_config_change(changes: &[(&str, Option<&Value>)]) -> Result<(), String> {
+    use crate::services::hooks::lifecycle::{config_change, HookSources};
+
+    let repo = get_settings_repository();
+    let mut changed = false;
+    for (key, next) in changes {
+        let current = repo
+            .get(key)
+            .await
+            .map_err(|e| format!("Failed to get setting: {}", e))?;
+        if is_setting_change(current.as_ref().map(|model| model.value.as_str()), *next) {
+            changed = true;
+            break;
+        }
+    }
+    match HookSources::global() {
+        Some(sources) if changed => config_change(&sources).await,
+        _ => Ok(()),
+    }
+}
+
+/// Whether storing `next` (`None` deletes) would change the `stored` JSON text.
+fn is_setting_change(stored: Option<&str>, next: Option<&Value>) -> bool {
+    let stored = stored.map(|raw| {
+        serde_json::from_str::<Value>(raw).unwrap_or_else(|_| Value::String(raw.to_string()))
+    });
+    stored.as_ref() != next
+}
+
 #[command]
 pub async fn set_setting(key: String, value: Value) -> Result<SettingDto, String> {
+    guard_config_change(&[(key.as_str(), Some(&value))]).await?;
     let repo = get_settings_repository();
     let model = repo
         .set(&key, value)
@@ -70,6 +102,11 @@ pub async fn set_setting(key: String, value: Value) -> Result<SettingDto, String
 
 #[command]
 pub async fn update_settings(settings: HashMap<String, Value>) -> Result<Vec<SettingDto>, String> {
+    let changes: Vec<(&str, Option<&Value>)> = settings
+        .iter()
+        .map(|(key, value)| (key.as_str(), Some(value)))
+        .collect();
+    guard_config_change(&changes).await?;
     let repo = get_settings_repository();
     let system_settings = settings.get("systemSettings").cloned();
     let models = repo
@@ -94,6 +131,7 @@ pub async fn get_setting(key: String) -> Result<Option<SettingDto>, String> {
 
 #[command]
 pub async fn delete_setting(key: String) -> Result<(), String> {
+    guard_config_change(&[(key.as_str(), None)]).await?;
     let repo = get_settings_repository();
     repo.delete(&key)
         .await
@@ -129,4 +167,19 @@ pub async fn get_display_settings() -> Result<DisplaySettings, String> {
 #[command]
 pub async fn get_system_settings() -> Result<SystemSettings, String> {
     Ok(SystemSettings::load_global().await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_different_value_is_a_setting_change() {
+        let value = serde_json::json!({ "a": 1 });
+        assert!(!is_setting_change(Some(r#"{"a":1}"#), Some(&value)));
+        assert!(is_setting_change(Some(r#"{"a":2}"#), Some(&value)));
+        assert!(is_setting_change(None, Some(&value)));
+        assert!(is_setting_change(Some(r#"{"a":1}"#), None));
+        assert!(!is_setting_change(None, None));
+    }
 }

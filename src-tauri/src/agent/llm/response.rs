@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 
 use super::response_admission;
 use super::response_circuit_breaker;
+use super::response_display;
 use super::response_persist::{
     assistant_message_has_only_ui_tool_calls, cache_assistant_message, extract_prompt_tokens,
     persist_assistant_message_to_db, persist_prompt_token_checkpoint,
@@ -341,6 +342,16 @@ pub async fn handle_llm_response(
         }
     }
 
+    // `MessageDisplay` runs before the cancellation check below, so a cancel
+    // that arrives while a hook runs still discards the response.
+    let display_text = match tool_loop_resample {
+        Some(_) => None,
+        None => {
+            response_display::display_override(active_sessions, &session_id, &assistant_message)
+                .await
+        }
+    };
+
     // [Race Mitigation] Verify session has not been reset/cancelled during async yields
     {
         let active = active_sessions.read().await;
@@ -419,7 +430,10 @@ pub async fn handle_llm_response(
     // 2. Emit MessageAdded event
     let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
         session_id: session_id.clone(),
-        message: Box::new(assistant_message.clone()),
+        message: Box::new(match display_text {
+            Some(text) => response_display::with_display_text(&assistant_message, text),
+            None => assistant_message.clone(),
+        }),
     };
     TauriEventDispatcher::from_handle(app_handle)
         .emit_agent_event(message_added_event)

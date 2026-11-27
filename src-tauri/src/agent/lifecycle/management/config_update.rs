@@ -1,5 +1,8 @@
 use crate::agent::state::AgentSession;
 use crate::repositories::session_repository::SessionRepository;
+use crate::services::hooks::lifecycle::{
+    post_model_switch, pre_model_switch, HookSources, ModelSwitch,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -16,6 +19,7 @@ pub async fn update_session_config(
     provider: Option<String>,
     assistant_id: Option<String>,
     recursive: Option<bool>,
+    switch_source: &'static str,
 ) -> Result<(), String> {
     let mut session_ids = vec![session_id.to_string()];
 
@@ -23,6 +27,23 @@ pub async fn update_session_config(
         let descendant_ids =
             crate::services::SessionCleanupService::collect_descendant_ids(session_id).await?;
         session_ids.extend(descendant_ids);
+    }
+
+    // Every affected session's `PreModelSwitch` hooks run before anything is
+    // written, so one block cancels the whole update (#3008).
+    let switches = planned_model_switches(
+        session_repo,
+        active_sessions,
+        &session_ids,
+        model.as_deref(),
+        provider.as_deref(),
+        switch_source,
+    )
+    .await?;
+    for (id, switch) in &switches {
+        if let Some(sources) = HookSources::for_session(id) {
+            pre_model_switch(&sources, id, switch).await?;
+        }
     }
 
     for id in &session_ids {
@@ -64,6 +85,12 @@ pub async fn update_session_config(
     }
     drop(active);
 
+    for (id, switch) in &switches {
+        if let Some(sources) = HookSources::for_session(id) {
+            post_model_switch(&sources, id, switch).await;
+        }
+    }
+
     // Emit resource update event to trigger frontend session list refresh
     crate::agent::tauri_events::emit_resource_updated(
         "session",
@@ -78,4 +105,54 @@ pub async fn update_session_config(
     );
 
     Ok(())
+}
+
+/// The sessions whose model or provider this update changes.
+async fn planned_model_switches(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_ids: &[String],
+    model: Option<&str>,
+    provider: Option<&str>,
+    source: &'static str,
+) -> Result<Vec<(String, ModelSwitch)>, String> {
+    let mut switches = Vec::new();
+    for id in session_ids {
+        let Some(current) = session_repo
+            .get_session(id)
+            .await
+            .map_err(|e| format!("Failed to load session {}: {}", id, e))?
+        else {
+            continue;
+        };
+        let changes = model.is_some_and(|next| next != current.model)
+            || provider.is_some_and(|next| next != current.provider);
+        if !changes {
+            continue;
+        }
+        let messages = active_sessions
+            .read()
+            .await
+            .get(id)
+            .map(|session| session.messages.clone());
+        let context_tokens = match messages {
+            Some(messages) => messages
+                .read()
+                .await
+                .iter()
+                .rev()
+                .find_map(|message| message.prompt_tokens),
+            None => None,
+        };
+        switches.push((
+            id.clone(),
+            ModelSwitch {
+                to_model: model.unwrap_or(&current.model).to_string(),
+                from_model: current.model,
+                source,
+                context_tokens,
+            },
+        ));
+    }
+    Ok(switches)
 }

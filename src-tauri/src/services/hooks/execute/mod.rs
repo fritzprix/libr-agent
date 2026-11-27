@@ -20,3 +20,4 @@ pub use dispatch::{
     spawn_session_start, HookDispatchResult,
 };
 pub use matcher::matcher_matches;
+pub(super) use matcher::resolve_session_cwd;

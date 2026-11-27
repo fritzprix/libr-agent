@@ -340,3 +340,56 @@ fn load_from_root_merges_claude_and_cursor_files() {
     assert!(cfg.events.contains_key(&HookEvent::SessionStart));
     assert!(cfg.events.contains_key(&HookEvent::SessionEnd));
 }
+
+#[test]
+fn lifecycle_events_are_supported_and_the_rest_record_why_not() {
+    let supported = [
+        "UserPromptExpansion",
+        "MessageDisplay",
+        "InstructionsLoaded",
+        "ConfigChange",
+        "CwdChanged",
+        "PreModelSwitch",
+        "PostModelSwitch",
+    ];
+    let not_emitted = [
+        "PreSkillShellCommand",
+        "TeammateIdle",
+        "DirectoryAdded",
+        "FileChanged",
+        "WorktreeCreate",
+        "WorktreeRemove",
+        "Elicitation",
+        "ElicitationResult",
+        "TaskCreated",
+        "TaskCompleted",
+    ];
+    let hooks: serde_json::Map<String, serde_json::Value> = supported
+        .iter()
+        .chain(not_emitted.iter())
+        .map(|name| {
+            // No command, so an unsupported entry carries the recorded note.
+            let group = if supported.contains(name) {
+                serde_json::json!({ "command": "true" })
+            } else {
+                serde_json::json!({ "hooks": [] })
+            };
+            (name.to_string(), serde_json::json!([group]))
+        })
+        .collect();
+    let cfg = parse_hooks_inline(&serde_json::Value::Object(hooks), "test").expect("parse");
+
+    let names: Vec<&str> = cfg.events.keys().map(|event| event.as_str()).collect();
+    assert_eq!(names, supported);
+    assert_eq!(cfg.unsupported_events.len(), not_emitted.len());
+    for name in not_emitted {
+        let note = &cfg.unsupported_events[name][0].command;
+        assert!(
+            note.contains(&format!("does not emit {name}")),
+            "{name}: {note}"
+        );
+    }
+    assert_eq!(default_hook_timeout_ms(HookEvent::MessageDisplay), 10_000);
+    assert_eq!(default_hook_timeout_ms(HookEvent::PreModelSwitch), 30_000);
+    assert_eq!(default_hook_timeout_ms(HookEvent::ConfigChange), 600_000);
+}

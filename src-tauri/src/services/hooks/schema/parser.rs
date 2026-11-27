@@ -7,7 +7,29 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// Claude Code events LibrAgent knows it does not emit, with the reason shown
+/// for them (#3008). A plugin declaring one still installs.
 const RESERVED_UNKNOWN_EVENTS: &[(&str, &str)] = &[
+    ("PreSkillShellCommand", "LibrAgent does not emit PreSkillShellCommand: skills do not run inline shell commands"),
+    ("preSkillShellCommand", "LibrAgent does not emit PreSkillShellCommand: skills do not run inline shell commands"),
+    ("TeammateIdle", "LibrAgent does not emit TeammateIdle: it has no agent-team teammate lifecycle"),
+    ("teammateIdle", "LibrAgent does not emit TeammateIdle: it has no agent-team teammate lifecycle"),
+    ("DirectoryAdded", "LibrAgent does not emit DirectoryAdded: a session has one workspace and no add-directory action"),
+    ("directoryAdded", "LibrAgent does not emit DirectoryAdded: a session has one workspace and no add-directory action"),
+    ("FileChanged", "LibrAgent does not emit FileChanged: it has no workspace file watcher"),
+    ("fileChanged", "LibrAgent does not emit FileChanged: it has no workspace file watcher"),
+    ("WorktreeCreate", "LibrAgent does not emit WorktreeCreate: it does not manage git worktrees"),
+    ("worktreeCreate", "LibrAgent does not emit WorktreeCreate: it does not manage git worktrees"),
+    ("WorktreeRemove", "LibrAgent does not emit WorktreeRemove: it does not manage git worktrees"),
+    ("worktreeRemove", "LibrAgent does not emit WorktreeRemove: it does not manage git worktrees"),
+    ("Elicitation", "LibrAgent does not emit Elicitation: its MCP client does not support elicitation"),
+    ("elicitation", "LibrAgent does not emit Elicitation: its MCP client does not support elicitation"),
+    ("ElicitationResult", "LibrAgent does not emit ElicitationResult: its MCP client does not support elicitation"),
+    ("elicitationResult", "LibrAgent does not emit ElicitationResult: its MCP client does not support elicitation"),
+    ("TaskCreated", "LibrAgent does not emit TaskCreated: mapping it to planning todos needs product judgment"),
+    ("taskCreated", "LibrAgent does not emit TaskCreated: mapping it to planning todos needs product judgment"),
+    ("TaskCompleted", "LibrAgent does not emit TaskCompleted: mapping it to planning todos needs product judgment"),
+    ("taskCompleted", "LibrAgent does not emit TaskCompleted: mapping it to planning todos needs product judgment"),
     (
         "Setup",
         "Setup is not emitted by LibrAgent: sessions have no init-only / maintenance startup path",
@@ -156,7 +178,14 @@ fn normalize_event_key(key: &str) -> Result<HookEvent, String> {
         "PreCompact" | "preCompact" => Ok(HookEvent::PreCompact),
         "PostCompact" | "postCompact" => Ok(HookEvent::PostCompact),
         "Notification" | "notification" => Ok(HookEvent::Notification),
-        _ => Err("event name is not in the supported v1 set".to_string()),
+        "UserPromptExpansion" | "userPromptExpansion" => Ok(HookEvent::UserPromptExpansion),
+        "MessageDisplay" | "messageDisplay" => Ok(HookEvent::MessageDisplay),
+        "InstructionsLoaded" | "instructionsLoaded" => Ok(HookEvent::InstructionsLoaded),
+        "ConfigChange" | "configChange" => Ok(HookEvent::ConfigChange),
+        "CwdChanged" | "cwdChanged" => Ok(HookEvent::CwdChanged),
+        "PreModelSwitch" | "preModelSwitch" => Ok(HookEvent::PreModelSwitch),
+        "PostModelSwitch" | "postModelSwitch" => Ok(HookEvent::PostModelSwitch),
+        _ => Err("event name is not supported".to_string()),
     }
 }
 

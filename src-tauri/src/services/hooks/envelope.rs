@@ -96,6 +96,9 @@ pub struct HookEnvelopeParams {
     /// Error class a `StopFailure` fired for (e.g. `rate_limit`), matched by
     /// the event matcher and surfaced in the envelope (#3007).
     pub error_type: Option<String>,
+    /// Event-specific stdin fields, merged into the envelope root under their
+    /// Claude Code names.
+    pub extra: serde_json::Map<String, Value>,
 }
 
 impl HookEnvelopeParams {
@@ -126,6 +129,7 @@ impl HookEnvelopeParams {
             notification_message: None,
             notification_type: None,
             error_type: None,
+            extra: serde_json::Map::new(),
         }
     }
 }
@@ -276,7 +280,16 @@ pub fn build_envelope_value(params: &HookEnvelopeParams) -> Value {
                 obj.insert("notification_type".to_string(), json!(kind));
             }
         }
+        // These events carry their fields in `extra` only.
+        HookEvent::UserPromptExpansion
+        | HookEvent::MessageDisplay
+        | HookEvent::InstructionsLoaded
+        | HookEvent::ConfigChange
+        | HookEvent::CwdChanged
+        | HookEvent::PreModelSwitch
+        | HookEvent::PostModelSwitch => {}
     }
+    obj.extend(params.extra.clone());
 
     envelope
 }

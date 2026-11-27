@@ -157,6 +157,18 @@ impl PersistentShellManager {
         secrets
     }
 
+    /// The session's shell, if one has been created.
+    pub(super) async fn running_shell(
+        &self,
+        session_id: &str,
+    ) -> Option<Arc<Mutex<PersistentShell>>> {
+        self.shells
+            .lock()
+            .await
+            .get(session_id)
+            .map(|managed| managed.shell.clone())
+    }
+
     /// Replaces each stored value of the session in `text` with `***`.
     pub async fn mask_for_session(&self, session_id: &str, text: &str) -> String {
         let secrets = self.session_secrets(session_id).await;

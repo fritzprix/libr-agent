@@ -9,7 +9,7 @@ use tokio::process::Command;
 ///
 /// Before this, a hook saw only the plugin root aliases. The plugin variables
 /// a Claude Code plugin can rely on are set here: `${CLAUDE_PLUGIN_DATA}`,
-/// `CLAUDE_PROJECT_DIR`, `CLAUDE_ENV_FILE` (for `SessionStart` only), and one
+/// `CLAUDE_PROJECT_DIR`, `CLAUDE_ENV_FILE` (for `SessionStart` and `CwdChanged`), and one
 /// `CLAUDE_PLUGIN_OPTION_<KEY>` per resolved `userConfig` value.
 pub(super) struct HookEnv {
     pub(super) plugin_root: PathBuf,
@@ -17,7 +17,7 @@ pub(super) struct HookEnv {
     pub(super) data_dir: PathBuf,
     /// The session's workspace directory (`CLAUDE_PROJECT_DIR`).
     pub(super) project_dir: String,
-    /// `CLAUDE_ENV_FILE`; only a `SessionStart` run gets one.
+    /// `CLAUDE_ENV_FILE`; only `SessionStart` and `CwdChanged` runs get one.
     pub(super) env_file: Option<PathBuf>,
     /// Resolved `userConfig` values, keyed by the manifest key.
     pub(super) options: std::collections::BTreeMap<String, String>,
