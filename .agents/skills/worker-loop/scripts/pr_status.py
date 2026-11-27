@@ -30,6 +30,7 @@ _LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
 if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
+from ci_checks import check_state, effective_checks  # noqa: E402
 from comment_markers import (  # noqa: E402
     NEEDS_OWNER_LABEL,
     START_MARKER,
@@ -85,10 +86,6 @@ def gh(*args: str) -> str:
 def short(text: str | None, limit: int = 240) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def check_state(check: dict) -> str:
-    return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
 
 
 def gatekeeper_state(comments: list[dict], me: str, head_sha: str) -> dict | None:
@@ -224,7 +221,7 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         rebase_ready=ready_to_rebase,
         blocker_lookup_error=blocker_error,
     )
-    checks = pr.get("statusCheckRollup") or []
+    checks = effective_checks(pr.get("statusCheckRollup") or [])
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
     pending = [c.get("name") or c.get("context") for c in checks if check_state(c) in PENDING]
 

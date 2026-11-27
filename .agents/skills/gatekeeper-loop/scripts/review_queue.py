@@ -42,6 +42,7 @@ _LOOP_SHARED = Path(__file__).resolve().parents[2] / "loop-shared" / "scripts"
 if str(_LOOP_SHARED) not in sys.path:
     sys.path.insert(0, str(_LOOP_SHARED))
 
+from ci_checks import check_state, effective_checks  # noqa: E402
 from comment_markers import START_MARKER, parse_markers  # noqa: E402
 from issue_deps import DepsError, pr_blockers  # noqa: E402
 from pr_turn import (  # noqa: E402
@@ -98,10 +99,6 @@ def gh(*args: str) -> str:
     return result.stdout
 
 
-def check_state(check: dict) -> str:
-    return (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
-
-
 # Application CI job names from LibrAgent CI/CD (matrix.os = macos-15).
 # Do not match Loop skill tests' `test (macos-latest)` (#3070 G1.2).
 REQUIRED_MACOS_CHECK_NAMES = ("Test (macos-15)", "Build (macos-15)")
@@ -111,7 +108,7 @@ def has_passed_macos_check(checks: list[dict]) -> bool:
     """True when both app-workflow macOS Test and Build checks succeeded (#3070)."""
     passed = {
         (check.get("name") or check.get("context") or "")
-        for check in checks
+        for check in effective_checks(checks)
         if check_state(check) == "SUCCESS"
     }
     return all(name in passed for name in REQUIRED_MACOS_CHECK_NAMES)
@@ -405,7 +402,7 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
            "statusCheckRollup,comments,labels,files")
     )
     base = pr["baseRefName"]
-    checks = pr.get("statusCheckRollup") or []
+    checks = effective_checks(pr.get("statusCheckRollup") or [])
     failing = [c.get("name") or c.get("context") for c in checks if check_state(c) in FAILED]
     pending = [c.get("name") or c.get("context") for c in checks if check_state(c) in PENDING]
     comments = pr.get("comments") or []

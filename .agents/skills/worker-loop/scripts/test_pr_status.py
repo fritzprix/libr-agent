@@ -413,5 +413,106 @@ class OwnerQuestionAndCiAttemptsTest(unittest.TestCase):
         self.assertEqual(healthy["nextAction"], "wait-gatekeeper")
 
 
+class LatestCheckRunSummarizeTests(unittest.TestCase):
+    def _summarize(self, checks):
+        import json
+        from unittest.mock import patch
+
+        empty_threads = json.dumps({
+            "data": {"repository": {"pullRequest": {"reviewThreads": {
+                "pageInfo": {"hasNextPage": False},
+                "nodes": [],
+            }}}}
+        })
+
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3078,
+                    "title": "CI latest-run PR",
+                    "body": "latest check run",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3078",
+                    "headRefName": "feat/ci-latest",
+                    "headRefOid": "head1",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "mergeStateStatus": "CLEAN",
+                    "reviewDecision": "",
+                    "statusCheckRollup": checks,
+                    "commits": [{"committedDate": "2026-11-27T00:00:00Z"}],
+                    "comments": [],
+                    "labels": [],
+                })
+            if args[:2] == ("api", "graphql"):
+                return empty_threads
+            return json.dumps([])
+
+        with patch.object(pr_status, "gh", fake_gh):
+            return pr_status.summarize(3078, "fritzprix", "libr-agent", "fritzprix")
+
+    def test_older_cancelled_then_newer_success_is_not_fix_ci(self):
+        entry = self._summarize([
+            {
+                "name": "Test",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "completedAt": "2026-11-27T01:01:00Z",
+            },
+            {
+                "name": "Test",
+                "conclusion": "FAILURE",
+                "startedAt": "2026-11-27T01:02:00Z",
+                "completedAt": "2026-11-27T01:03:00Z",
+            },
+            {
+                "name": "Test",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:05:00Z",
+                "completedAt": "2026-11-27T01:07:00Z",
+            },
+        ])
+        self.assertEqual(entry["failingChecks"], [])
+        self.assertEqual(entry["pendingChecks"], [])
+        self.assertNotEqual(entry["nextAction"], "fix-ci")
+
+    def test_older_success_then_newer_in_progress_is_wait_ci(self):
+        entry = self._summarize([
+            {
+                "name": "Test",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "completedAt": "2026-11-27T01:02:00Z",
+            },
+            {
+                "name": "Test",
+                "status": "IN_PROGRESS",
+                "startedAt": "2026-11-27T01:05:00Z",
+                "completedAt": "0001-01-01T00:00:00Z",
+            },
+        ])
+        self.assertEqual(entry["failingChecks"], [])
+        self.assertEqual(entry["pendingChecks"], ["Test"])
+        self.assertNotEqual(entry["nextAction"], "fix-ci")
+
+    def test_same_name_in_two_workflows_is_independent(self):
+        entry = self._summarize([
+            {
+                "name": "test",
+                "conclusion": "FAILURE",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "workflowName": "Loop skill tests",
+            },
+            {
+                "name": "test",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+        ])
+        self.assertEqual(entry["failingChecks"], ["test"])
+        self.assertEqual(entry["pendingChecks"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

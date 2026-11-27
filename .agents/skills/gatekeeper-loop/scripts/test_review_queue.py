@@ -228,6 +228,56 @@ class DetermineStatusTests(unittest.TestCase):
                 [{"name": "Test (macos-15)", "conclusion": "SUCCESS"}]
             )
         )
+        # Older cancelled/failed macOS runs do not hide a newer success.
+        self.assertTrue(
+            review_queue.has_passed_macos_check(
+                [
+                    {
+                        "name": "Test (macos-15)",
+                        "conclusion": "CANCELLED",
+                        "startedAt": "2026-11-27T01:00:00Z",
+                    },
+                    {
+                        "name": "Build (macos-15)",
+                        "conclusion": "FAILURE",
+                        "startedAt": "2026-11-27T01:00:00Z",
+                    },
+                    {
+                        "name": "Test (macos-15)",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-27T01:05:00Z",
+                    },
+                    {
+                        "name": "Build (macos-15)",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-27T01:06:00Z",
+                    },
+                ]
+            )
+        )
+        # A newer in-progress macOS run is not a pass.
+        self.assertFalse(
+            review_queue.has_passed_macos_check(
+                [
+                    {
+                        "name": "Test (macos-15)",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-27T01:00:00Z",
+                    },
+                    {
+                        "name": "Build (macos-15)",
+                        "conclusion": "SUCCESS",
+                        "startedAt": "2026-11-27T01:00:00Z",
+                    },
+                    {
+                        "name": "Test (macos-15)",
+                        "status": "IN_PROGRESS",
+                        "startedAt": "2026-11-27T01:05:00Z",
+                        "completedAt": "0001-01-01T00:00:00Z",
+                    },
+                ]
+            )
+        )
 
     def test_await_ci_turns_to_review_when_ci_fails(self) -> None:
         # When a pending check fails, enters review so gatekeeper diagnoses logs and requests changes.
@@ -1143,6 +1193,111 @@ class BlockedStatusTests(unittest.TestCase):
         with patch.object(review_queue, "gh", fake_gh):
             entry = summarize(3070, "fritzprix")
         self.assertFalse(entry["staleReviewCleanLabel"])
+
+
+def _pr_payload(number: int, checks: list[dict], comments: list[dict] | None = None) -> str:
+    return json.dumps({
+        "number": number,
+        "title": "CI latest-run PR",
+        "body": "latest check run",
+        "url": f"https://github.com/fritzprix/libr-agent/pull/{number}",
+        "headRefName": "feat/ci-latest",
+        "headRefOid": "head1",
+        "baseRefName": "dev/0.9.x",
+        "isDraft": False,
+        "mergeable": "MERGEABLE",
+        "createdAt": "2026-11-27T00:00:00Z",
+        "statusCheckRollup": checks,
+        "comments": comments or [],
+        "labels": [],
+        "files": [{"path": "src/app.ts"}],
+    })
+
+
+class LatestCheckRunSummarizeTests(unittest.TestCase):
+    def _summarize(self, checks: list[dict]) -> dict:
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return _pr_payload(3078, checks)
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            return summarize(3078, "fritzprix")
+
+    def test_older_cancelled_then_newer_success_is_not_failing(self) -> None:
+        entry = self._summarize([
+            {
+                "name": "Test (ubuntu-latest)",
+                "conclusion": "CANCELLED",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "completedAt": "2026-11-27T01:01:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+            {
+                "name": "Test (ubuntu-latest)",
+                "conclusion": "FAILURE",
+                "startedAt": "2026-11-27T01:02:00Z",
+                "completedAt": "2026-11-27T01:03:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+            {
+                "name": "Test (ubuntu-latest)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:05:00Z",
+                "completedAt": "2026-11-27T01:07:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+            {
+                "name": "Test (macos-15)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:05:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+            {
+                "name": "Build (macos-15)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:06:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+        ])
+        self.assertEqual(entry["ciFailing"], [])
+        self.assertEqual(entry["ciPending"], [])
+
+    def test_older_success_then_newer_in_progress_is_pending(self) -> None:
+        entry = self._summarize([
+            {
+                "name": "Test (ubuntu-latest)",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "completedAt": "2026-11-27T01:02:00Z",
+            },
+            {
+                "name": "Test (ubuntu-latest)",
+                "status": "IN_PROGRESS",
+                "startedAt": "2026-11-27T01:05:00Z",
+                "completedAt": "0001-01-01T00:00:00Z",
+            },
+        ])
+        self.assertEqual(entry["ciFailing"], [])
+        self.assertEqual(entry["ciPending"], ["Test (ubuntu-latest)"])
+
+    def test_same_name_in_two_workflows_is_independent(self) -> None:
+        entry = self._summarize([
+            {
+                "name": "test",
+                "conclusion": "FAILURE",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "workflowName": "Loop skill tests",
+            },
+            {
+                "name": "test",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-27T01:00:00Z",
+                "workflowName": "LibrAgent CI/CD",
+            },
+        ])
+        self.assertEqual(entry["ciFailing"], ["test"])
+        self.assertEqual(entry["ciPending"], [])
 
 
 if __name__ == "__main__":
