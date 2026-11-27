@@ -7,10 +7,13 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+# The reader in test_write_succeeds_while_a_reader_holds_the_file_open waits for a
+# blocked rename; a rename that is never blocked is a failure, not a slow test.
+READER_HOLD_TIMEOUT_SECONDS = 10.0
 
 import worker_claims
 import worker_slots
@@ -99,26 +102,41 @@ class WorkerStateTest(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "only Windows holds a rename back")
     def test_write_succeeds_while_a_reader_holds_the_file_open(self):
         # The real shape of #3079: a reader opens the file, reads it and closes it.
-        # On Windows that handle blocks the rename until it goes, so the write waits.
-        # A handle that is held for the whole call is a different case and raises
-        # (see test_write_fails_when_the_file_never_closes).
+        # On Windows that handle blocks the rename, so the write waits it out.
+        # The reader closes only after a rename has been blocked, so the test cannot
+        # pass without exercising the retry. A handle held for the whole call is a
+        # different case and still raises (test_write_fails_when_the_file_never_closes).
         worker_state.atomic_write_json(self.claims, {"a": 1})
-        reading = threading.Event()
+        blocked = threading.Event()
+        reader_problems: list[str] = []
+        real_replace = os.replace
+
+        def replace_reporting_the_block(src, dst):
+            try:
+                real_replace(src, dst)
+            except PermissionError:
+                blocked.set()
+                raise
 
         def read_once():
-            with self.claims.open("rb") as handle:
-                reading.set()
-                json.load(handle)  # a partial file would raise here
-                time.sleep(0.3)  # keep the handle open past the first rename attempt
+            try:
+                with self.claims.open("rb") as handle:
+                    json.load(handle)  # a partial file would raise here
+                    if not blocked.wait(READER_HOLD_TIMEOUT_SECONDS):
+                        reader_problems.append("no rename was blocked while the file was open")
+            except BaseException as e:  # reported by the assertions below
+                reader_problems.append(repr(e))
 
         reader = threading.Thread(target=read_once)
         reader.start()
         try:
-            self.assertTrue(reading.wait(5), "the reader never opened the file")
-            worker_state.atomic_write_json(self.claims, {"a": 2})
+            with patch.object(worker_state.os, "replace", replace_reporting_the_block):
+                worker_state.atomic_write_json(self.claims, {"a": 2})
         finally:
             reader.join()
 
+        self.assertEqual(reader_problems, [])
+        self.assertTrue(blocked.is_set(), "the write never had to wait for the reader")
         self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 2})
 
     def test_read_json_tolerates_utf8_bom(self):

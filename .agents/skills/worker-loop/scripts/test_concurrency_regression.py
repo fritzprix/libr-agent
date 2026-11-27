@@ -14,7 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import lease
 import lease_heartbeat
@@ -879,11 +879,11 @@ class LeaseRunTest(StateDirCase):
         # background one, so one failed write must not end the tick.
         held = lease.acquire(anon())
         real_renew = lease.renew
-        attempts = []
+        calls = []
 
         def renew_once_blocked(worker, token, state_file=None):
-            if not attempts:
-                attempts.append(worker)
+            calls.append(worker)
+            if len(calls) == 1:
                 raise PermissionError(13, "Access is denied")
             return real_renew(worker, token, state_file)
 
@@ -892,15 +892,37 @@ class LeaseRunTest(StateDirCase):
             patch.object(lease_run.lease, "renew", renew_once_blocked),
         ):
             self.assertTrue(lease_run._renew_before_starting(held.worker, held.token, None))
-        self.assertEqual(len(attempts), 1)
 
-    def test_a_persistent_write_error_is_raised_not_retried_forever(self):
+        self.assertEqual(len(calls), 2, "the failed attempt must be retried exactly once")
+
+    def test_a_persistent_write_error_is_raised_after_the_last_attempt(self):
+        renew = MagicMock(side_effect=PermissionError(13, "Access is denied"))
         with (
             patch.object(lease_run, "INITIAL_RENEW_DELAY_SECONDS", 0),
-            patch.object(lease_run.lease, "renew", side_effect=PermissionError(13, "Access is denied")),
+            patch.object(lease_run.lease, "renew", renew),
         ):
             with self.assertRaises(PermissionError):
                 lease_run._renew_before_starting("worker", "token", None)
+
+        self.assertEqual(renew.call_count, lease_run.INITIAL_RENEW_ATTEMPTS)
+
+    def test_run_with_lease_renews_through_that_helper(self):
+        # Proves the wiring: a renewal that does not hold stops the command here.
+        renewed = []
+
+        def not_held(*args):
+            renewed.append(args)
+            return False
+
+        marker = self.root / "ran"
+        with patch.object(lease_run, "_renew_before_starting", not_held):
+            code = lease_run.run_with_lease(
+                "worker", "token", self.py(f"open({str(marker)!r}, 'w')"), 60.0, dict(os.environ), None
+            )
+
+        self.assertEqual(code, lease_run.EXIT_LEASE_LOST)
+        self.assertEqual(len(renewed), 1)
+        self.assertFalse(marker.exists(), "the command must not run without a lease")
 
     def lease_run(self, *args, env=None, **kwargs):
         full_env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **(env or {})}

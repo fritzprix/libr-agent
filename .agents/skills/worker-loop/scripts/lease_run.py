@@ -32,6 +32,9 @@ DEFAULT_INTERVAL_SECONDS = 300.0
 TERMINATE_GRACE_SECONDS = 10.0
 INITIAL_RENEW_ATTEMPTS = 3
 INITIAL_RENEW_DELAY_SECONDS = 1.0
+# A renewal writes the state file, so a transient write error says nothing about
+# ownership: the initial renewal and the background renewer both retry the same set.
+RETRIED_RENEW_ERRORS = (TimeoutError, OSError, worker_state.StateFileCorrupt)
 EXIT_BUSY = 2
 EXIT_LEASE_LOST = worker_state.EXIT_LEASE_LOST
 
@@ -59,15 +62,13 @@ def _renew_before_starting(worker: str, token: str, state_file: Path | None) -> 
     the tick for the same short-lived cause (#3079). A failure that survives every
     attempt is an error about the state file, not about ownership, so it is raised.
     """
-    for attempt in range(1, INITIAL_RENEW_ATTEMPTS + 1):
+    for _ in range(INITIAL_RENEW_ATTEMPTS - 1):
         try:
             return lease.renew(worker, token, state_file)
-        except (TimeoutError, OSError) as e:
-            if attempt == INITIAL_RENEW_ATTEMPTS:
-                raise
+        except RETRIED_RENEW_ERRORS as e:
             print(f"lease_run: initial renewal failed, retrying: {e}", file=sys.stderr)
             time.sleep(INITIAL_RENEW_DELAY_SECONDS)
-    raise AssertionError("unreachable")
+    return lease.renew(worker, token, state_file)
 
 
 def run_with_lease(worker: str, token: str, cmd: list[str], interval: float, env: dict, state_file: Path | None) -> int:
@@ -88,7 +89,7 @@ def run_with_lease(worker: str, token: str, cmd: list[str], interval: float, env
         while not done.wait(interval):
             try:
                 renewed = lease.renew(worker, token, state_file)
-            except (TimeoutError, OSError, worker_state.StateFileCorrupt) as e:
+            except RETRIED_RENEW_ERRORS as e:
                 # Says nothing about ownership: try again at the next interval.
                 print(f"lease_run: renewal failed, will retry: {e}", file=sys.stderr)
                 continue
