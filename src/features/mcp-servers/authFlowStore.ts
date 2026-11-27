@@ -11,6 +11,10 @@
  */
 
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { safeInvoke } from '@/lib/backend/core';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('MCPAuthFlow');
 
 export type AuthFlowOutcome =
   | { kind: 'success' }
@@ -21,6 +25,12 @@ export interface AuthFlowRecord {
   promise: Promise<AuthFlowOutcome>;
   /** null while the flow is running; set once it settles. */
   settled: AuthFlowOutcome | null;
+  /**
+   * Resolves after the post-settle verification attempt (success or logged
+   * failure). A mounted card revalidates on this; a verification runs even
+   * with no card mounted (#3068 G2.1).
+   */
+  verified: Promise<void>;
 }
 
 /** Matches `OAuthFlowEndedPayload` from the Rust backend (#3040 G3.1). */
@@ -38,6 +48,24 @@ let listenStarted = false;
 
 export function getAuthFlow(serverId: string): AuthFlowRecord | null {
   return flows.get(serverId) ?? null;
+}
+
+/**
+ * Verify the server once per successful settle, independent of any mounted
+ * card (#3068 G2.1). Probe failures are logged, never thrown, so a mounted
+ * card still revalidates afterwards (`verified` always resolves).
+ */
+function verifyAfterSettle(serverId: string): Promise<void> {
+  return safeInvoke('probe_mcp_server', { serverId }).then(
+    () => undefined,
+    (error: unknown) => {
+      logger.warn(
+        `probe after OAuth settle failed for ${serverId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    },
+  );
 }
 
 /**
@@ -60,11 +88,20 @@ export function beginAuthFlow(
   // `record` is initialized before it reads it.
   const promise = run().then((outcome) => {
     record.settled = outcome;
+    // Single verification per settle runs here, not on the card, so a
+    // successful flow that ends with no card mounted is still verified
+    // (#3068 G2.1).
+    record.verified =
+      outcome.kind === 'success' ? verifyAfterSettle(serverId) : record.verified;
     notify(serverId);
     flows.delete(serverId);
     return outcome;
   });
-  const record: AuthFlowRecord = { promise, settled: null };
+  const record: AuthFlowRecord = {
+    promise,
+    settled: null,
+    verified: Promise.resolve(),
+  };
   flows.set(serverId, record);
   return { record, started: true };
 }
@@ -91,7 +128,15 @@ export function applyBackendFlowOutcome(payload: OAuthFlowEndedPayload): void {
       };
 
   const promise = Promise.resolve(outcome);
-  const record: AuthFlowRecord = { promise, settled: outcome };
+  const record: AuthFlowRecord = {
+    promise,
+    settled: outcome,
+    // Same single-verification rule as the local-promise path (#3068 G2.1).
+    verified:
+      outcome.kind === 'success'
+        ? verifyAfterSettle(payload.serverId)
+        : Promise.resolve(),
+  };
   flows.set(payload.serverId, record);
   notify(payload.serverId);
   // Match beginAuthFlow: drop after subscribers have read `settled`.

@@ -145,10 +145,10 @@ export const ServerCard = React.memo(
           void hasOAuthToken(server.id)
             .then(setHasToken)
             .catch(() => setHasToken(false));
-          // Ownerless success must still probe / revalidate (#3040 G4.2).
-          void safeInvoke('probe_mcp_server', { serverId: server.id })
-            .then(() => onRevalidateRef.current?.())
-            .catch(() => undefined);
+          // The flow store runs the single probe per settle even with no
+          // card mounted (#3068 G2.1); revalidate after that verification
+          // attempt, whether it succeeded or was logged as failed.
+          void record.verified.finally(() => onRevalidateRef.current?.());
         } else {
           setAuthNotice(classifyAuthFailure(record.settled.message));
         }

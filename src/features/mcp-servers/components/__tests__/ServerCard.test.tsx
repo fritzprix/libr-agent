@@ -896,6 +896,58 @@ describe('ServerCard', () => {
       expect(onRevalidate).toHaveBeenCalledTimes(1);
     });
 
+    it('probes exactly once when the card unmounts before the flow settles (#3068 G2.1)', async () => {
+      // The verification must not depend on a mounted card: the store runs
+      // it on settle even when the initiating card is gone (#3068 G2.1).
+      let resolveStart: (value: string) => void = () => {};
+      vi.mocked(startOAuthFlow).mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveStart = resolve;
+          }),
+      );
+      const rendered = renderOauthCard();
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      expect(await screen.findByTestId('oauth-cancel')).toBeInTheDocument();
+
+      rendered.unmount();
+      await act(async () => {
+        resolveStart('authorized');
+      });
+
+      await vi.waitFor(() =>
+        expect(safeInvoke).toHaveBeenCalledWith('probe_mcp_server', {
+          serverId: oauthServer.id,
+        }),
+      );
+      expect(
+        vi
+          .mocked(safeInvoke)
+          .mock.calls.filter(([cmd]) => cmd === 'probe_mcp_server'),
+      ).toHaveLength(1);
+    });
+
+    it('revalidates even when the post-settle probe fails (#3068 G2.1)', async () => {
+      // A probe failure is logged by the store, never swallowed silently,
+      // and the card still revalidates (#3068 G2.1 review note).
+      const onRevalidate = vi.fn();
+      vi.mocked(startOAuthFlow).mockResolvedValue('authorized');
+      vi.mocked(safeInvoke).mockRejectedValueOnce(new Error('probe down'));
+      renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+          onRevalidate={onRevalidate}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      await vi.waitFor(() => expect(onRevalidate).toHaveBeenCalledTimes(1));
+    });
+
     it('does not resurrect Authorized after Disconnect remount (#3040 G4.1)', async () => {
       vi.mocked(hasOAuthToken).mockResolvedValue(true);
       vi.mocked(takeOAuthFlowLastOutcome).mockResolvedValue({
