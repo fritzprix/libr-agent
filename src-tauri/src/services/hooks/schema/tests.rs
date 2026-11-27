@@ -159,7 +159,9 @@ fn without_args_the_handler_stays_in_shell_form() {
 
 #[test]
 fn records_unknown_and_newer_events_as_unsupported_without_failing() {
-    for key in ["Setup", "InstructionsLoaded", "bogusEvent"] {
+    // #3008 promotes `InstructionsLoaded` to a real `HookEvent` variant, so it
+    // can no longer stand in as an unknown/newer event here.
+    for key in ["Setup", "bogusEvent"] {
         let json = format!(
             r#"{{"hooks":{{"{key}":[{{"matcher":"Bash","hooks":[{{"type":"command","command":"echo hi"}}]}}],"SessionStart":[{{"hooks":[{{"type":"command","command":"echo start"}}]}}]}}}}"#
         );
