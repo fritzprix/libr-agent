@@ -462,6 +462,11 @@ pub(crate) fn evaluate_user_prompt_hook_outcome(
     session_id: &str,
     outcome: crate::services::hooks::HookDispatchResult,
 ) -> Result<(), String> {
+    // `continue: false` (#3004): the prompt is not queued and the user sees the
+    // hook's `stopReason`. It is checked first because stopping outranks blocking.
+    if outcome.stops_processing {
+        return Err(outcome.stop_message("Prompt stopped by UserPromptSubmit hook."));
+    }
     if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
         let reason = outcome
             .reason
@@ -491,10 +496,45 @@ mod user_prompt_hook_tests {
             decision: Some(HookDecision::Block),
             reason: Some("prompt rejected by policy".to_string()),
             updated_input: None,
+            stop_reason: None,
+            stops_processing: false,
         };
         let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
         assert_eq!(err, "prompt rejected by policy");
         assert!(take_turn_hook_context(sid).is_none());
+    }
+
+    #[test]
+    fn stop_hook_returns_stop_reason_and_skips_the_turn() {
+        let sid = "start-hook-stop-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec!["must not be queued".to_string()],
+            decision: None,
+            reason: None,
+            updated_input: None,
+            stop_reason: Some("budget exhausted".to_string()),
+            stops_processing: true,
+        };
+        let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
+        assert_eq!(err, "budget exhausted");
+        assert!(take_turn_hook_context(sid).is_none());
+    }
+
+    #[test]
+    fn stop_without_stop_reason_uses_the_fallback_text() {
+        let sid = "start-hook-stop-fallback-test";
+        clear_hook_context(sid);
+        let outcome = HookDispatchResult {
+            additional_context: vec![],
+            decision: None,
+            reason: None,
+            updated_input: None,
+            stop_reason: None,
+            stops_processing: true,
+        };
+        let err = evaluate_user_prompt_hook_outcome(sid, outcome).unwrap_err();
+        assert_eq!(err, "Prompt stopped by UserPromptSubmit hook.");
     }
 
     #[test]
@@ -506,6 +546,8 @@ mod user_prompt_hook_tests {
             decision: None,
             reason: None,
             updated_input: None,
+            stop_reason: None,
+            stops_processing: false,
         };
         evaluate_user_prompt_hook_outcome(sid, outcome).unwrap();
         assert_eq!(

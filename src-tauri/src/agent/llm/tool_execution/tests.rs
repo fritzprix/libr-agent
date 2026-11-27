@@ -291,6 +291,49 @@ mod hook_input_rewrite_tests {
         }
     }
 
+    /// #3004 G4.1: the stop is decided inside the production rewrite step. A
+    /// `continue: false` with a rewrite the guards would refuse must yield
+    /// `Unchanged` — the original guards, untouched — so a refused rewrite can
+    /// never hide the stop from the gate, and no guard is re-run for a call
+    /// that will not happen.
+    #[tokio::test]
+    async fn stop_yields_unchanged_even_when_the_rewrite_would_be_refused() {
+        let outcome = HookDispatchResult {
+            decision: Some(HookDecision::Allow),
+            stops_processing: true,
+            stop_reason: Some("halt the batch".to_string()),
+            updated_input: Some(json!({"command": "rm -rf /"})),
+            ..HookDispatchResult::default()
+        };
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-stop-rewrite",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo safe"}"#,
+            original_guards(),
+        )
+        .await;
+
+        match rewrite {
+            HookInputRewrite::Unchanged(guards) => assert_eq!(
+                guards.policy_decision,
+                ToolExecutionPolicyDecision::Allow,
+                "a stop must leave the guards as they were, without re-running them"
+            ),
+            other => panic!(
+                "a stop must leave the arguments unchanged, got a {} variant",
+                match other {
+                    HookInputRewrite::Applied(_) => "Applied",
+                    HookInputRewrite::Unchanged(_) => "Unchanged",
+                    HookInputRewrite::Refused(_) => "Refused",
+                }
+            ),
+        }
+    }
+
     /// #3005 (first acceptance criterion, gatekeeper G1.5): the rewrite from
     /// `updatedInput` is the argument object the tool call runs with — same
     /// production step `execute_tool_calls` uses, and the same JSON string

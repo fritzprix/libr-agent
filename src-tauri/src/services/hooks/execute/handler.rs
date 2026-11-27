@@ -84,17 +84,55 @@ async fn run_hook_handler(
 
     let pid = child.id();
     let mut stdin = child.stdin.take();
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
     let envelope_bytes = envelope_json.as_bytes().to_vec();
     let run_future = async {
-        if let Some(mut pipe) = stdin.take() {
-            if let Err(e) = pipe.write_all(&envelope_bytes).await {
-                return Err(format!("stdin write failed: {e}"));
+        use tokio::io::AsyncReadExt;
+
+        let write_stdin = async {
+            if let Some(mut pipe) = stdin.take() {
+                if let Err(e) = pipe.write_all(&envelope_bytes).await {
+                    if e.kind() != std::io::ErrorKind::BrokenPipe {
+                        return Err(format!("stdin write failed: {e}"));
+                    }
+                }
             }
-        }
-        child
-            .wait_with_output()
+            Ok::<(), String>(())
+        };
+        let read_stdout = async {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = stdout_pipe.take() {
+                pipe.read_to_end(&mut buf)
+                    .await
+                    .map_err(|e| format!("stdout read failed: {e}"))?;
+            }
+            Ok::<Vec<u8>, String>(buf)
+        };
+        let read_stderr = async {
+            let mut buf = Vec::new();
+            if let Some(mut pipe) = stderr_pipe.take() {
+                pipe.read_to_end(&mut buf)
+                    .await
+                    .map_err(|e| format!("stderr read failed: {e}"))?;
+            }
+            Ok::<Vec<u8>, String>(buf)
+        };
+
+        let (stdin_res, stdout_res, stderr_res) =
+            tokio::join!(write_stdin, read_stdout, read_stderr);
+        stdin_res?;
+        let stdout = stdout_res?;
+        let stderr = stderr_res?;
+        let status = child
+            .wait()
             .await
-            .map_err(|e| format!("wait failed: {e}"))
+            .map_err(|e| format!("wait failed: {e}"))?;
+        Ok::<std::process::Output, String>(std::process::Output {
+            status,
+            stdout,
+            stderr,
+        })
     };
 
     let output = match timeout(deadline, run_future).await {

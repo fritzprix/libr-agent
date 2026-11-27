@@ -441,6 +441,7 @@ pub async fn handle_llm_response(
                 active_sessions,
                 proxy_manager,
                 app_handle,
+                &crate::agent::workflow::LlmCompletionRestart,
                 &session_id,
             )
             .await?;
@@ -452,6 +453,7 @@ pub async fn handle_llm_response(
             active_sessions,
             proxy_manager,
             app_handle,
+            &crate::agent::workflow::LlmCompletionRestart,
             &session_id,
             Some(&msg_for_db),
             crate::agent::events::WorkflowCompletionReason::Natural,

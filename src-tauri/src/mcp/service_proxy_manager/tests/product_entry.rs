@@ -28,6 +28,7 @@ impl RecordingDispatcher {
                 AgentEvent::WorkflowCompleted {
                     session_id: id,
                     reason: WorkflowCompletionReason::Terminated,
+                    stop_reason: None,
                 } if id == session_id
             )
         })

@@ -136,6 +136,10 @@ pub struct HookDispatchResult {
     /// `updatedInput` from the handler that last allowed the call (#3005).
     /// `None` means no hook rewrote the arguments.
     pub updated_input: Option<serde_json::Value>,
+    /// Aggregated `continue: false` from any handler (#3004). Once a hook stops
+    /// processing, a later `continue: true` cannot undo it.
+    pub stop_reason: Option<String>,
+    pub stops_processing: bool,
 }
 
 impl HookDispatchResult {
@@ -177,6 +181,21 @@ impl HookDispatchResult {
         if output.updated_input.is_some() && output.decision != Some(HookDecision::Block) {
             self.updated_input = output.updated_input;
         }
+
+        // `continue: false` (#3004): the first handler that stops wins, and its
+        // `stopReason` is the text the user sees. A later `continue: true` is a
+        // no-op, so one plugin cannot re-enable processing another stopped.
+        if output.continue_loop == Some(false) && !self.stops_processing {
+            self.stops_processing = true;
+            self.stop_reason = output.stop_reason;
+        }
+    }
+
+    /// The `stopReason` of a hook that stopped processing, or `fallback`.
+    pub fn stop_message(&self, fallback: &str) -> String {
+        self.stop_reason
+            .clone()
+            .unwrap_or_else(|| fallback.to_string())
     }
 
     pub fn joined_additional_context(&self) -> Option<String> {

@@ -307,6 +307,56 @@ describe('AgentSessionContext – Event Handling', () => {
             });
         });
 
+        it('keeps workflow busy when hookStoppedNotice is emitted for a continuing session', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            listenMock.mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => useAgentSessionState(),
+                { wrapper: defaultWrapper }
+            );
+
+            await waitFor(() => {
+                expect(result.current.isSessionLoading).toBe(false);
+                expect(eventHandler).toBeDefined();
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'statusChanged',
+                        sessionId: TEST_SESSION_ID,
+                        status: 'busy',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.workflowStatus).toBe('busy');
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'hookStoppedNotice',
+                        sessionId: TEST_SESSION_ID,
+                        stopReason: 'budget exhausted',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.workflowStatus).toBe('busy');
+            });
+        });
+
         it('should append message on messageAdded event', async () => {
             let eventHandler: ((event: unknown) => void) | undefined;
             listenMock.mockImplementation(

@@ -3,17 +3,20 @@ use super::results::{
     args_parse_error_result, cancelled_tool_result, error_result,
     inject_cancel_tombstones_for_remaining, session_cancel_requested, tool_result_from_mcp_result,
 };
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::natural_recovery::{
     build_loop_prevention_guidance, loop_prevention_tool_result, LoopPreventionShortCircuit,
 };
 use crate::agent::llm::tool_args_validation::inspect_tool_call_arguments;
 use crate::agent::state::{AgentSession, PendingApprovalKind};
+use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::agent::tool_approvals::ToolExecutionPolicyDecision;
 use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::commands::agent_commands::{ToolCancellation, ToolExecutionResult};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::SessionRepository;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -35,6 +38,7 @@ enum PreparedCall {
     Execute(serde_json::Value),
     NextCall,
     StopBatch,
+    HookStopped(String),
 }
 
 pub async fn execute_tool_calls(
@@ -88,18 +92,54 @@ pub async fn execute_tool_calls(
         .await
         {
             PreparedCall::Execute(args) => {
-                run_and_record_tool_call(
+                if let Some(stop_reason) = run_and_record_tool_call(
                     &context,
                     &cancellation_token,
                     &tool_call.id,
                     &tool_call.function.name,
                     args,
                 )
-                .await;
+                .await
+                {
+                    stop_turn_from_hook(
+                        context.session_repo,
+                        context.active_sessions,
+                        context.proxy_manager,
+                        context.app_handle,
+                        &crate::agent::workflow::LlmCompletionRestart,
+                        context.session_id,
+                        &tool_calls[index + 1..],
+                        &stop_reason,
+                    )
+                    .await;
+                    break;
+                }
                 index += 1;
             }
             PreparedCall::NextCall => index += 1,
             PreparedCall::StopBatch => break,
+            PreparedCall::HookStopped(stop_reason) => {
+                cancellation_token.cancel();
+                context
+                    .continue_after_tool(
+                        &tool_call.id,
+                        error_result(stop_reason.clone()),
+                        "hook-stopped tool execution",
+                    )
+                    .await;
+                stop_turn_from_hook(
+                    context.session_repo,
+                    context.active_sessions,
+                    context.proxy_manager,
+                    context.app_handle,
+                    &crate::agent::workflow::LlmCompletionRestart,
+                    context.session_id,
+                    &tool_calls[index + 1..],
+                    &stop_reason,
+                )
+                .await;
+                break;
+            }
         }
     }
 }
@@ -282,8 +322,10 @@ pub(super) enum HookInputRewrite {
 /// string, number, or array would make every key-reading guard see nothing,
 /// so anything else is ignored with a visible warning and the original
 /// arguments stand. A `Block` decision ignores any rewrite: the call never
-/// runs. A usable rewrite re-runs the same policy and root guards, so a hook
-/// cannot walk a command around them that the model could not run.
+/// runs. A stop (`continue: false`) likewise ignores any rewrite, so a refused
+/// rewrite cannot hide the stop from the gate (#3004). A usable rewrite re-runs
+/// the same policy and root guards, so a hook cannot walk a command around them
+/// that the model could not run.
 pub(super) async fn apply_hook_input_rewrite(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
@@ -293,10 +335,10 @@ pub(super) async fn apply_hook_input_rewrite(
     original_args_json: &str,
     original_guards: PreExecutionGuards,
 ) -> HookInputRewrite {
-    let rewrite = outcome
-        .updated_input
-        .clone()
-        .filter(|_| outcome.decision != Some(crate::services::hooks::HookDecision::Block));
+    let rewrite = outcome.updated_input.clone().filter(|_| {
+        !outcome.stops_processing
+            && outcome.decision != Some(crate::services::hooks::HookDecision::Block)
+    });
     let Some(rewritten) = rewrite else {
         return HookInputRewrite::Unchanged(original_guards);
     };
@@ -362,8 +404,8 @@ async fn dispatch_pre_tool_hook_and_rewrite(
     }
 
     // `updatedInput` (#3005): apply the hook's rewrite through the
-    // production step `apply_hook_input_rewrite` — object-only, Block
-    // drops it, and the rewritten arguments re-run every guard.
+    // production step `apply_hook_input_rewrite` — object-only, Block or a
+    // stop drops it, and the rewritten arguments re-run every guard.
     let rewrite = apply_hook_input_rewrite(
         context.active_sessions,
         context.session_id,
@@ -407,6 +449,13 @@ async fn dispatch_pre_tool_hook_and_gate(
     else {
         return PreparedCall::NextCall;
     };
+
+    if stage.outcome.stops_processing {
+        let stop_reason = stage
+            .outcome
+            .stop_message("PreToolUse hook stopped processing.");
+        return PreparedCall::HookStopped(stop_reason);
+    }
 
     let policy_decision = &stage.guards.policy_decision;
     let yolo_enabled = context.current_yolo_mode().await;
@@ -526,7 +575,7 @@ async fn run_and_record_tool_call(
     tool_call_id: &str,
     tool_name: &str,
     args: serde_json::Value,
-) {
+) -> Option<String> {
     // `args` is moved into `execute_tool` below; keep a copy for the
     // PostToolUse hook envelope.
     let post_tool_input = args.clone();
@@ -554,20 +603,40 @@ async fn run_and_record_tool_call(
         result.cancellation = Some(ToolCancellation::user());
     }
     let tool_ended_with_error = result.is_error;
+    // Captured before the result is moved: the `PostToolUse` envelope carries
+    // the real tool result (#3004).
+    let post_tool_envelope = (!tool_ended_with_error).then(|| post_tool_response(&result));
+
+    // PostToolUse hook (#2925, #3004 G1.2): evaluate BEFORE `continue_after_tool`
+    // so `additionalContext`, `block` feedback, and `continue: false` take effect
+    // before the next completion is requested.
+    let post_tool_stop_reason = if !tool_ended_with_error {
+        dispatch_post_tool_use_hook(
+            context.session_id,
+            tool_name,
+            post_tool_input,
+            post_tool_envelope,
+            cancellation_token,
+        )
+        .await
+    } else {
+        None
+    };
+
     context
         .continue_after_tool(tool_call_id, result, "tool execution")
         .await;
 
-    if !tool_ended_with_error {
-        dispatch_post_tool_use_hook(context.session_id, tool_name, post_tool_input).await;
-    }
+    post_tool_stop_reason
 }
 
 async fn dispatch_post_tool_use_hook(
     session_id: &str,
     tool_name: &str,
     post_tool_input: serde_json::Value,
-) {
+    post_tool_envelope: Option<serde_json::Value>,
+    cancellation_token: &CancellationToken,
+) -> Option<String> {
     // PostToolUse hook (#2925): runs after a successful tool call. Adds
     // `additionalContext` and `decision: "block"` feedback to the next LLM request.
     let mut post_tool_params = crate::services::hooks::HookEnvelopeParams::new(
@@ -577,7 +646,7 @@ async fn dispatch_post_tool_use_hook(
     );
     post_tool_params.tool_name = Some(tool_name.to_string());
     post_tool_params.tool_input = Some(post_tool_input);
-    post_tool_params.tool_response = Some(serde_json::json!({ "is_error": false }));
+    post_tool_params.tool_response = post_tool_envelope;
     let post_tool_outcome = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::PostToolUse,
         tool_name,
@@ -585,24 +654,181 @@ async fn dispatch_post_tool_use_hook(
         session_id,
     )
     .await;
+    if post_tool_outcome.stops_processing {
+        let stop_reason = post_tool_outcome.stop_message("PostToolUse hook stopped processing.");
+        cancellation_token.cancel();
+        return Some(stop_reason);
+    }
     if let Some(ctx) = post_tool_outcome.joined_additional_context() {
         crate::services::hooks::push_turn_hook_context(session_id, &ctx);
     }
-    if post_tool_outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
-        let reason = post_tool_outcome
-            .reason
-            .filter(|r| !r.trim().is_empty())
-            .unwrap_or_else(|| {
-                format!(
-                    "PostToolUse hook blocked continuation after '{}'.",
-                    tool_name
-                )
-            });
+    if let Some(reason) = post_tool_feedback(&post_tool_outcome, tool_name) {
         crate::services::hooks::push_turn_hook_context(
             session_id,
             &format!("[PostToolUse hook block]: {reason}"),
         );
     }
+    None
+}
+
+/// Tool result recorded for remaining batch calls skipped after a hook returned
+/// `continue: false` (#3004 G2.1).
+fn hook_stopped_remaining_tool_result(stop_reason: &str) -> ToolExecutionResult {
+    error_result(format!(
+        "Skipped because hook stopped processing: {stop_reason}"
+    ))
+}
+
+/// Finish a turn stopped by a `PreToolUse` / `PostToolUse` hook (`continue: false`,
+/// #3004 G2.1/G3.2): label remaining calls as stopped by hook, then end the turn
+/// through the **shared settlement code** so queued prompts keep draining and the
+/// `Stop` hook decision is made there (a hook already stopped this turn, so it does
+/// not run) — and so `WorkflowCompleted` carries `stopReason` for the UI to show on
+/// a non-error end of turn (#3004 G3.1).
+///
+/// `pub` so the integration test can drive the production stop path (#3004 G2.2).
+#[allow(clippy::too_many_arguments)]
+pub async fn stop_turn_from_hook(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    restart: &dyn crate::agent::workflow::WorkflowRestart,
+    session_id: &str,
+    remaining: &[ToolCall],
+    stop_reason: &str,
+) {
+    // Capture user cancel BEFORE submitting remaining results (#3004 G2.2):
+    // completing the batch inside `continue_after_tool` consumes `cancel_pending`
+    // and transitions status to `Paused`, which would otherwise hide the cancel
+    // from the check below.
+    let user_cancelled_before = {
+        let sessions = active_sessions.read().await;
+        sessions.get(session_id).is_some_and(|session| {
+            session.cancel_pending.load(Ordering::SeqCst)
+                || session.metadata.status == crate::repositories::SessionStatus::Paused
+        })
+    };
+
+    let context = ToolExecutionContext {
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id,
+    };
+    for tool_call in remaining {
+        context
+            .continue_after_tool(
+                &tool_call.id,
+                hook_stopped_remaining_tool_result(stop_reason),
+                "hook-stopped remaining tool call",
+            )
+            .await;
+    }
+
+    let user_cancelled = {
+        let mut sessions = active_sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            if user_cancelled_before
+                || session.cancel_pending.load(Ordering::SeqCst)
+                || session.metadata.status == crate::repositories::SessionStatus::Paused
+            {
+                true
+            } else {
+                // The caller cancelled this turn's `cancellation_token`, but
+                // settlement below may drain a queued prompt into a brand-new
+                // turn. Reset exactly like `start_workflow` does so the
+                // continuation starts clean (#3004 G4.1).
+                crate::agent::workflow::reset_session_execution_state(session).await;
+                false
+            }
+        } else {
+            user_cancelled_before
+        }
+    };
+    let dispatcher = TauriEventDispatcher::from_handle(app_handle);
+    if user_cancelled {
+        crate::services::hooks::reset_stop_hook_continuations(session_id);
+        if let Err(error) = crate::agent::lifecycle::update_session_status(
+            session_repo,
+            active_sessions,
+            app_handle,
+            session_id,
+            crate::repositories::SessionStatus::Paused,
+        )
+        .await
+        {
+            log::error!(
+                "Failed to settle user-cancelled session {session_id} to Paused after hook stop: {error}"
+            );
+        }
+        if let Err(error) =
+            dispatcher.emit_agent_event(crate::agent::events::AgentEvent::WorkflowCompleted {
+                session_id: session_id.to_string(),
+                reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
+                stop_reason: None,
+            })
+        {
+            log::error!(
+                "Failed to emit Cancelled WorkflowCompleted for session {session_id}: {error}"
+            );
+        }
+        return;
+    }
+    if let Err(error) = crate::agent::workflow::settle_session_and_go_idle_with_dispatcher(
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        restart,
+        &dispatcher,
+        session_id,
+        None,
+        crate::agent::events::WorkflowCompletionReason::Natural,
+        Some(stop_reason),
+    )
+    .await
+    {
+        log::error!("Failed to settle session {session_id} to Idle after hook stop: {error}");
+    }
+}
+
+/// Feedback a `PostToolUse` hook wants the agent to see before the next request
+/// (#3004): a `block` decision surfaces its `reason`. (`continue: false` is
+/// handled before `continue_after_tool` so the turn ends immediately.)
+fn post_tool_feedback(
+    outcome: &crate::services::hooks::HookDispatchResult,
+    tool_name: &str,
+) -> Option<String> {
+    if outcome.decision == Some(crate::services::hooks::HookDecision::Block) {
+        return Some(
+            outcome
+                .reason
+                .clone()
+                .filter(|r| !r.trim().is_empty())
+                .unwrap_or_else(|| {
+                    format!("PostToolUse hook blocked continuation after '{tool_name}'.")
+                }),
+        );
+    }
+    None
+}
+
+/// Envelope `tool_response` for a `PostToolUse` hook (#3004).
+///
+/// The hook sees the real tool result, not a `{ "is_error": false }` stub, in the
+/// same shape the MCP layer produced.
+fn post_tool_response(
+    result: &crate::commands::agent_commands::ToolExecutionResult,
+) -> serde_json::Value {
+    serde_json::json!({
+        "success": result.success,
+        "is_error": result.is_error,
+        "content": result.content,
+        "structured_content": result.structured_content,
+        "error": result.error,
+    })
 }
 
 /// Resolution of combining runtime tool-approval policy with a `PreToolUse` hook
@@ -664,5 +890,74 @@ pub(crate) fn apply_pre_tool_hook_decision(
             },
             None => PreToolHookResolution::Execute,
         },
+    }
+}
+
+#[cfg(test)]
+mod hook_stop_and_tool_response_tests {
+    use super::{hook_stopped_remaining_tool_result, post_tool_feedback, post_tool_response};
+    use crate::commands::agent_commands::ToolExecutionResult;
+    use crate::services::hooks::{HookDecision, HookDispatchResult};
+
+    fn empty_result() -> HookDispatchResult {
+        HookDispatchResult {
+            additional_context: vec![],
+            decision: None,
+            reason: None,
+            updated_input: None,
+            stop_reason: None,
+            stops_processing: false,
+        }
+    }
+
+    #[test]
+    fn hook_stopped_remaining_tool_result_labels_hook_stop_not_user_cancel() {
+        let res = hook_stopped_remaining_tool_result("budget exhausted");
+        assert!(res.is_error);
+        assert!(res.cancellation.is_none());
+        assert_eq!(
+            res.error.as_deref(),
+            Some("Skipped because hook stopped processing: budget exhausted")
+        );
+    }
+
+    #[test]
+    fn post_tool_feedback_reports_block_only() {
+        assert_eq!(
+            post_tool_feedback(&empty_result(), "workspace__readFile"),
+            None
+        );
+
+        let blocked = HookDispatchResult {
+            decision: Some(HookDecision::Block),
+            reason: Some("read the docs first".to_string()),
+            ..empty_result()
+        };
+        assert_eq!(
+            post_tool_feedback(&blocked, "workspace__readFile").as_deref(),
+            Some("read the docs first")
+        );
+    }
+
+    #[test]
+    fn tool_response_carries_the_real_result() {
+        let tool_result = ToolExecutionResult {
+            success: true,
+            content: "line 42: needle".to_string(),
+            mcp_content: None,
+            structured_content: Some(serde_json::json!({ "matches": 1 })),
+            error: None,
+            is_error: false,
+            cancellation: None,
+            execution_duration_ms: Some(7),
+        };
+        let response = post_tool_response(&tool_result);
+        assert_eq!(response["is_error"], serde_json::json!(false));
+        assert_eq!(response["content"], serde_json::json!("line 42: needle"));
+        assert_eq!(
+            response["structured_content"]["matches"],
+            serde_json::json!(1)
+        );
+        assert_ne!(response, serde_json::json!({ "is_error": false }));
     }
 }

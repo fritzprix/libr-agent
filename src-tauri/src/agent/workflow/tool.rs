@@ -144,6 +144,7 @@ pub async fn continue_workflow_after_tool(
                 let event = crate::agent::events::AgentEvent::WorkflowCompleted {
                     session_id: session_id.clone(),
                     reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
+                    stop_reason: None,
                 };
                 let _ = TauriEventDispatcher::from_handle(app_handle).emit_agent_event(event);
                 return Ok(());
@@ -199,6 +200,7 @@ pub async fn continue_workflow_after_tool(
                     active_sessions,
                     proxy_manager,
                     app_handle,
+                    &crate::agent::workflow::LlmCompletionRestart,
                     &session_id,
                     None,
                     crate::agent::events::WorkflowCompletionReason::RecurringStop,
