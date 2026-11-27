@@ -17,7 +17,7 @@ const MAX_COMPACTION_SUMMARY_RETRY_ATTEMPTS: u32 = 3;
 
 pub(super) struct CompactSummaryPersistenceContext<'a> {
     pub active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
-    pub app_handle: &'a AppHandle,
+    pub app_handle: Option<&'a AppHandle>,
     pub session_repo: &'a Arc<dyn SessionRepository>,
     pub proxy_manager: &'a Arc<MCPServiceProxyManager>,
     pub session_id: &'a str,
@@ -234,24 +234,26 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
 
     // Still emit Failed so UI clears compacting/awaiting flags; frontend silences
     // the toast for EMPTY_DELTA_NOOP_ERROR (intentional skip, not a user error).
-    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
-    if let Err(error) = dispatcher.emit_compact_finished(
-        context.session_id.to_string(),
-        context.session_name,
-        CompactStatePhase::Failed,
-        Some(crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string()),
-    ) {
-        log::warn!(
-            "Failed to emit compact finished state for session {} after empty-delta abort: {}",
-            context.session_id,
-            error
-        );
+    if let Some(app_handle) = context.app_handle {
+        let dispatcher = TauriEventDispatcher::from_handle(app_handle);
+        if let Err(error) = dispatcher.emit_compact_finished(
+            context.session_id.to_string(),
+            context.session_name,
+            CompactStatePhase::Failed,
+            Some(crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string()),
+        ) {
+            log::warn!(
+                "Failed to emit compact finished state for session {} after empty-delta abort: {}",
+                context.session_id,
+                error
+            );
+        }
     }
 
     let session_repo = context.session_repo.clone();
     let active_sessions = context.active_sessions.clone();
     let proxy_manager = context.proxy_manager.clone();
-    let app_handle = context.app_handle.clone();
+    let app_handle = context.app_handle.cloned();
     let session_id = context.session_id.to_string();
     crate::agent::workflow::continue_pending_after_compaction(
         context.session_repo,
@@ -261,14 +263,16 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
         context.session_id,
         resume_action,
         || {
-            spawn_resume_completion(
-                &session_repo,
-                &active_sessions,
-                &proxy_manager,
-                &app_handle,
-                &session_id,
-                "LLM completion after empty-delta compaction abort",
-            );
+            if let Some(app_handle) = app_handle {
+                spawn_resume_completion(
+                    &session_repo,
+                    &active_sessions,
+                    &proxy_manager,
+                    &app_handle,
+                    &session_id,
+                    "LLM completion after empty-delta compaction abort",
+                );
+            }
         },
     )
     .await?;
@@ -342,24 +346,26 @@ pub(super) async fn persist_compact_summary_and_resume(
             CompactionResumeAction::ResumeCompletion => "resume_completion",
         }
     );
-    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
-    if let Err(error) = dispatcher.emit_compact_finished(
-        context.session_id.to_string(),
-        context.session_name,
-        CompactStatePhase::Succeeded,
-        None,
-    ) {
-        log::warn!(
-            "Failed to emit compact finished state for session {} after successful compaction: {}",
-            context.session_id,
-            error
-        );
+    if let Some(app_handle) = context.app_handle {
+        let dispatcher = TauriEventDispatcher::from_handle(app_handle);
+        if let Err(error) = dispatcher.emit_compact_finished(
+            context.session_id.to_string(),
+            context.session_name,
+            CompactStatePhase::Succeeded,
+            None,
+        ) {
+            log::warn!(
+                "Failed to emit compact finished state for session {} after successful compaction: {}",
+                context.session_id,
+                error
+            );
+        }
     }
 
     let session_repo = context.session_repo.clone();
     let active_sessions = context.active_sessions.clone();
     let proxy_manager = context.proxy_manager.clone();
-    let app_handle = context.app_handle.clone();
+    let app_handle = context.app_handle.cloned();
     let session_id = context.session_id.to_string();
     // #3007: the `PostCompact` matcher value is the compaction trigger
     // ("auto" / "manual"), matching the `PreCompact` convention: a resumed
@@ -378,14 +384,16 @@ pub(super) async fn persist_compact_summary_and_resume(
         context.session_id,
         resume_action,
         || {
-            spawn_resume_completion(
-                &session_repo,
-                &active_sessions,
-                &proxy_manager,
-                &app_handle,
-                &session_id,
-                "LLM completion",
-            );
+            if let Some(app_handle) = app_handle {
+                spawn_resume_completion(
+                    &session_repo,
+                    &active_sessions,
+                    &proxy_manager,
+                    &app_handle,
+                    &session_id,
+                    "LLM completion",
+                );
+            }
         },
     )
     .await?;
@@ -412,4 +420,98 @@ pub(super) async fn persist_compact_summary_and_resume(
     .await;
 
     Ok(CompactResponseOutcome { retried: false })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::context::registry::ContextRegistry;
+    use crate::agent::state::CompactionKind;
+    use crate::repositories::{
+        SessionMetadata, SqliteCompactContextRepository, SqlitePlanningRepository,
+        SqliteSessionRepository,
+    };
+    use crate::services::hooks::execute::observed_hook_dispatches_for_session;
+    use crate::services::hooks::HookEvent;
+    use sea_orm::Database;
+    use sea_orm_migration::MigratorTrait;
+
+    async fn init_compaction_test_db() -> Arc<sea_orm::DatabaseConnection> {
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("run migrations");
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            crate::state::set_compact_context_repository(SqliteCompactContextRepository::new(
+                db_clone.clone(),
+            ));
+        }));
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            crate::state::set_planning_repository(SqlitePlanningRepository::new(db_clone.clone()));
+        }));
+        Arc::new(db)
+    }
+
+    async fn run_compaction_with_kind(kind: CompactionKind, expected_trigger: &str) {
+        let _lock = crate::state::lock_test_global_state().await;
+        let db = init_compaction_test_db().await;
+        let session_manager =
+            Arc::new(crate::session::SessionManager::new().expect("SessionManager"));
+        let proxy_manager = Arc::new(MCPServiceProxyManager::new(db.clone(), session_manager));
+        let session_repo: Arc<dyn SessionRepository> =
+            Arc::new(SqliteSessionRepository::new(db.as_ref().clone()));
+
+        let sid = format!("compact-hook-{}-{}", expected_trigger, uuid::Uuid::new_v4());
+        let session = SessionMetadata::test_fixture(&sid);
+        session_repo
+            .upsert_session(&session)
+            .await
+            .expect("insert test session");
+        let agent_session = AgentSession::new(session, Arc::new(ContextRegistry::new()), None);
+        agent_session
+            .compaction
+            .try_begin(kind, Some("msg-1".to_string()), 1_000)
+            .await;
+
+        let active_sessions = Arc::new(RwLock::new(HashMap::from([(sid.clone(), agent_session)])));
+
+        persist_compact_summary_and_resume(
+            CompactSummaryPersistenceContext {
+                active_sessions: &active_sessions,
+                app_handle: None,
+                session_repo: &session_repo,
+                proxy_manager: &proxy_manager,
+                session_id: &sid,
+                session_name: Some("compact-test".to_string()),
+                to_id: "msg-1".to_string(),
+                compacted_delta_count: 1,
+                telemetry_phase: CompactionTelemetryPhase::Succeeded,
+                epoch_path: None,
+                fallback_path: None,
+                raw_output_path: None,
+            },
+            "compacted summary".to_string(),
+        )
+        .await
+        .expect("persist_compact_summary_and_resume should succeed without AppHandle");
+
+        let observed = observed_hook_dispatches_for_session(&sid);
+        assert!(
+            observed.iter().any(|entry| {
+                entry.event == HookEvent::PostCompact && entry.matcher_value == expected_trigger
+            }),
+            "expected PostCompact with trigger '{expected_trigger}', observed: {observed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn persist_compact_summary_and_resume_dispatches_post_compact_for_auto_and_manual() {
+        run_compaction_with_kind(CompactionKind::Preflight, "auto").await;
+        run_compaction_with_kind(CompactionKind::Manual, "manual").await;
+    }
 }

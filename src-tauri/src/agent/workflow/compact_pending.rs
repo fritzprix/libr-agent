@@ -65,7 +65,7 @@ pub async fn continue_pending_after_compaction(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
+    app_handle: Option<&AppHandle>,
     session_id: &str,
     resume_action: CompactionResumeAction,
     spawn_resume_completion: impl FnOnce(),
@@ -92,6 +92,9 @@ pub async fn continue_pending_after_compaction(
             Ok(())
         }
         CompactPendingContinueKind::StartFromPending => {
+            let Some(app_handle) = app_handle else {
+                return Ok(());
+            };
             log::info!(
                 "▶️ Starting workflow from pending queue after manual compaction for session {}",
                 session_id

@@ -229,12 +229,68 @@ pub async fn notify_stub_event(event: HookEvent, session_id: &str, mut params: H
     );
 }
 
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObservedHookDispatch {
+    pub event: HookEvent,
+    pub matcher_value: String,
+    pub session_id: String,
+}
+
+#[cfg(test)]
+static OBSERVED_HOOK_DISPATCHES: once_cell::sync::Lazy<
+    std::sync::Mutex<Vec<ObservedHookDispatch>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
+
+#[cfg(test)]
+pub(crate) fn observed_hook_dispatches_for_session(session_id: &str) -> Vec<ObservedHookDispatch> {
+    OBSERVED_HOOK_DISPATCHES
+        .lock()
+        .expect("observed hook dispatches lock")
+        .iter()
+        .filter(|entry| entry.session_id == session_id)
+        .cloned()
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) async fn wait_for_hook_dispatch(
+    session_id: &str,
+    event: HookEvent,
+    timeout: std::time::Duration,
+) -> Option<ObservedHookDispatch> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if let Some(found) = observed_hook_dispatches_for_session(session_id)
+            .into_iter()
+            .find(|entry| entry.event == event)
+        {
+            return Some(found);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return None;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 pub async fn dispatch_hook_event(
     event: HookEvent,
     matcher_value: &str,
     envelope_params: &HookEnvelopeParams,
     session_id: &str,
 ) -> HookDispatchResult {
+    #[cfg(test)]
+    {
+        OBSERVED_HOOK_DISPATCHES
+            .lock()
+            .expect("observed hook dispatches lock")
+            .push(ObservedHookDispatch {
+                event,
+                matcher_value: matcher_value.to_string(),
+                session_id: session_id.to_string(),
+            });
+    }
     let plugins_dir = match get_user_plugins_directory() {
         Ok(dir) => dir,
         Err(e) => {

@@ -19,4 +19,6 @@ pub use dispatch::{
     notify_stub_event, run_session_start, run_session_start_in, run_session_start_with_sources,
     spawn_session_start, HookDispatchResult,
 };
+#[cfg(test)]
+pub(crate) use dispatch::{observed_hook_dispatches_for_session, wait_for_hook_dispatch};
 pub use matcher::matcher_matches;

@@ -369,7 +369,7 @@ pub async fn handle_compact_response(
     ) {
         return abort_empty_delta_compaction_and_resume(CompactSummaryPersistenceContext {
             active_sessions,
-            app_handle,
+            app_handle: Some(app_handle),
             session_repo,
             proxy_manager,
             session_id,
@@ -450,7 +450,7 @@ pub async fn handle_compact_response(
         return complete_compaction_with_hard_fallback(
             CompactSummaryPersistenceContext {
                 active_sessions,
-                app_handle,
+                app_handle: Some(app_handle),
                 session_repo,
                 proxy_manager,
                 session_id,
@@ -509,7 +509,7 @@ pub async fn handle_compact_response(
     persist_compact_summary_and_resume(
         CompactSummaryPersistenceContext {
             active_sessions,
-            app_handle,
+            app_handle: Some(app_handle),
             session_repo,
             proxy_manager,
             session_id,

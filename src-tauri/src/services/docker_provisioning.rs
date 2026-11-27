@@ -20,7 +20,29 @@ pub struct DockerProvisioningDeps {
     pub session_repo: Arc<dyn SessionRepository>,
     pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     pub proxy_manager: Arc<MCPServiceProxyManager>,
-    pub app_handle: AppHandle,
+    pub app_handle: Option<AppHandle>,
+}
+
+struct NoopEventDispatcher;
+
+impl crate::agent::events::AgentEventDispatcher for NoopEventDispatcher {
+    fn emit_agent_event(&self, _event: crate::agent::events::AgentEvent) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_compact_state(
+        &self,
+        _event: crate::agent::llm::types::CompactStateEvent,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn emit_completion_cancel(
+        &self,
+        _request: crate::agent::llm::types::CompletionCancelRequest,
+    ) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 struct DockerRuntimeStepParams<'a> {
@@ -154,7 +176,7 @@ async fn run_docker_provisioning(
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
-        Some(&deps.app_handle),
+        deps.app_handle.as_ref(),
         DockerRuntimeStepParams {
             session_id: &session.id,
             image: image.as_deref(),
@@ -180,7 +202,7 @@ async fn run_docker_provisioning(
         tokio::spawn(async move {
             emit_docker_runtime_step(
                 &proxy_manager,
-                Some(&app_handle),
+                app_handle.as_ref(),
                 DockerRuntimeStepParams {
                     session_id: &session_id,
                     image: image.as_deref(),
@@ -213,7 +235,7 @@ async fn complete_docker_provisioning(
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
-        Some(&deps.app_handle),
+        deps.app_handle.as_ref(),
         DockerRuntimeStepParams {
             session_id,
             image: image.as_deref(),
@@ -225,14 +247,26 @@ async fn complete_docker_provisioning(
     )
     .await;
 
-    crate::agent::lifecycle::update_session_status(
-        &deps.session_repo,
-        &deps.active_sessions,
-        &deps.app_handle,
-        session_id,
-        SessionStatus::Idle,
-    )
-    .await?;
+    if let Some(app_handle) = deps.app_handle.as_ref() {
+        crate::agent::lifecycle::update_session_status(
+            &deps.session_repo,
+            &deps.active_sessions,
+            app_handle,
+            session_id,
+            SessionStatus::Idle,
+        )
+        .await?;
+    } else {
+        let dispatcher = NoopEventDispatcher;
+        crate::agent::lifecycle::update_session_status_with_dispatcher(
+            &deps.session_repo,
+            &deps.active_sessions,
+            &dispatcher,
+            session_id,
+            SessionStatus::Idle,
+        )
+        .await?;
+    }
 
     crate::services::hooks::spawn_session_start(
         session_id,
@@ -278,7 +312,7 @@ async fn fail_docker_provisioning(
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
-        Some(&deps.app_handle),
+        deps.app_handle.as_ref(),
         DockerRuntimeStepParams {
             session_id: &session.id,
             image: image.as_deref(),
@@ -300,15 +334,27 @@ async fn fail_docker_provisioning(
         return Ok(());
     }
 
-    crate::agent::lifecycle::update_session_status_with_reason(
-        &deps.session_repo,
-        &deps.active_sessions,
-        &deps.app_handle,
-        &session.id,
-        SessionStatus::Error,
-        &reason,
-    )
-    .await?;
+    if let Some(app_handle) = deps.app_handle.as_ref() {
+        crate::agent::lifecycle::update_session_status_with_reason(
+            &deps.session_repo,
+            &deps.active_sessions,
+            app_handle,
+            &session.id,
+            SessionStatus::Error,
+            &reason,
+        )
+        .await?;
+    } else {
+        let dispatcher = NoopEventDispatcher;
+        crate::agent::lifecycle::record_session_error_with_dispatcher(
+            &deps.session_repo,
+            &deps.active_sessions,
+            &dispatcher,
+            &session.id,
+            &reason,
+        )
+        .await?;
+    }
 
     Ok(())
 }
@@ -409,10 +455,13 @@ async fn emit_drain_workflow_failure(
         error_message,
     )
     .with_code("DOCKER_DRAIN_WORKFLOW_FAILED");
+    let Some(app_handle) = deps.app_handle.as_ref() else {
+        return;
+    };
     let _ = crate::agent::workflow::finish::finalize_session_error(
         &deps.session_repo,
         &deps.active_sessions,
-        &deps.app_handle,
+        app_handle,
         session_id,
         error,
     )
@@ -468,13 +517,17 @@ async fn drain_and_start_pending_workflows(
         }
     };
 
+    let Some(app_handle) = deps.app_handle.as_ref() else {
+        return Ok(());
+    };
+
     for (index, message) in messages.into_iter().enumerate() {
         if index == 0 {
             if let Err(error) = crate::agent::workflow::start_workflow(
                 &deps.session_repo,
                 &deps.active_sessions,
                 &deps.proxy_manager,
-                &deps.app_handle,
+                app_handle,
                 session_id.to_string(),
                 message,
             )
@@ -485,7 +538,7 @@ async fn drain_and_start_pending_workflows(
             }
         } else if let Err(error) = MessageService::queue_user_message(
             &deps.active_sessions,
-            &deps.app_handle,
+            app_handle,
             session_id,
             &message,
         )
@@ -558,5 +611,62 @@ mod tests {
 
         assert_eq!(reason.chars().count(), MAX_STORED_REASON_CHARS + 1);
         assert!(reason.ends_with('…'));
+    }
+
+    #[tokio::test]
+    async fn complete_docker_provisioning_dispatches_subagent_start_for_child_session() {
+        use crate::agent::context::registry::ContextRegistry;
+        use crate::repositories::InMemorySessionRepository;
+        use crate::services::hooks::execute::wait_for_hook_dispatch;
+        use crate::services::hooks::HookEvent;
+        use sea_orm::Database;
+        use std::time::Duration;
+
+        let db = Arc::new(
+            Database::connect("sqlite::memory:")
+                .await
+                .expect("connect in-memory sqlite"),
+        );
+        let session_manager =
+            Arc::new(crate::session::SessionManager::new().expect("SessionManager"));
+        let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
+        let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+
+        let child_id = format!("docker-child-{}", uuid::Uuid::new_v4());
+        let session = SessionMetadata {
+            id: child_id.clone(),
+            name: Some("docker-worker".to_string()),
+            status: SessionStatus::Provisioning,
+            parent_session_id: Some("docker-parent".to_string()),
+            ..docker_session(&[])
+        };
+        session_repo
+            .upsert_session(&session)
+            .await
+            .expect("upsert session");
+
+        let active_sessions = Arc::new(RwLock::new(HashMap::from([(
+            child_id.clone(),
+            AgentSession::new(session, Arc::new(ContextRegistry::new()), None),
+        )])));
+
+        let deps = DockerProvisioningDeps {
+            session_repo: Arc::clone(&session_repo),
+            active_sessions,
+            proxy_manager,
+            app_handle: None,
+        };
+
+        complete_docker_provisioning(&deps, &child_id)
+            .await
+            .expect("complete_docker_provisioning should succeed without AppHandle");
+
+        let observed =
+            wait_for_hook_dispatch(&child_id, HookEvent::SubagentStart, Duration::from_secs(2))
+                .await
+                .expect("SubagentStart must be dispatched after Docker provisioning completes");
+        assert_eq!(observed.event, HookEvent::SubagentStart);
+        assert_eq!(observed.session_id, child_id);
+        assert_eq!(observed.matcher_value, "docker-worker");
     }
 }

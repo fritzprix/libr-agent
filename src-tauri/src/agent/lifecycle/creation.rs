@@ -16,7 +16,7 @@ pub struct CreateSessionParams {
     pub session_repo: Arc<dyn SessionRepository>,
     pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     pub proxy_manager: Arc<MCPServiceProxyManager>,
-    pub app_handle: AppHandle,
+    pub app_handle: Option<AppHandle>,
     pub context_registry: Arc<ContextRegistry>,
     pub session_id: String,
     pub name: Option<String>,
@@ -335,4 +335,93 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     );
 
     Ok(session)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repositories::{
+        InMemorySessionRepository, SqliteAssistantRepository, SqliteCompactContextRepository,
+        SqliteMCPServerRepository, SqliteSettingsRepository,
+    };
+    use crate::services::hooks::execute::wait_for_hook_dispatch;
+    use crate::services::hooks::HookEvent;
+    use sea_orm::Database;
+    use sea_orm_migration::MigratorTrait;
+    use std::time::Duration;
+
+    async fn init_test_db() -> Arc<sea_orm::DatabaseConnection> {
+        crate::lifecycle::database::register_sqlite_vec();
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("run migrations");
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            crate::state::set_settings_repository(SqliteSettingsRepository::new(db_clone.clone()));
+        }));
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            crate::state::set_compact_context_repository(SqliteCompactContextRepository::new(
+                db_clone.clone(),
+            ));
+        }));
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            crate::state::set_assistant_repository(SqliteAssistantRepository::new(
+                db_clone.clone(),
+            ));
+        }));
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            crate::state::set_mcp_server_repository(SqliteMCPServerRepository::new(
+                db_clone.clone(),
+            ));
+        }));
+        Arc::new(db)
+    }
+
+    #[tokio::test]
+    async fn create_session_dispatches_subagent_start_for_child_session() {
+        let _lock = crate::state::lock_test_global_state().await;
+        let db = init_test_db().await;
+        let session_manager =
+            Arc::new(crate::session::SessionManager::new().expect("SessionManager"));
+        let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
+        let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
+        let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+        let context_registry = Arc::new(ContextRegistry::new());
+        let child_id = format!("child-create-{}", uuid::Uuid::new_v4());
+
+        let mut agent_config = crate::agent::AgentConfig::default();
+        agent_config.parent_session_id = Some("parent-session".to_string());
+
+        let created = create_session(CreateSessionParams {
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            app_handle: None,
+            context_registry,
+            session_id: child_id.clone(),
+            name: Some("worker-child".to_string()),
+            model: Some("gpt-4".to_string()),
+            provider: Some("openai".to_string()),
+            agent_config,
+            workspace_isolation: WorkspaceIsolationMode::default(),
+            docker_config: None,
+        })
+        .await
+        .expect("create_session should succeed without AppHandle");
+
+        assert_eq!(created.id, child_id);
+        let observed =
+            wait_for_hook_dispatch(&child_id, HookEvent::SubagentStart, Duration::from_secs(2))
+                .await
+                .expect("SubagentStart must be dispatched for newly created child session");
+        assert_eq!(observed.event, HookEvent::SubagentStart);
+        assert_eq!(observed.session_id, child_id);
+        assert_eq!(observed.matcher_value, "worker-child");
+    }
 }

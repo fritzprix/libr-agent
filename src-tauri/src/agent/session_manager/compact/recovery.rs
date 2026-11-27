@@ -158,7 +158,7 @@ pub async fn handle_compact_error_with_dispatcher(
                 return complete_compaction_with_hard_fallback(
                     CompactSummaryPersistenceContext {
                         active_sessions,
-                        app_handle,
+                        app_handle: Some(app_handle),
                         session_repo,
                         proxy_manager,
                         session_id: &session_id,

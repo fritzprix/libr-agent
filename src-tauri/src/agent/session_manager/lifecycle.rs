@@ -43,7 +43,7 @@ impl AgentSessionManager {
             session_repo,
             active_sessions: self.active_sessions.clone(),
             proxy_manager: self.proxy_manager.clone(),
-            app_handle: self.app_handle.clone(),
+            app_handle: Some(self.app_handle.clone()),
             context_registry: self.context_registry.clone(),
             session_id,
             name,
@@ -146,7 +146,7 @@ impl AgentSessionManager {
                 session_repo: Arc::clone(&self.session_repo),
                 active_sessions: Arc::clone(&self.active_sessions),
                 proxy_manager: Arc::clone(&self.proxy_manager),
-                app_handle: self.app_handle.clone(),
+                app_handle: Some(self.app_handle.clone()),
             },
         )
         .await
