@@ -62,6 +62,45 @@ class WorkerStateTest(unittest.TestCase):
         self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 1})
         self.assertEqual([p.name for p in self.root.iterdir()], ["claims.json"])
 
+    def test_write_waits_for_a_reader_that_holds_the_file(self):
+        # #3079: a reader holding the target open makes `os.replace` fail with
+        # PermissionError on Windows until it closes. The write waits it out.
+        real_replace = os.replace
+        blocked = []
+
+        def replace_once_blocked(src, dst):
+            if not blocked:
+                blocked.append(dst)
+                raise PermissionError(13, "Access is denied")
+            return real_replace(src, dst)
+
+        with patch.object(worker_state.os, "replace", replace_once_blocked):
+            worker_state.atomic_write_json(self.claims, {"a": 2})
+
+        self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 2})
+        self.assertEqual([p.name for p in self.root.iterdir()], ["claims.json"])
+
+    def test_write_fails_when_the_file_never_closes(self):
+        # The retry is bounded: a handle that never closes is still an error, and
+        # it leaves neither a half-written target nor a temp file behind.
+        with (
+            patch.object(worker_state, "REPLACE_RETRY_ATTEMPTS", 3),
+            patch.object(worker_state, "REPLACE_RETRY_SECONDS", 0),
+            patch.object(worker_state.os, "replace", side_effect=PermissionError(13, "Access is denied")),
+        ):
+            with self.assertRaises(PermissionError):
+                worker_state.atomic_write_json(self.claims, {"a": 1})
+
+        self.assertFalse(self.claims.exists())
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    @unittest.skipUnless(sys.platform == "win32", "only Windows holds a rename back")
+    def test_write_succeeds_while_this_process_holds_the_file_open(self):
+        worker_state.atomic_write_json(self.claims, {"a": 1})
+        with self.claims.open("rb"):
+            worker_state.atomic_write_json(self.claims, {"a": 2})
+        self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 2})
+
     def test_read_json_tolerates_utf8_bom(self):
         payload = {"scheduler": {"kind": "scheduled_task", "id": "abc"}, "skipped": {"2390": "blocked"}}
         self.claims.write_bytes(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))

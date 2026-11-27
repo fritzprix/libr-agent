@@ -448,6 +448,26 @@ def lease_is_live(record: dict | None) -> bool:
     return not lease_expired(record)
 
 
+# A reader that has the target open holds the rename back on Windows: `os.replace`
+# raises PermissionError ([WinError 5] access denied, or [WinError 32] sharing
+# violation) until that handle closes. Such a handle is short-lived, so wait for it
+# instead of failing the write. A handle that never closes still raises (#3079).
+REPLACE_RETRY_SECONDS = 0.05
+REPLACE_RETRY_ATTEMPTS = 40
+
+
+def _replace_waiting_for_open_handles(tmp: str, target: Path) -> None:
+    """Rename `tmp` over `target`, retrying briefly while another handle blocks it."""
+    for attempt in range(1, REPLACE_RETRY_ATTEMPTS + 1):
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_RETRY_ATTEMPTS:
+                raise
+            time.sleep(REPLACE_RETRY_SECONDS)
+
+
 def atomic_write_json(path: Path, data: dict) -> None:
     """Write JSON through a temp file and rename, so readers never see a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -455,7 +475,7 @@ def atomic_write_json(path: Path, data: dict) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        _replace_waiting_for_open_handles(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise

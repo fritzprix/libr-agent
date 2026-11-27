@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 import lease
 import lease_heartbeat
+import lease_run
 import tick_gate
 import tick_lock
 import worker_claims
@@ -873,6 +874,34 @@ class WorktreeIsolationTest(StateDirCase):
 
 
 class LeaseRunTest(StateDirCase):
+    def test_a_transient_write_error_does_not_end_the_run(self):
+        # #3079: the initial renewal has the same short-lived failure mode as the
+        # background one, so one failed write must not end the tick.
+        held = lease.acquire(anon())
+        real_renew = lease.renew
+        attempts = []
+
+        def renew_once_blocked(worker, token, state_file=None):
+            if not attempts:
+                attempts.append(worker)
+                raise PermissionError(13, "Access is denied")
+            return real_renew(worker, token, state_file)
+
+        with (
+            patch.object(lease_run, "INITIAL_RENEW_DELAY_SECONDS", 0),
+            patch.object(lease_run.lease, "renew", renew_once_blocked),
+        ):
+            self.assertTrue(lease_run._renew_before_starting(held.worker, held.token, None))
+        self.assertEqual(len(attempts), 1)
+
+    def test_a_persistent_write_error_is_raised_not_retried_forever(self):
+        with (
+            patch.object(lease_run, "INITIAL_RENEW_DELAY_SECONDS", 0),
+            patch.object(lease_run.lease, "renew", side_effect=PermissionError(13, "Access is denied")),
+        ):
+            with self.assertRaises(PermissionError):
+                lease_run._renew_before_starting("worker", "token", None)
+
     def lease_run(self, *args, env=None, **kwargs):
         full_env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **(env or {})}
         return subprocess.run(

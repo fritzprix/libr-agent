@@ -21,6 +21,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import lease
@@ -29,6 +30,8 @@ import worker_state
 
 DEFAULT_INTERVAL_SECONDS = 300.0
 TERMINATE_GRACE_SECONDS = 10.0
+INITIAL_RENEW_ATTEMPTS = 3
+INITIAL_RENEW_DELAY_SECONDS = 1.0
 EXIT_BUSY = 2
 EXIT_LEASE_LOST = worker_state.EXIT_LEASE_LOST
 
@@ -49,8 +52,26 @@ def _terminate(proc: subprocess.Popen) -> None:
         pass
 
 
+def _renew_before_starting(worker: str, token: str, state_file: Path | None) -> bool:
+    """Renew the lease before CMD starts, retrying a transient write error.
+
+    The background renewer already survives one failed write; this one must not end
+    the tick for the same short-lived cause (#3079). A failure that survives every
+    attempt is an error about the state file, not about ownership, so it is raised.
+    """
+    for attempt in range(1, INITIAL_RENEW_ATTEMPTS + 1):
+        try:
+            return lease.renew(worker, token, state_file)
+        except (TimeoutError, OSError) as e:
+            if attempt == INITIAL_RENEW_ATTEMPTS:
+                raise
+            print(f"lease_run: initial renewal failed, retrying: {e}", file=sys.stderr)
+            time.sleep(INITIAL_RENEW_DELAY_SECONDS)
+    raise AssertionError("unreachable")
+
+
 def run_with_lease(worker: str, token: str, cmd: list[str], interval: float, env: dict, state_file: Path | None) -> int:
-    if not lease.renew(worker, token, state_file):
+    if not _renew_before_starting(worker, token, state_file):
         print(f"LEASE LOST: {worker} is not held by this token; command not run", file=sys.stderr)
         return EXIT_LEASE_LOST
 
