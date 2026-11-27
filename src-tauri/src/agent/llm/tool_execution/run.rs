@@ -188,6 +188,7 @@ async fn prepare_and_gate_tool_call(
     )
     .await;
     if let Some((refusal, reason)) = guards.refusal.take() {
+        dispatch_permission_denied_hook(context.session_id, tool_name, &args, reason).await;
         context
             .continue_after_tool(tool_call_id, refusal, reason)
             .await;
@@ -419,6 +420,7 @@ async fn dispatch_pre_tool_hook_and_rewrite(
     let (args, guards, args_json) = match rewrite {
         HookInputRewrite::Unchanged(guards) => (args, guards, args_str.to_string()),
         HookInputRewrite::Refused((refusal, reason)) => {
+            dispatch_permission_denied_hook(context.session_id, tool_name, &args, reason).await;
             context
                 .continue_after_tool(tool_call_id, refusal, reason)
                 .await;
@@ -555,11 +557,47 @@ async fn dispatch_pre_tool_hook_and_gate(
                     match rewrite {
                         HookInputRewrite::Unchanged(_) => PreparedCall::Execute(stage.args),
                         HookInputRewrite::Refused((refusal, reason)) => {
+                            dispatch_permission_denied_hook(
+                                context.session_id,
+                                call.name,
+                                &stage.args,
+                                reason,
+                            )
+                            .await;
                             context.continue_after_tool(call.id, refusal, reason).await;
                             PreparedCall::NextCall
                         }
                         HookInputRewrite::Applied(effective) => {
-                            PreparedCall::Execute(effective.args)
+                            // G1.1 (#3006): re-check whether the rewritten arguments
+                            // escalated to a hard approval; hooks cannot bypass hard
+                            // approvals even via `PermissionRequest` + `updatedInput`.
+                            if let Some(hard_request) = hard_approval_after_permission_rewrite(
+                                &effective.guards.policy_decision,
+                                yolo_enabled,
+                                unsafe_enabled,
+                            ) {
+                                let rewritten_call = ToolCallInput {
+                                    id: call.id,
+                                    name: call.name,
+                                    args_str: effective.args_json.as_str(),
+                                };
+                                match handle_approval_outcome(
+                                    context,
+                                    &rewritten_call,
+                                    &effective.args,
+                                    &hard_request,
+                                    PendingApprovalKind::Hard,
+                                    remaining_calls,
+                                )
+                                .await
+                                {
+                                    GateStep::Execute => PreparedCall::Execute(effective.args),
+                                    GateStep::NextCall => PreparedCall::NextCall,
+                                    GateStep::StopBatch => PreparedCall::StopBatch,
+                                }
+                            } else {
+                                PreparedCall::Execute(effective.args)
+                            }
                         }
                     }
                 }
@@ -840,6 +878,28 @@ pub(crate) fn apply_permission_request_hook_decision(
         }
         _ => PermissionRequestResolution::Ask,
     }
+}
+
+/// If a `PermissionRequest` `allow` + `updatedInput` rewrite escalated the
+/// tool call to a hard approval, return that hard approval request so the user
+/// is still prompted with the rewritten arguments (#3006 G1.1).
+pub(crate) fn hard_approval_after_permission_rewrite(
+    policy_decision: &ToolExecutionPolicyDecision,
+    yolo_enabled: bool,
+    unsafe_enabled: bool,
+) -> Option<crate::agent::tool_approvals::ToolApprovalRequest> {
+    if !matches!(
+        policy_decision,
+        ToolExecutionPolicyDecision::RequireHardApproval(_)
+    ) {
+        return None;
+    }
+    crate::agent::tool_approvals::approval_request_for_runtime(
+        policy_decision,
+        yolo_enabled,
+        unsafe_enabled,
+    )
+    .cloned()
 }
 
 /// Tool result recorded for remaining batch calls skipped after a hook returned
@@ -1175,5 +1235,29 @@ mod hook_stop_and_tool_response_tests {
             ),
             PermissionRequestResolution::Ask
         );
+    }
+
+    #[test]
+    fn permission_request_soft_to_hard_rewrite_requires_hard_approval() {
+        use super::hard_approval_after_permission_rewrite;
+        use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
+
+        let soft = ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
+            description: "standard".to_string(),
+            input_preview: "echo hi".to_string(),
+            masked_arguments: None,
+        });
+        assert!(hard_approval_after_permission_rewrite(&soft, false, false).is_none());
+
+        let hard = ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
+            description: "hard approval required".to_string(),
+            input_preview: "sudo rm -rf /tmp/x".to_string(),
+            masked_arguments: None,
+        });
+        let req = hard_approval_after_permission_rewrite(&hard, false, false)
+            .expect("soft-to-hard rewrite must still require hard approval");
+        assert_eq!(req.input_preview, "sudo rm -rf /tmp/x");
+        // Even in YOLO mode, hard approval is preserved.
+        assert!(hard_approval_after_permission_rewrite(&hard, true, false).is_some());
     }
 }

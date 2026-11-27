@@ -269,20 +269,39 @@ pub async fn continue_workflow_after_tool(
                 if batch_outcome.stops_processing {
                     let stop_reason =
                         batch_outcome.stop_message("PostToolBatch hook stopped processing.");
-                    let dispatcher = TauriEventDispatcher::new(app_handle);
-                    let _ = crate::agent::workflow::settle_session_and_go_idle_with_dispatcher(
+                    Box::pin(crate::agent::llm::tool_execution::stop_turn_from_hook(
                         session_repo,
                         active_sessions,
                         proxy_manager,
                         app_handle,
                         &crate::agent::workflow::LlmCompletionRestart,
-                        &dispatcher,
                         &session_id,
-                        None,
-                        crate::agent::events::WorkflowCompletionReason::HookStopped,
-                        Some(&stop_reason),
-                    )
+                        &[],
+                        &stop_reason,
+                    ))
                     .await;
+                    return Ok(());
+                }
+
+                // Re-check session status and cancellation after awaiting the
+                // PostToolBatch hook (#3006 G1.2): a user cancel/pause while the
+                // hook ran must not fall through into `request_llm_completion_with_recovery`.
+                let can_continue = {
+                    let sessions = active_sessions.read().await;
+                    match sessions.get(&session_id) {
+                        Some(session) => should_continue_after_post_tool_batch(
+                            Some(&session.metadata.status),
+                            session.cancellation_token.is_cancelled(),
+                            session.cancel_pending.load(Ordering::SeqCst),
+                        ),
+                        None => false,
+                    }
+                };
+                if !can_continue {
+                    log::info!(
+                        "Skipping workflow restart for session {} after PostToolBatch hook (cancelled or no longer Busy)",
+                        session_id
+                    );
                     return Ok(());
                 }
 
@@ -335,4 +354,45 @@ pub async fn continue_workflow_after_tool(
         }
     }
     Ok(())
+}
+
+/// Pure guard checked after `PostToolBatch` returns (#3006 G1.2): only a Busy,
+/// non-cancelled session may request the next LLM completion.
+fn should_continue_after_post_tool_batch(
+    status: Option<&SessionStatus>,
+    token_cancelled: bool,
+    cancel_pending: bool,
+) -> bool {
+    matches!(status, Some(SessionStatus::Busy)) && !token_cancelled && !cancel_pending
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_continue_after_post_tool_batch;
+    use crate::repositories::SessionStatus;
+
+    #[test]
+    fn post_tool_batch_continue_guard_rejects_paused_or_cancelled_sessions() {
+        assert!(should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Busy),
+            false,
+            false
+        ));
+        assert!(!should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Paused),
+            false,
+            false
+        ));
+        assert!(!should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Busy),
+            true,
+            false
+        ));
+        assert!(!should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Busy),
+            false,
+            true
+        ));
+        assert!(!should_continue_after_post_tool_batch(None, false, false));
+    }
 }
