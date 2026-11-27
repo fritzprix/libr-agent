@@ -187,10 +187,11 @@ async fn prepare_and_gate_tool_call(
         &args,
     )
     .await;
-    if let Some((refusal, reason)) = guards.refusal.take() {
-        dispatch_permission_denied_hook(context.session_id, tool_name, &args, reason).await;
+    if let Some(refusal) = guards.refusal.take() {
+        dispatch_permission_denied_hook(context.session_id, tool_name, &args, &refusal.message)
+            .await;
         context
-            .continue_after_tool(tool_call_id, refusal, reason)
+            .continue_after_tool(tool_call_id, refusal.result, refusal.label)
             .await;
         return PreparedCall::NextCall;
     }
@@ -243,8 +244,19 @@ async fn parse_tool_call_args(
 /// Pre-execution guards for one argument object (#3005).
 pub(super) struct PreExecutionGuards {
     pub(super) policy_decision: ToolExecutionPolicyDecision,
-    /// The result to return instead of executing, plus its error context.
-    pub(super) refusal: Option<(ToolExecutionResult, &'static str)>,
+    pub(super) refusal: Option<ToolRefusal>,
+}
+
+/// A refused call: what the model gets, the internal label the continuation
+/// carries, and the message hooks receive (#3075 G2.1).
+pub(super) struct ToolRefusal {
+    /// Returned to the model instead of running the tool.
+    pub(super) result: ToolExecutionResult,
+    /// Internal context label for the continuation, e.g. `policy-blocked tool execution`.
+    pub(super) label: &'static str,
+    /// The refusal in words, for the `PermissionDenied` payload. Hooks must log
+    /// what was denied and why, not the guard's internal label.
+    pub(super) message: String,
 }
 
 /// Policy block and root-execution refusal for `args`.
@@ -252,7 +264,7 @@ pub(super) struct PreExecutionGuards {
 /// A `PreToolUse` hook may rewrite the arguments (`updatedInput`), so the same
 /// guards run again on the rewritten arguments: a hook rewrite must not walk
 /// around the policy block or the host root refusal.
-async fn pre_execution_guards(
+pub(super) async fn pre_execution_guards(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     unsafe_enabled: bool,
@@ -264,15 +276,19 @@ async fn pre_execution_guards(
 
     // Build the refusal before moving `policy_decision`: the borrow inside
     // `blocked_execution_for_runtime` ends with this statement.
-    let blocked_refusal = crate::agent::tool_approvals::blocked_execution_for_runtime(
+    let blocked_message = crate::agent::tool_approvals::blocked_execution_for_runtime(
         &policy_decision,
         unsafe_enabled,
     )
-    .map(|blocked| error_result(blocked.message.clone()));
-    if let Some(refusal) = blocked_refusal {
+    .map(|blocked| blocked.message.clone());
+    if let Some(message) = blocked_message {
         return PreExecutionGuards {
             policy_decision,
-            refusal: Some((refusal, "policy-blocked tool execution")),
+            refusal: Some(ToolRefusal {
+                result: error_result(message.clone()),
+                label: "policy-blocked tool execution",
+                message,
+            }),
         };
     }
 
@@ -287,11 +303,10 @@ async fn pre_execution_guards(
     };
     PreExecutionGuards {
         policy_decision,
-        refusal: root_refusal.map(|refusal| {
-            (
-                tool_result_from_mcp_result(refusal),
-                "root execution unavailable",
-            )
+        refusal: root_refusal.map(|refusal| ToolRefusal {
+            result: tool_result_from_mcp_result(refusal.result),
+            label: "root execution unavailable",
+            message: refusal.message.to_string(),
         }),
     }
 }
@@ -314,8 +329,13 @@ pub(super) enum HookInputRewrite {
     /// the tool receives and the approval card shows.
     Applied(EffectiveCall),
     /// The rewrite was applied but the re-run guards refused it: the tool
-    /// must not run, and this result is returned instead.
-    Refused((ToolExecutionResult, &'static str)),
+    /// must not run, and this result is returned instead. Carries the arguments
+    /// the hook asked to run and the refusal, so `PermissionDenied` reports the
+    /// call that was actually denied (#3075 G2.1).
+    Refused {
+        args: serde_json::Value,
+        refusal: ToolRefusal,
+    },
 }
 
 /// One step of the tool loop (#3005, gatekeeper G1.4/G1.5): apply the hook's
@@ -356,8 +376,12 @@ pub(super) async fn apply_hook_input_rewrite(
         &rewritten,
     )
     .await;
-    match guards.refusal {
-        Some(refusal) => HookInputRewrite::Refused(refusal),
+    let mut guards = guards;
+    match guards.refusal.take() {
+        Some(refusal) => HookInputRewrite::Refused {
+            args: rewritten,
+            refusal,
+        },
         None => HookInputRewrite::Applied(EffectiveCall {
             args: rewritten,
             args_json,
@@ -419,10 +443,11 @@ async fn dispatch_pre_tool_hook_and_rewrite(
     .await;
     let (args, guards, args_json) = match rewrite {
         HookInputRewrite::Unchanged(guards) => (args, guards, args_str.to_string()),
-        HookInputRewrite::Refused((refusal, reason)) => {
-            dispatch_permission_denied_hook(context.session_id, tool_name, &args, reason).await;
+        HookInputRewrite::Refused { args, refusal } => {
+            dispatch_permission_denied_hook(context.session_id, tool_name, &args, &refusal.message)
+                .await;
             context
-                .continue_after_tool(tool_call_id, refusal, reason)
+                .continue_after_tool(tool_call_id, refusal.result, refusal.label)
                 .await;
             return None;
         }
@@ -556,15 +581,17 @@ async fn dispatch_pre_tool_hook_and_gate(
                     .await;
                     match rewrite {
                         HookInputRewrite::Unchanged(_) => PreparedCall::Execute(stage.args),
-                        HookInputRewrite::Refused((refusal, reason)) => {
+                        HookInputRewrite::Refused { args, refusal } => {
                             dispatch_permission_denied_hook(
                                 context.session_id,
                                 call.name,
-                                &stage.args,
-                                reason,
+                                &args,
+                                &refusal.message,
                             )
                             .await;
-                            context.continue_after_tool(call.id, refusal, reason).await;
+                            context
+                                .continue_after_tool(call.id, refusal.result, refusal.label)
+                                .await;
                             PreparedCall::NextCall
                         }
                         HookInputRewrite::Applied(effective) => {
@@ -826,12 +853,14 @@ async fn dispatch_post_tool_use_failure_hook(
     None
 }
 
-async fn dispatch_permission_denied_hook(
+/// The `PermissionDenied` envelope: the call that was denied and the reason
+/// in words (#3075 G2.1).
+pub(super) fn permission_denied_params(
     session_id: &str,
     tool_name: &str,
     tool_input: &serde_json::Value,
     reason: &str,
-) {
+) -> crate::services::hooks::HookEnvelopeParams {
     let mut params = crate::services::hooks::HookEnvelopeParams::new(
         session_id,
         std::path::PathBuf::from("."),
@@ -840,6 +869,16 @@ async fn dispatch_permission_denied_hook(
     params.tool_name = Some(tool_name.to_string());
     params.tool_input = Some(tool_input.clone());
     params.denial_reason = Some(reason.to_string());
+    params
+}
+
+async fn dispatch_permission_denied_hook(
+    session_id: &str,
+    tool_name: &str,
+    tool_input: &serde_json::Value,
+    reason: &str,
+) {
+    let params = permission_denied_params(session_id, tool_name, tool_input, reason);
     let outcome = crate::services::hooks::dispatch_hook_event(
         crate::services::hooks::HookEvent::PermissionDenied,
         tool_name,
@@ -1238,26 +1277,31 @@ mod hook_stop_and_tool_response_tests {
     }
 
     #[test]
-    fn permission_request_soft_to_hard_rewrite_requires_hard_approval() {
-        use super::hard_approval_after_permission_rewrite;
-        use crate::agent::tool_approvals::{ToolApprovalRequest, ToolExecutionPolicyDecision};
+    fn permission_denied_envelope_carries_the_denied_call_and_message() {
+        use super::permission_denied_params;
 
-        let soft = ToolExecutionPolicyDecision::RequireApproval(ToolApprovalRequest {
-            description: "standard".to_string(),
-            input_preview: "echo hi".to_string(),
-            masked_arguments: None,
-        });
-        assert!(hard_approval_after_permission_rewrite(&soft, false, false).is_none());
+        let denied = serde_json::json!({"command": "rm -rf /"});
+        let params = permission_denied_params(
+            "sess-denied",
+            "workspace__runShell",
+            &denied,
+            "Blocked workspace__runShell because it matches a hard shell safety rule",
+        );
 
-        let hard = ToolExecutionPolicyDecision::RequireHardApproval(ToolApprovalRequest {
-            description: "hard approval required".to_string(),
-            input_preview: "sudo rm -rf /tmp/x".to_string(),
-            masked_arguments: None,
-        });
-        let req = hard_approval_after_permission_rewrite(&hard, false, false)
-            .expect("soft-to-hard rewrite must still require hard approval");
-        assert_eq!(req.input_preview, "sudo rm -rf /tmp/x");
-        // Even in YOLO mode, hard approval is preserved.
-        assert!(hard_approval_after_permission_rewrite(&hard, true, false).is_some());
+        assert_eq!(
+            params.event,
+            crate::services::hooks::HookEvent::PermissionDenied
+        );
+        assert_eq!(params.tool_name.as_deref(), Some("workspace__runShell"));
+        assert_eq!(
+            params.tool_input.as_ref(),
+            Some(&denied),
+            "the payload must carry the call that was denied"
+        );
+        assert_eq!(
+            params.denial_reason.as_deref(),
+            Some("Blocked workspace__runShell because it matches a hard shell safety rule"),
+            "the payload must carry the refusal in words, not a guard label"
+        );
     }
 }

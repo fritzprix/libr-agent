@@ -531,8 +531,9 @@ async fn a_root_command_is_refused_without_a_card_where_root_cannot_run() {
         ] {
             let refusal = root_execution_refusal("workspace__runShell", &args, session)
                 .unwrap_or_else(|| panic!("asRoot={as_root} must be refused: {session:?}"));
-            assert!(refusal.indicates_error(), "asRoot={as_root}");
-            let text = format!("{refusal:?}");
+            assert!(refusal.result.indicates_error(), "asRoot={as_root}");
+            assert_eq!(refusal.message, blocker.message(), "asRoot={as_root}");
+            let text = format!("{:?}", refusal.result);
             assert!(text.contains(blocker.message()), "asRoot={as_root}: {text}");
             assert!(
                 text.contains("Run the command again without asRoot"),

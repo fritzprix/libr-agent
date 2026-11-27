@@ -261,7 +261,8 @@ mod pending_approval_tests {
 mod hook_input_rewrite_tests {
     use super::super::approval::{build_pending_approval, ToolCallRef};
     use super::super::run::{
-        apply_hook_input_rewrite, EffectiveCall, HookInputRewrite, PreExecutionGuards,
+        apply_hook_input_rewrite, hard_approval_after_permission_rewrite, pre_execution_guards,
+        EffectiveCall, HookInputRewrite, PreExecutionGuards,
     };
     use crate::agent::events::AgentEvent;
     use crate::agent::state::{AgentSession, PendingApprovalKind};
@@ -328,7 +329,7 @@ mod hook_input_rewrite_tests {
                 match other {
                     HookInputRewrite::Applied(_) => "Applied",
                     HookInputRewrite::Unchanged(_) => "Unchanged",
-                    HookInputRewrite::Refused(_) => "Refused",
+                    HookInputRewrite::Refused { .. } => "Refused",
                 }
             ),
         }
@@ -363,7 +364,7 @@ mod hook_input_rewrite_tests {
                 match other {
                     HookInputRewrite::Applied(_) => "Applied",
                     HookInputRewrite::Unchanged(_) => "Unchanged",
-                    HookInputRewrite::Refused(_) => "Refused",
+                    HookInputRewrite::Refused { .. } => "Refused",
                 }
             ),
         };
@@ -393,7 +394,7 @@ mod hook_input_rewrite_tests {
         .await;
 
         assert!(
-            matches!(rewrite, HookInputRewrite::Refused(_)),
+            matches!(rewrite, HookInputRewrite::Refused { .. }),
             "rewriting runShell into a blocked command must be refused"
         );
     }
@@ -416,7 +417,7 @@ mod hook_input_rewrite_tests {
         .await;
 
         assert!(
-            matches!(rewrite, HookInputRewrite::Refused(_)),
+            matches!(rewrite, HookInputRewrite::Refused { .. }),
             "rewriting into an asRoot call on a host session must be refused"
         );
     }
@@ -500,5 +501,134 @@ mod hook_input_rewrite_tests {
         };
         assert!(arguments.contains("rewritten"), "{arguments}");
         assert!(!arguments.contains("original"), "{arguments}");
+    }
+
+    /// #3075 G2.1: a refused rewrite must hand `PermissionDenied` the
+    /// arguments the hook asked to run and the refusal in words — not the
+    /// model's harmless arguments and the guard's internal label.
+    #[tokio::test]
+    async fn refused_rewrite_carries_the_denied_call_and_the_refusal_message() {
+        let outcome = allow_rewrite(json!({"command": "rm -rf /"}));
+
+        let rewrite = apply_hook_input_rewrite(
+            &empty_sessions(),
+            "sess-rewrite-refused-payload",
+            false,
+            "workspace__runShell",
+            &outcome,
+            r#"{"command":"echo safe"}"#,
+            original_guards(),
+        )
+        .await;
+
+        let HookInputRewrite::Refused { args, refusal } = rewrite else {
+            panic!("a destructive rewrite must be refused");
+        };
+        assert_eq!(
+            args,
+            json!({"command": "rm -rf /"}),
+            "the payload must carry the refused arguments, not the model's"
+        );
+        assert_eq!(
+            refusal.label, "policy-blocked tool execution",
+            "the internal continuation label is unchanged"
+        );
+        assert!(
+            refusal.message.contains("recursively remove"),
+            "the hook must see the refusal message, not a guard label: {}",
+            refusal.message
+        );
+        assert!(
+            !refusal.message.contains("policy-blocked tool execution"),
+            "the guard label must not leak into the message: {}",
+            refusal.message
+        );
+    }
+
+    /// #3075 G2.1: a guard refusal outside the rewrite step (here the host
+    /// `asRoot` refusal) reports its own message to hooks.
+    #[tokio::test]
+    async fn guard_refusal_reports_its_message_not_the_label() {
+        let args = json!({"command": "id -u", "asRoot": true});
+        let guards = pre_execution_guards(
+            &empty_sessions(),
+            "sess-guard-refusal",
+            false,
+            "workspace__runShell",
+            &args,
+        )
+        .await;
+
+        let refusal = guards.refusal.expect("a host session can never run asRoot");
+        assert_eq!(refusal.label, "root execution unavailable");
+        assert!(
+            refusal
+                .message
+                .contains("asRoot is only available in a Docker session"),
+            "the hook must see the refusal message: {}",
+            refusal.message
+        );
+    }
+
+    /// #3075 G2.2: the soft-to-hard escalation is proven through the
+    /// production step — `apply_hook_input_rewrite` rewrites a soft-approval
+    /// command into one that needs the hard card, and the gate must ask again
+    /// with the rewritten arguments.
+    #[tokio::test]
+    async fn soft_approval_rewritten_to_hard_approval_keeps_the_hard_card() {
+        let sessions = empty_sessions();
+        let original = json!({"command": "sudo apt-get install -y jq"});
+        let guards = pre_execution_guards(
+            &sessions,
+            "sess-soft-to-hard",
+            false,
+            "workspace__runShell",
+            &original,
+        )
+        .await;
+        assert!(
+            guards.refusal.is_none(),
+            "the original soft-approval command must not be refused"
+        );
+        assert!(
+            matches!(
+                guards.policy_decision,
+                ToolExecutionPolicyDecision::RequireApproval(_)
+            ),
+            "the model's own call is a soft approval"
+        );
+
+        // `$(...)` cannot be policy-checked, so the rewrite needs the hard card.
+        let rewritten = json!({"command": "echo \"$(date)\""});
+        let rewrite = apply_hook_input_rewrite(
+            &sessions,
+            "sess-soft-to-hard",
+            false,
+            "workspace__runShell",
+            &allow_rewrite(rewritten.clone()),
+            &original.to_string(),
+            guards,
+        )
+        .await;
+
+        let HookInputRewrite::Applied(effective) = rewrite else {
+            panic!("a hard-approval rewrite applies; it is not a refusal");
+        };
+        assert_eq!(effective.args, rewritten);
+        let request =
+            hard_approval_after_permission_rewrite(&effective.guards.policy_decision, false, false)
+                .expect("a soft-to-hard rewrite must still ask for the hard approval");
+        assert!(
+            request.input_preview.contains("$(date)"),
+            "the hard card must preview the rewritten command: {}",
+            request.input_preview
+        );
+        // YOLO mode never drops a hard approval.
+        assert!(hard_approval_after_permission_rewrite(
+            &effective.guards.policy_decision,
+            true,
+            false
+        )
+        .is_some());
     }
 }

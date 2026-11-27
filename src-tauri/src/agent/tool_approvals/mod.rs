@@ -104,6 +104,16 @@ pub fn requests_root_execution(tool_name: &str, args: &serde_json::Value) -> boo
 pub const ROOT_EXECUTION_NEEDS_APPROVAL: &str =
     "runShell with asRoot needs the user's approval in a LibrAgent agent session; this entry point cannot ask for it";
 
+/// A root request that a session can never run, whatever its approval tier.
+///
+/// `result` is what the model receives instead of the call; `message` is the
+/// same refusal in words, for the `PermissionDenied` hook payload (#3075 G2.1).
+#[derive(Debug, Clone)]
+pub struct RootExecutionRefusal {
+    pub result: crate::mcp::types::MCPResult,
+    pub message: &'static str,
+}
+
 /// The refusal for a root request that `session` can never run (a host session or an attached
 /// container), whatever its approval tier. `None` when the call does not ask for root or the
 /// session uses a LibrAgent-managed container. A `session` of `None` (the session is not loaded
@@ -112,12 +122,16 @@ pub fn root_execution_refusal(
     tool_name: &str,
     args: &serde_json::Value,
     session: Option<&crate::repositories::SessionMetadata>,
-) -> Option<crate::mcp::types::MCPResult> {
+) -> Option<RootExecutionRefusal> {
     if !requests_root_execution(tool_name, args) {
         return None;
     }
-    crate::mcp::builtin::workspace::utils::root_exec_blocker_for(session)
-        .map(crate::mcp::builtin::workspace::utils::root_exec_unavailable_result)
+    crate::mcp::builtin::workspace::utils::root_exec_blocker_for(session).map(|blocker| {
+        RootExecutionRefusal {
+            result: crate::mcp::builtin::workspace::utils::root_exec_unavailable_result(blocker),
+            message: blocker.message(),
+        }
+    })
 }
 
 pub async fn is_approval_required(tool_name: &str) -> bool {
