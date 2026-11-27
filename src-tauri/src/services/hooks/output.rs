@@ -45,6 +45,17 @@ struct RawHookSpecificOutput {
     permission_decision: Option<String>,
     permission_decision_reason: Option<String>,
     updated_input: Option<serde_json::Value>,
+    /// Claude Code `PermissionRequest` decision object:
+    /// `{ "behavior": "allow" | "deny" | "ask", "message": "...", "updatedInput": {...} }` (#3006).
+    decision: Option<RawPermissionDecision>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPermissionDecision {
+    behavior: Option<String>,
+    message: Option<String>,
+    updated_input: Option<serde_json::Value>,
 }
 
 /// Normalize hook stdout into structured output (alias for callers).
@@ -83,14 +94,22 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
     let decision = raw
         .hook_specific_output
         .as_ref()
-        .and_then(|h| h.permission_decision.as_deref())
+        .and_then(|h| {
+            h.permission_decision
+                .as_deref()
+                .or_else(|| h.decision.as_ref().and_then(|d| d.behavior.as_deref()))
+        })
         .or(raw.decision.as_deref())
         .and_then(parse_decision);
 
     let reason = raw
         .hook_specific_output
         .as_ref()
-        .and_then(|h| h.permission_decision_reason.clone())
+        .and_then(|h| {
+            h.permission_decision_reason
+                .clone()
+                .or_else(|| h.decision.as_ref().and_then(|d| d.message.clone()))
+        })
         .or(raw.reason);
 
     let continue_loop = raw.continue_loop;
@@ -111,7 +130,11 @@ fn normalize_raw(raw: RawHookStdout) -> HookOutput {
     let updated_input = raw
         .hook_specific_output
         .as_ref()
-        .and_then(|h| h.updated_input.clone())
+        .and_then(|h| {
+            h.updated_input
+                .clone()
+                .or_else(|| h.decision.as_ref().and_then(|d| d.updated_input.clone()))
+        })
         .filter(|value| {
             if value.is_object() {
                 true
@@ -286,5 +309,23 @@ mod tests {
             // The allow decision itself still applies — only the rewrite is dropped.
             assert_eq!(out.decision, Some(HookDecision::Allow));
         }
+    }
+
+    #[test]
+    fn parses_permission_request_decision_object() {
+        let out = parse_hook_stdout_json(
+            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"command":"echo safe"}}}}"#,
+        );
+        assert_eq!(out.decision, Some(HookDecision::Allow));
+        assert_eq!(
+            out.updated_input,
+            Some(serde_json::json!({"command": "echo safe"}))
+        );
+
+        let denied = parse_hook_stdout_json(
+            r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"forbidden"}}}"#,
+        );
+        assert_eq!(denied.decision, Some(HookDecision::Block));
+        assert_eq!(denied.reason.as_deref(), Some("forbidden"));
     }
 }

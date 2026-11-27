@@ -249,6 +249,62 @@ pub async fn continue_workflow_after_tool(
                     }
                 }
 
+                // PostToolBatch hook (#3006): runs after all tool calls in the
+                // batch resolve, before the next model call.
+                let batch_params = crate::services::hooks::HookEnvelopeParams::new(
+                    &session_id,
+                    std::path::PathBuf::from("."),
+                    crate::services::hooks::HookEvent::PostToolBatch,
+                );
+                let batch_outcome = crate::services::hooks::dispatch_hook_event(
+                    crate::services::hooks::HookEvent::PostToolBatch,
+                    "",
+                    &batch_params,
+                    &session_id,
+                )
+                .await;
+                if let Some(ctx) = batch_outcome.joined_additional_context() {
+                    crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
+                }
+                if batch_outcome.stops_processing {
+                    let stop_reason =
+                        batch_outcome.stop_message("PostToolBatch hook stopped processing.");
+                    Box::pin(crate::agent::llm::tool_execution::stop_turn_from_hook(
+                        session_repo,
+                        active_sessions,
+                        proxy_manager,
+                        app_handle,
+                        &crate::agent::workflow::LlmCompletionRestart,
+                        &session_id,
+                        &[],
+                        &stop_reason,
+                    ))
+                    .await;
+                    return Ok(());
+                }
+
+                // Re-check session status and cancellation after awaiting the
+                // PostToolBatch hook (#3006 G1.2): a user cancel/pause while the
+                // hook ran must not fall through into `request_llm_completion_with_recovery`.
+                let can_continue = {
+                    let sessions = active_sessions.read().await;
+                    match sessions.get(&session_id) {
+                        Some(session) => should_continue_after_post_tool_batch(
+                            Some(&session.metadata.status),
+                            session.cancellation_token.is_cancelled(),
+                            session.cancel_pending.load(Ordering::SeqCst),
+                        ),
+                        None => false,
+                    }
+                };
+                if !can_continue {
+                    log::info!(
+                        "Skipping workflow restart for session {} after PostToolBatch hook (cancelled or no longer Busy)",
+                        session_id
+                    );
+                    return Ok(());
+                }
+
                 // Request next LLM completion
                 if let Err(e) = crate::agent::llm::request_llm_completion_with_recovery(
                     session_repo,
@@ -298,4 +354,45 @@ pub async fn continue_workflow_after_tool(
         }
     }
     Ok(())
+}
+
+/// Pure guard checked after `PostToolBatch` returns (#3006 G1.2): only a Busy,
+/// non-cancelled session may request the next LLM completion.
+fn should_continue_after_post_tool_batch(
+    status: Option<&SessionStatus>,
+    token_cancelled: bool,
+    cancel_pending: bool,
+) -> bool {
+    matches!(status, Some(SessionStatus::Busy)) && !token_cancelled && !cancel_pending
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_continue_after_post_tool_batch;
+    use crate::repositories::SessionStatus;
+
+    #[test]
+    fn post_tool_batch_continue_guard_rejects_paused_or_cancelled_sessions() {
+        assert!(should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Busy),
+            false,
+            false
+        ));
+        assert!(!should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Paused),
+            false,
+            false
+        ));
+        assert!(!should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Busy),
+            true,
+            false
+        ));
+        assert!(!should_continue_after_post_tool_batch(
+            Some(&SessionStatus::Busy),
+            false,
+            true
+        ));
+        assert!(!should_continue_after_post_tool_batch(None, false, false));
+    }
 }

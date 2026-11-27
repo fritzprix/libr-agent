@@ -187,9 +187,11 @@ async fn prepare_and_gate_tool_call(
         &args,
     )
     .await;
-    if let Some((refusal, reason)) = guards.refusal.take() {
+    if let Some(refusal) = guards.refusal.take() {
+        dispatch_permission_denied_hook(context.session_id, tool_name, &args, &refusal.message)
+            .await;
         context
-            .continue_after_tool(tool_call_id, refusal, reason)
+            .continue_after_tool(tool_call_id, refusal.result, refusal.label)
             .await;
         return PreparedCall::NextCall;
     }
@@ -242,8 +244,19 @@ async fn parse_tool_call_args(
 /// Pre-execution guards for one argument object (#3005).
 pub(super) struct PreExecutionGuards {
     pub(super) policy_decision: ToolExecutionPolicyDecision,
-    /// The result to return instead of executing, plus its error context.
-    pub(super) refusal: Option<(ToolExecutionResult, &'static str)>,
+    pub(super) refusal: Option<ToolRefusal>,
+}
+
+/// A refused call: what the model gets, the internal label the continuation
+/// carries, and the message hooks receive (#3075 G2.1).
+pub(super) struct ToolRefusal {
+    /// Returned to the model instead of running the tool.
+    pub(super) result: ToolExecutionResult,
+    /// Internal context label for the continuation, e.g. `policy-blocked tool execution`.
+    pub(super) label: &'static str,
+    /// The refusal in words, for the `PermissionDenied` payload. Hooks must log
+    /// what was denied and why, not the guard's internal label.
+    pub(super) message: String,
 }
 
 /// Policy block and root-execution refusal for `args`.
@@ -251,7 +264,7 @@ pub(super) struct PreExecutionGuards {
 /// A `PreToolUse` hook may rewrite the arguments (`updatedInput`), so the same
 /// guards run again on the rewritten arguments: a hook rewrite must not walk
 /// around the policy block or the host root refusal.
-async fn pre_execution_guards(
+pub(super) async fn pre_execution_guards(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
     unsafe_enabled: bool,
@@ -263,15 +276,19 @@ async fn pre_execution_guards(
 
     // Build the refusal before moving `policy_decision`: the borrow inside
     // `blocked_execution_for_runtime` ends with this statement.
-    let blocked_refusal = crate::agent::tool_approvals::blocked_execution_for_runtime(
+    let blocked_message = crate::agent::tool_approvals::blocked_execution_for_runtime(
         &policy_decision,
         unsafe_enabled,
     )
-    .map(|blocked| error_result(blocked.message.clone()));
-    if let Some(refusal) = blocked_refusal {
+    .map(|blocked| blocked.message.clone());
+    if let Some(message) = blocked_message {
         return PreExecutionGuards {
             policy_decision,
-            refusal: Some((refusal, "policy-blocked tool execution")),
+            refusal: Some(ToolRefusal {
+                result: error_result(message.clone()),
+                label: "policy-blocked tool execution",
+                message,
+            }),
         };
     }
 
@@ -286,11 +303,10 @@ async fn pre_execution_guards(
     };
     PreExecutionGuards {
         policy_decision,
-        refusal: root_refusal.map(|refusal| {
-            (
-                tool_result_from_mcp_result(refusal),
-                "root execution unavailable",
-            )
+        refusal: root_refusal.map(|refusal| ToolRefusal {
+            result: tool_result_from_mcp_result(refusal.result),
+            label: "root execution unavailable",
+            message: refusal.message.to_string(),
         }),
     }
 }
@@ -313,8 +329,13 @@ pub(super) enum HookInputRewrite {
     /// the tool receives and the approval card shows.
     Applied(EffectiveCall),
     /// The rewrite was applied but the re-run guards refused it: the tool
-    /// must not run, and this result is returned instead.
-    Refused((ToolExecutionResult, &'static str)),
+    /// must not run, and this result is returned instead. Carries the arguments
+    /// the hook asked to run and the refusal, so `PermissionDenied` reports the
+    /// call that was actually denied (#3075 G2.1).
+    Refused {
+        args: serde_json::Value,
+        refusal: ToolRefusal,
+    },
 }
 
 /// One step of the tool loop (#3005, gatekeeper G1.4/G1.5): apply the hook's
@@ -355,8 +376,12 @@ pub(super) async fn apply_hook_input_rewrite(
         &rewritten,
     )
     .await;
-    match guards.refusal {
-        Some(refusal) => HookInputRewrite::Refused(refusal),
+    let mut guards = guards;
+    match guards.refusal.take() {
+        Some(refusal) => HookInputRewrite::Refused {
+            args: rewritten,
+            refusal,
+        },
         None => HookInputRewrite::Applied(EffectiveCall {
             args: rewritten,
             args_json,
@@ -418,9 +443,11 @@ async fn dispatch_pre_tool_hook_and_rewrite(
     .await;
     let (args, guards, args_json) = match rewrite {
         HookInputRewrite::Unchanged(guards) => (args, guards, args_str.to_string()),
-        HookInputRewrite::Refused((refusal, reason)) => {
+        HookInputRewrite::Refused { args, refusal } => {
+            dispatch_permission_denied_hook(context.session_id, tool_name, &args, &refusal.message)
+                .await;
             context
-                .continue_after_tool(tool_call_id, refusal, reason)
+                .continue_after_tool(tool_call_id, refusal.result, refusal.label)
                 .await;
             return None;
         }
@@ -484,6 +511,8 @@ async fn dispatch_pre_tool_hook_and_gate(
         stage.outcome.reason,
     ) {
         PreToolHookResolution::Block { reason } => {
+            dispatch_permission_denied_hook(context.session_id, call.name, &stage.args, &reason)
+                .await;
             context
                 .continue_after_tool(call.id, error_result(reason), "hook-blocked tool execution")
                 .await;
@@ -494,18 +523,127 @@ async fn dispatch_pre_tool_hook_and_gate(
             request: approval_request,
             kind: approval_kind,
         } => {
-            match handle_approval_outcome(
-                context,
-                &call,
-                &approval_request,
-                approval_kind,
-                remaining_calls,
+            let mut perm_params = crate::services::hooks::HookEnvelopeParams::new(
+                context.session_id,
+                std::path::PathBuf::from("."),
+                crate::services::hooks::HookEvent::PermissionRequest,
+            );
+            perm_params.tool_name = Some(call.name.to_string());
+            perm_params.tool_input = Some(stage.args.clone());
+            let perm_outcome = crate::services::hooks::dispatch_hook_event(
+                crate::services::hooks::HookEvent::PermissionRequest,
+                call.name,
+                &perm_params,
+                context.session_id,
             )
-            .await
-            {
-                GateStep::Execute => PreparedCall::Execute(stage.args),
-                GateStep::NextCall => PreparedCall::NextCall,
-                GateStep::StopBatch => PreparedCall::StopBatch,
+            .await;
+            if let Some(ctx) = perm_outcome.joined_additional_context() {
+                crate::services::hooks::push_turn_hook_context(context.session_id, &ctx);
+            }
+            if perm_outcome.stops_processing {
+                let stop_reason =
+                    perm_outcome.stop_message("PermissionRequest hook stopped processing.");
+                return PreparedCall::HookStopped(stop_reason);
+            }
+            match apply_permission_request_hook_decision(
+                call.name,
+                is_hard_approval,
+                perm_outcome.decision,
+                perm_outcome.reason.clone(),
+            ) {
+                PermissionRequestResolution::Deny { reason } => {
+                    dispatch_permission_denied_hook(
+                        context.session_id,
+                        call.name,
+                        &stage.args,
+                        &reason,
+                    )
+                    .await;
+                    context
+                        .continue_after_tool(
+                            call.id,
+                            error_result(reason),
+                            "permission-request hook denied tool execution",
+                        )
+                        .await;
+                    PreparedCall::NextCall
+                }
+                PermissionRequestResolution::Allow => {
+                    let rewrite = apply_hook_input_rewrite(
+                        context.active_sessions,
+                        context.session_id,
+                        unsafe_enabled,
+                        call.name,
+                        &perm_outcome,
+                        call.args_str,
+                        stage.guards,
+                    )
+                    .await;
+                    match rewrite {
+                        HookInputRewrite::Unchanged(_) => PreparedCall::Execute(stage.args),
+                        HookInputRewrite::Refused { args, refusal } => {
+                            dispatch_permission_denied_hook(
+                                context.session_id,
+                                call.name,
+                                &args,
+                                &refusal.message,
+                            )
+                            .await;
+                            context
+                                .continue_after_tool(call.id, refusal.result, refusal.label)
+                                .await;
+                            PreparedCall::NextCall
+                        }
+                        HookInputRewrite::Applied(effective) => {
+                            // G1.1 (#3006): re-check whether the rewritten arguments
+                            // escalated to a hard approval; hooks cannot bypass hard
+                            // approvals even via `PermissionRequest` + `updatedInput`.
+                            if let Some(hard_request) = hard_approval_after_permission_rewrite(
+                                &effective.guards.policy_decision,
+                                yolo_enabled,
+                                unsafe_enabled,
+                            ) {
+                                let rewritten_call = ToolCallInput {
+                                    id: call.id,
+                                    name: call.name,
+                                    args_str: effective.args_json.as_str(),
+                                };
+                                match handle_approval_outcome(
+                                    context,
+                                    &rewritten_call,
+                                    &effective.args,
+                                    &hard_request,
+                                    PendingApprovalKind::Hard,
+                                    remaining_calls,
+                                )
+                                .await
+                                {
+                                    GateStep::Execute => PreparedCall::Execute(effective.args),
+                                    GateStep::NextCall => PreparedCall::NextCall,
+                                    GateStep::StopBatch => PreparedCall::StopBatch,
+                                }
+                            } else {
+                                PreparedCall::Execute(effective.args)
+                            }
+                        }
+                    }
+                }
+                PermissionRequestResolution::Ask => {
+                    match handle_approval_outcome(
+                        context,
+                        &call,
+                        &stage.args,
+                        &approval_request,
+                        approval_kind,
+                        remaining_calls,
+                    )
+                    .await
+                    {
+                        GateStep::Execute => PreparedCall::Execute(stage.args),
+                        GateStep::NextCall => PreparedCall::NextCall,
+                        GateStep::StopBatch => PreparedCall::StopBatch,
+                    }
+                }
             }
         }
     }
@@ -514,6 +652,7 @@ async fn dispatch_pre_tool_hook_and_gate(
 async fn handle_approval_outcome(
     context: &ToolExecutionContext<'_>,
     call: &ToolCallInput<'_>,
+    args: &serde_json::Value,
     approval_request: &crate::agent::tool_approvals::ToolApprovalRequest,
     approval_kind: PendingApprovalKind,
     remaining_calls: &[ToolCall],
@@ -530,12 +669,10 @@ async fn handle_approval_outcome(
     {
         ApprovalOutcome::Approved => GateStep::Execute,
         ApprovalOutcome::Rejected => {
+            let reason = "User rejected the tool execution.";
+            dispatch_permission_denied_hook(context.session_id, call.name, args, reason).await;
             context
-                .continue_after_tool(
-                    call.id,
-                    error_result("User rejected the tool execution."),
-                    "tool rejection",
-                )
+                .continue_after_tool(call.id, error_result(reason), "tool rejection")
                 .await;
             // User rejected this tool — cancel remaining calls in the batch too.
             inject_cancel_tombstones_for_remaining(context, remaining_calls).await;
@@ -607,9 +744,9 @@ async fn run_and_record_tool_call(
     // the real tool result (#3004).
     let post_tool_envelope = (!tool_ended_with_error).then(|| post_tool_response(&result));
 
-    // PostToolUse hook (#2925, #3004 G1.2): evaluate BEFORE `continue_after_tool`
-    // so `additionalContext`, `block` feedback, and `continue: false` take effect
-    // before the next completion is requested.
+    // PostToolUse / PostToolUseFailure hook (#2925, #3004 G1.2, #3006): evaluate
+    // BEFORE `continue_after_tool` so `additionalContext`, `block` feedback, and
+    // `continue: false` take effect before the next completion is requested.
     let post_tool_stop_reason = if !tool_ended_with_error {
         dispatch_post_tool_use_hook(
             context.session_id,
@@ -620,7 +757,14 @@ async fn run_and_record_tool_call(
         )
         .await
     } else {
-        None
+        dispatch_post_tool_use_failure_hook(
+            context.session_id,
+            tool_name,
+            post_tool_input,
+            &result,
+            cancellation_token,
+        )
+        .await
     };
 
     context
@@ -669,6 +813,132 @@ async fn dispatch_post_tool_use_hook(
         );
     }
     None
+}
+
+async fn dispatch_post_tool_use_failure_hook(
+    session_id: &str,
+    tool_name: &str,
+    post_tool_input: serde_json::Value,
+    result: &ToolExecutionResult,
+    cancellation_token: &CancellationToken,
+) -> Option<String> {
+    let mut params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::PostToolUseFailure,
+    );
+    params.tool_name = Some(tool_name.to_string());
+    params.tool_input = Some(post_tool_input);
+    params.tool_error = result
+        .error
+        .clone()
+        .or_else(|| (!result.content.is_empty()).then(|| result.content.clone()));
+    params.is_interrupt = Some(result.cancellation.is_some());
+    params.tool_response = Some(post_tool_response(result));
+    let outcome = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::PostToolUseFailure,
+        tool_name,
+        &params,
+        session_id,
+    )
+    .await;
+    if outcome.stops_processing {
+        let stop_reason = outcome.stop_message("PostToolUseFailure hook stopped processing.");
+        cancellation_token.cancel();
+        return Some(stop_reason);
+    }
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+    None
+}
+
+/// The `PermissionDenied` envelope: the call that was denied and the reason
+/// in words (#3075 G2.1).
+pub(super) fn permission_denied_params(
+    session_id: &str,
+    tool_name: &str,
+    tool_input: &serde_json::Value,
+    reason: &str,
+) -> crate::services::hooks::HookEnvelopeParams {
+    let mut params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::PermissionDenied,
+    );
+    params.tool_name = Some(tool_name.to_string());
+    params.tool_input = Some(tool_input.clone());
+    params.denial_reason = Some(reason.to_string());
+    params
+}
+
+async fn dispatch_permission_denied_hook(
+    session_id: &str,
+    tool_name: &str,
+    tool_input: &serde_json::Value,
+    reason: &str,
+) {
+    let params = permission_denied_params(session_id, tool_name, tool_input, reason);
+    let outcome = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::PermissionDenied,
+        tool_name,
+        &params,
+        session_id,
+    )
+    .await;
+    if let Some(ctx) = outcome.joined_additional_context() {
+        crate::services::hooks::push_turn_hook_context(session_id, &ctx);
+    }
+}
+
+/// Resolution of a `PermissionRequest` hook decision (#3006).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PermissionRequestResolution {
+    Allow,
+    Ask,
+    Deny { reason: String },
+}
+
+pub(crate) fn apply_permission_request_hook_decision(
+    tool_name: &str,
+    is_hard_approval: bool,
+    decision: Option<crate::services::hooks::HookDecision>,
+    reason: Option<String>,
+) -> PermissionRequestResolution {
+    let trimmed_reason = reason.filter(|r| !r.trim().is_empty());
+    match decision {
+        Some(crate::services::hooks::HookDecision::Block) => PermissionRequestResolution::Deny {
+            reason: trimmed_reason.unwrap_or_else(|| {
+                format!("Tool '{}' denied by PermissionRequest hook.", tool_name)
+            }),
+        },
+        Some(crate::services::hooks::HookDecision::Allow) if !is_hard_approval => {
+            PermissionRequestResolution::Allow
+        }
+        _ => PermissionRequestResolution::Ask,
+    }
+}
+
+/// If a `PermissionRequest` `allow` + `updatedInput` rewrite escalated the
+/// tool call to a hard approval, return that hard approval request so the user
+/// is still prompted with the rewritten arguments (#3006 G1.1).
+pub(crate) fn hard_approval_after_permission_rewrite(
+    policy_decision: &ToolExecutionPolicyDecision,
+    yolo_enabled: bool,
+    unsafe_enabled: bool,
+) -> Option<crate::agent::tool_approvals::ToolApprovalRequest> {
+    if !matches!(
+        policy_decision,
+        ToolExecutionPolicyDecision::RequireHardApproval(_)
+    ) {
+        return None;
+    }
+    crate::agent::tool_approvals::approval_request_for_runtime(
+        policy_decision,
+        yolo_enabled,
+        unsafe_enabled,
+    )
+    .cloned()
 }
 
 /// Tool result recorded for remaining batch calls skipped after a hook returned
@@ -959,5 +1229,79 @@ mod hook_stop_and_tool_response_tests {
             serde_json::json!(1)
         );
         assert_ne!(response, serde_json::json!({ "is_error": false }));
+    }
+
+    #[test]
+    fn permission_request_hook_decision_matrix() {
+        use super::{apply_permission_request_hook_decision, PermissionRequestResolution};
+
+        assert_eq!(
+            apply_permission_request_hook_decision(
+                "workspace__runShell",
+                false,
+                Some(HookDecision::Allow),
+                None,
+            ),
+            PermissionRequestResolution::Allow
+        );
+        // Hard approval cannot be bypassed by a PermissionRequest hook.
+        assert_eq!(
+            apply_permission_request_hook_decision(
+                "workspace__runShell",
+                true,
+                Some(HookDecision::Allow),
+                None,
+            ),
+            PermissionRequestResolution::Ask
+        );
+        assert_eq!(
+            apply_permission_request_hook_decision(
+                "workspace__runShell",
+                false,
+                Some(HookDecision::Block),
+                Some("policy denied".to_string()),
+            ),
+            PermissionRequestResolution::Deny {
+                reason: "policy denied".to_string(),
+            }
+        );
+        assert_eq!(
+            apply_permission_request_hook_decision(
+                "workspace__runShell",
+                false,
+                Some(HookDecision::Ask),
+                None,
+            ),
+            PermissionRequestResolution::Ask
+        );
+    }
+
+    #[test]
+    fn permission_denied_envelope_carries_the_denied_call_and_message() {
+        use super::permission_denied_params;
+
+        let denied = serde_json::json!({"command": "rm -rf /"});
+        let params = permission_denied_params(
+            "sess-denied",
+            "workspace__runShell",
+            &denied,
+            "Blocked workspace__runShell because it matches a hard shell safety rule",
+        );
+
+        assert_eq!(
+            params.event,
+            crate::services::hooks::HookEvent::PermissionDenied
+        );
+        assert_eq!(params.tool_name.as_deref(), Some("workspace__runShell"));
+        assert_eq!(
+            params.tool_input.as_ref(),
+            Some(&denied),
+            "the payload must carry the call that was denied"
+        );
+        assert_eq!(
+            params.denial_reason.as_deref(),
+            Some("Blocked workspace__runShell because it matches a hard shell safety rule"),
+            "the payload must carry the refusal in words, not a guard label"
+        );
     }
 }

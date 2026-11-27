@@ -263,4 +263,153 @@ fn decision_aggregation_precedence_is_block_over_ask_over_allow() {
     assert_eq!(res.decision, Some(HookDecision::Block));
     assert_eq!(res.reason.as_deref(), Some("denied"));
 }
+
+#[tokio::test]
+async fn tool_lifecycle_events_dispatch_with_matchers_and_if_conditions() {
+    let fail_json = r#"{"additionalContext":"failure observed"}"#;
+    let perm_json = r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"command":"echo safe"}}}}"#;
+    let denied_json = r#"{"additionalContext":"denial logged"}"#;
+    let batch_json = r#"{"additionalContext":"batch complete"}"#;
+
+    let hooks_json = serde_json::json!({
+        "hooks": {
+            "PostToolUseFailure": [{
+                "matcher": "workspace__runShell",
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("printf '%s' '{fail_json}'"),
+                    "powershell": format!("Write-Output '{fail_json}'"),
+                    "if": "Bash(false*)",
+                }]
+            }],
+            "PermissionRequest": [{
+                "matcher": "workspace__runShell",
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("printf '%s' '{perm_json}'"),
+                    "powershell": format!("Write-Output '{perm_json}'"),
+                }]
+            }],
+            "PermissionDenied": [{
+                "matcher": "workspace__runShell",
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("printf '%s' '{denied_json}'"),
+                    "powershell": format!("Write-Output '{denied_json}'"),
+                }]
+            }],
+            "PostToolBatch": [{
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("printf '%s' '{batch_json}'"),
+                    "powershell": format!("Write-Output '{batch_json}'"),
+                }]
+            }]
+        }
+    })
+    .to_string();
+    let (temp, root) = setup_approved_plugin(&hooks_json);
+    let sid = format!("tool-lifecycle-{}", uuid::Uuid::new_v4());
+
+    // PostToolUseFailure: matcher hit + `if` hit
+    let mut fail_params =
+        HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PostToolUseFailure);
+    fail_params.tool_name = Some("workspace__runShell".to_string());
+    fail_params.tool_input = Some(serde_json::json!({"command": "false"}));
+    fail_params.tool_error = Some("exit code 1".to_string());
+    fail_params.is_interrupt = Some(false);
+    let fail_hit = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PostToolUseFailure,
+        "workspace__runShell",
+        &fail_params,
+        &sid,
+    )
+    .await;
+    assert_eq!(
+        fail_hit.joined_additional_context().as_deref(),
+        Some("failure observed")
+    );
+
+    // PostToolUseFailure: matcher hit + `if` miss
+    fail_params.tool_input = Some(serde_json::json!({"command": "echo hi"}));
+    let fail_if_miss = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PostToolUseFailure,
+        "workspace__runShell",
+        &fail_params,
+        &sid,
+    )
+    .await;
+    assert!(fail_if_miss.joined_additional_context().is_none());
+
+    // PermissionRequest: matcher hit & miss
+    let mut perm_params = HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PermissionRequest);
+    perm_params.tool_name = Some("workspace__runShell".to_string());
+    perm_params.tool_input = Some(serde_json::json!({"command": "ls"}));
+    let perm_hit = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PermissionRequest,
+        "workspace__runShell",
+        &perm_params,
+        &sid,
+    )
+    .await;
+    assert_eq!(perm_hit.decision, Some(HookDecision::Allow));
+    assert_eq!(
+        perm_hit.updated_input,
+        Some(serde_json::json!({"command": "echo safe"}))
+    );
+    let perm_miss = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PermissionRequest,
+        "workspace__readFile",
+        &perm_params,
+        &sid,
+    )
+    .await;
+    assert_eq!(perm_miss.decision, None);
+
+    // PermissionDenied: matcher hit & miss
+    let mut denied_params =
+        HookEnvelopeParams::new(&sid, root.clone(), HookEvent::PermissionDenied);
+    denied_params.tool_name = Some("workspace__runShell".to_string());
+    denied_params.denial_reason = Some("blocked".to_string());
+    let denied_hit = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PermissionDenied,
+        "workspace__runShell",
+        &denied_params,
+        &sid,
+    )
+    .await;
+    assert_eq!(
+        denied_hit.joined_additional_context().as_deref(),
+        Some("denial logged")
+    );
+    let denied_miss = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PermissionDenied,
+        "workspace__readFile",
+        &denied_params,
+        &sid,
+    )
+    .await;
+    assert!(denied_miss.joined_additional_context().is_none());
+
+    // PostToolBatch: executes without tool matcher
+    let batch_params = HookEnvelopeParams::new(&sid, root, HookEvent::PostToolBatch);
+    let batch_hit = dispatch_hook_event_in(
+        temp.path(),
+        HookEvent::PostToolBatch,
+        "",
+        &batch_params,
+        &sid,
+    )
+    .await;
+    assert_eq!(
+        batch_hit.joined_additional_context().as_deref(),
+        Some("batch complete")
+    );
+}
 // --- #2825 session-scoped plugin sources ---------------------------------
