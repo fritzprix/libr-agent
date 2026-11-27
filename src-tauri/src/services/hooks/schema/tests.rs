@@ -161,8 +161,7 @@ fn without_args_the_handler_stays_in_shell_form() {
 fn records_unknown_and_newer_events_as_unsupported_without_failing() {
     for key in [
         "Setup",
-        "PostToolUseFailure",
-        "PermissionRequest",
+        "InstructionsLoaded",
         "bogusEvent",
     ] {
         let json = format!(
@@ -309,6 +308,24 @@ fn rejects_session_start_async_true() {
     let err =
         parse_hooks_value(&serde_json::from_str(json).unwrap(), Path::new("t.json")).unwrap_err();
     assert!(err.contains("async"));
+}
+
+#[test]
+fn parses_tool_lifecycle_events_as_supported() {
+    let json = r#"{
+  "hooks": {
+    "PostToolUseFailure": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo fail" }] }],
+    "PermissionRequest": [{ "matcher": "workspace__runShell", "hooks": [{ "type": "command", "command": "echo perm" }] }],
+    "PermissionDenied": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "echo denied" }] }],
+    "PostToolBatch": [{ "hooks": [{ "type": "command", "command": "echo batch" }] }]
+  }
+}"#;
+    let cfg = parse_hooks_value(&serde_json::from_str(json).unwrap(), Path::new("t.json")).unwrap();
+    assert!(cfg.unsupported_events.is_empty());
+    assert!(cfg.events.contains_key(&HookEvent::PostToolUseFailure));
+    assert!(cfg.events.contains_key(&HookEvent::PermissionRequest));
+    assert!(cfg.events.contains_key(&HookEvent::PermissionDenied));
+    assert!(cfg.events.contains_key(&HookEvent::PostToolBatch));
 }
 
 #[test]

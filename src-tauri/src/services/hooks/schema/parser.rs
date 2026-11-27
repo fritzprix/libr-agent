@@ -145,6 +145,10 @@ fn normalize_event_key(key: &str) -> Result<HookEvent, String> {
         }
         "PreToolUse" | "preToolUse" => Ok(HookEvent::PreToolUse),
         "PostToolUse" | "postToolUse" => Ok(HookEvent::PostToolUse),
+        "PostToolUseFailure" | "postToolUseFailure" => Ok(HookEvent::PostToolUseFailure),
+        "PermissionRequest" | "permissionRequest" => Ok(HookEvent::PermissionRequest),
+        "PermissionDenied" | "permissionDenied" => Ok(HookEvent::PermissionDenied),
+        "PostToolBatch" | "postToolBatch" => Ok(HookEvent::PostToolBatch),
         "Stop" | "stop" => Ok(HookEvent::Stop),
         "StopFailure" | "stopFailure" => Ok(HookEvent::StopFailure),
         "SubagentStart" | "subagentStart" => Ok(HookEvent::SubagentStart),

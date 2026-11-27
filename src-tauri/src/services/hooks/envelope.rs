@@ -76,6 +76,12 @@ pub struct HookEnvelopeParams {
     pub tool_name: Option<String>,
     pub tool_input: Option<Value>,
     pub tool_response: Option<Value>,
+    /// Failure message for `PostToolUseFailure` (#3006).
+    pub tool_error: Option<String>,
+    /// Whether the failure in `PostToolUseFailure` was caused by user interrupt/cancellation (#3006).
+    pub is_interrupt: Option<bool>,
+    /// Reason a tool call was denied for `PermissionDenied` (#3006).
+    pub denial_reason: Option<String>,
     pub stop_hook_active: bool,
     pub child_session_id: Option<String>,
     pub agent_id: Option<String>,
@@ -107,6 +113,9 @@ impl HookEnvelopeParams {
             tool_name: None,
             tool_input: None,
             tool_response: None,
+            tool_error: None,
+            is_interrupt: None,
+            denial_reason: None,
             stop_hook_active: false,
             child_session_id: None,
             agent_id: None,
@@ -179,6 +188,44 @@ pub fn build_envelope_value(params: &HookEnvelopeParams) -> Value {
                 obj.insert("tool_response".to_string(), response.clone());
             }
         }
+        HookEvent::PostToolUseFailure => {
+            if let Some(name) = &params.tool_name {
+                obj.insert("tool_name".to_string(), json!(name));
+            }
+            if let Some(input) = &params.tool_input {
+                obj.insert("tool_input".to_string(), input.clone());
+            }
+            if let Some(err) = &params.tool_error {
+                obj.insert("error".to_string(), json!(err));
+            }
+            obj.insert(
+                "is_interrupt".to_string(),
+                json!(params.is_interrupt.unwrap_or(false)),
+            );
+            if let Some(response) = &params.tool_response {
+                obj.insert("tool_response".to_string(), response.clone());
+            }
+        }
+        HookEvent::PermissionRequest => {
+            if let Some(name) = &params.tool_name {
+                obj.insert("tool_name".to_string(), json!(name));
+            }
+            if let Some(input) = &params.tool_input {
+                obj.insert("tool_input".to_string(), input.clone());
+            }
+        }
+        HookEvent::PermissionDenied => {
+            if let Some(name) = &params.tool_name {
+                obj.insert("tool_name".to_string(), json!(name));
+            }
+            if let Some(input) = &params.tool_input {
+                obj.insert("tool_input".to_string(), input.clone());
+            }
+            if let Some(reason) = &params.denial_reason {
+                obj.insert("reason".to_string(), json!(reason));
+            }
+        }
+        HookEvent::PostToolBatch => {}
         HookEvent::Stop => {
             obj.insert(
                 "stop_hook_active".to_string(),
@@ -309,6 +356,22 @@ mod tests {
                 p.tool_input = Some(json!({"path": "a.txt"}));
                 p.tool_response = Some(json!({"content": "ok"}));
             }),
+            (HookEvent::PostToolUseFailure, |p| {
+                p.tool_name = Some("workspace__runShell".into());
+                p.tool_input = Some(json!({"command": "false"}));
+                p.tool_error = Some("exit code 1".into());
+                p.is_interrupt = Some(false);
+            }),
+            (HookEvent::PermissionRequest, |p| {
+                p.tool_name = Some("workspace__runShell".into());
+                p.tool_input = Some(json!({"command": "rm -rf /tmp/x"}));
+            }),
+            (HookEvent::PermissionDenied, |p| {
+                p.tool_name = Some("workspace__runShell".into());
+                p.tool_input = Some(json!({"command": "rm -rf /tmp/x"}));
+                p.denial_reason = Some("blocked by policy".into());
+            }),
+            (HookEvent::PostToolBatch, |_| {}),
             (HookEvent::Stop, |p| p.stop_hook_active = true),
             (HookEvent::SubagentStop, |p| {
                 p.agent_id = Some("agent-9".into());

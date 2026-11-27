@@ -249,6 +249,43 @@ pub async fn continue_workflow_after_tool(
                     }
                 }
 
+                // PostToolBatch hook (#3006): runs after all tool calls in the
+                // batch resolve, before the next model call.
+                let batch_params = crate::services::hooks::HookEnvelopeParams::new(
+                    &session_id,
+                    std::path::PathBuf::from("."),
+                    crate::services::hooks::HookEvent::PostToolBatch,
+                );
+                let batch_outcome = crate::services::hooks::dispatch_hook_event(
+                    crate::services::hooks::HookEvent::PostToolBatch,
+                    "",
+                    &batch_params,
+                    &session_id,
+                )
+                .await;
+                if let Some(ctx) = batch_outcome.joined_additional_context() {
+                    crate::services::hooks::push_turn_hook_context(&session_id, &ctx);
+                }
+                if batch_outcome.stops_processing {
+                    let stop_reason =
+                        batch_outcome.stop_message("PostToolBatch hook stopped processing.");
+                    let dispatcher = TauriEventDispatcher::new(app_handle);
+                    let _ = crate::agent::workflow::settle_session_and_go_idle_with_dispatcher(
+                        session_repo,
+                        active_sessions,
+                        proxy_manager,
+                        app_handle,
+                        &crate::agent::workflow::LlmCompletionRestart,
+                        &dispatcher,
+                        &session_id,
+                        None,
+                        crate::agent::events::WorkflowCompletionReason::HookStopped,
+                        Some(&stop_reason),
+                    )
+                    .await;
+                    return Ok(());
+                }
+
                 // Request next LLM completion
                 if let Err(e) = crate::agent::llm::request_llm_completion_with_recovery(
                     session_repo,

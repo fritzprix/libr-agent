@@ -90,7 +90,14 @@ pub fn if_condition_matches(
     let Some(rule) = condition.map(str::trim).filter(|s| !s.is_empty()) else {
         return true;
     };
-    if !matches!(event, HookEvent::PreToolUse | HookEvent::PostToolUse) {
+    if !matches!(
+        event,
+        HookEvent::PreToolUse
+            | HookEvent::PostToolUse
+            | HookEvent::PostToolUseFailure
+            | HookEvent::PermissionRequest
+            | HookEvent::PermissionDenied
+    ) {
         return false;
     }
     let Some(tool) = tool_name else {
