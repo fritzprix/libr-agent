@@ -150,7 +150,7 @@ Every `G` item must be answered as **fixed** or **declined**. Suggestions may be
 | `gatekeeper:approved`          | gatekeeper | Approved at the current head; ready for a human merge                                    |
 | `gatekeeper:escalated`         | gatekeeper | Needs a maintainer decision; while it is on, the PR is not reviewed. The repository owner removes this label on GitHub to resume, which restarts the round count at 1 |
 | `gatekeeper:needs-human`       | gatekeeper | Security-sensitive or loop-skill PR; human must confirm before merge (removing it never resumes an escalation) |
-| `gatekeeper:review-clean`      | gatekeeper | Review is clean at the current head; macOS CI must run before approve (#3070). Extra label like `gatekeeper:needs-human` — it does **not** replace the verdict labels (exactly one of the first three still applies) |
+| `gatekeeper:review-clean`      | gatekeeper | Review is clean at the current head. On PRs, adding it starts all CI (every OS and Loop skill tests); no PR CI runs without it. `review_queue.py` removes it when the head moves or an approve has no CI at its head, so a new clean verdict adds it again. Extra label like `gatekeeper:needs-human` — it does **not** replace the verdict labels (exactly one of the first three still applies) |
 
 Unmarked comments from the repo owner (or `@me`) posted after the last gatekeeper marker are read as required items and trigger a review (worker response markers do not hide them).
 

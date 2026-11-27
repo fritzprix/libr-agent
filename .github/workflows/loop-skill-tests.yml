@@ -16,6 +16,13 @@ on:
 permissions:
   contents: read
 
+# Same as LibrAgent CI/CD: synchronize and the review-clean label share one
+# per-PR group, so a new push cancels the run for the old head. Other events
+# get one group per run, so they never cancel a real run.
+concurrency:
+  group: ${{ (github.event.action == 'synchronize' || github.event.label.name == 'gatekeeper:review-clean') && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-pr-{1}-run-{2}', github.workflow, github.event.pull_request.number, github.run_id) }}
+  cancel-in-progress: true
+
 jobs:
   test:
     if: github.event.action == 'labeled' && github.event.label.name == 'gatekeeper:review-clean'

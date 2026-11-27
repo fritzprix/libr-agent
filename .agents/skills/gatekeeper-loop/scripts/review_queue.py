@@ -22,6 +22,13 @@ status values:
   escalate   - round limit (5) reached, or the answer is a product, security, or
                data decision for the user.
 
+The script removes `gatekeeper:review-clean` itself when the label is on a head
+that CI must run for again: the head moved since the newest clean marker, or an
+approve at this head has no green CI and no pending CI (never for
+`blocked-unknown`). On PRs all CI starts only
+when that label is added, so the next clean verdict must add it again
+(`reviewCleanLabelRemoved` reports this).
+
 Each entry may include humanOnly: true when the diff touches loop-skill
 paths (add `gatekeeper:needs-human` when posting approve; never skip review).
 
@@ -54,6 +61,8 @@ from pr_turn import (  # noqa: E402
 
 MAX_ROUNDS = 5
 ESCALATED_LABEL = "gatekeeper:escalated"
+REVIEW_CLEAN_LABEL = "gatekeeper:review-clean"
+APPROVE_WITHOUT_GREEN_CI = "approve without green CI at this head; replace it with a clean marker"
 FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PROTECTED_SKILL_PREFIXES = (
@@ -236,7 +245,7 @@ def classify(
 
     ci_applies = is_dev_base(base)
     ci_failed = ci_applies and bool(failing_checks)
-    # macOS is gated behind gatekeeper:review-clean on PRs (#3070). Approve only
+    # On PRs all CI starts only when gatekeeper:review-clean is added. Approve only
     # when a passed macOS check exists at the head; ubuntu+windows alone is not green.
     ci_green = (
         ci_applies
@@ -279,7 +288,7 @@ def classify(
         if ci_failed:
             return "review", "CI failing after approve", 0
         if not ci_green:
-            return "review", "approve without green CI at this head; replace it with a clean marker", 0
+            return "review", APPROVE_WITHOUT_GREEN_CI, 0
         return "approved", "approved at current head", 9
 
     if at_head and last_verdict.get("verdict") == "changes-requested" and not clean_at_head:
@@ -313,6 +322,30 @@ def classify(
     if failing_checks and ci_applies:
         return "review", "not reviewed yet; CI failing", 1
     return "review", "not reviewed yet", 1
+
+
+def review_clean_label_is_stale(
+    *, labels: list[str], latest_clean_head: str | None, head: str, reason: str, pending_checks: list
+) -> bool:
+    """True when gatekeeper:review-clean must come off so adding it again starts CI.
+
+    PR CI starts only on the labeled event, so a label left on a head where CI
+    did not run would never start CI again.
+    """
+    if REVIEW_CLEAN_LABEL not in labels:
+        return False
+    if latest_clean_head != head:
+        return True
+    return reason == APPROVE_WITHOUT_GREEN_CI and not pending_checks
+
+
+def remove_review_clean_label(number: int) -> str | None:
+    """Remove the label; return an error message instead of stopping the queue."""
+    try:
+        gh("pr", "edit", str(number), "--remove-label", REVIEW_CLEAN_LABEL)
+    except SystemExit as e:
+        return str(e)
+    return None
 
 
 def touches_human_only_paths(paths: list[str]) -> bool:
@@ -470,6 +503,21 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         blocker_lookup_error=blocker_error,
     )
 
+    review_clean_removed = False
+    review_clean_error = None
+    # blocked-unknown is a fail-closed skip: no label writes this tick.
+    if status != "blocked-unknown" and review_clean_label_is_stale(
+        labels=labels,
+        latest_clean_head=cleans[-1].get("head") if cleans else None,
+        head=head,
+        reason=reason,
+        pending_checks=pending,
+    ):
+        review_clean_error = remove_review_clean_label(number)
+        if review_clean_error is None:
+            review_clean_removed = True
+            labels = [name for name in labels if name != REVIEW_CLEAN_LABEL]
+
     if status != "review" or not reviewed_head or reviewed_head == head:
         review_mode = "full" if status == "review" and not reviewed_head else "incremental"
     else:
@@ -516,11 +564,9 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
         "staleApprovedLabel": "gatekeeper:approved" in labels and status not in ("approved", "blocked-unknown"),
-        # Label is stale when the head moved since the newest clean marker (#3070).
-        "staleReviewCleanLabel": (
-            "gatekeeper:review-clean" in labels
-            and (not cleans or cleans[-1].get("head") != head)
-        ),
+        # The script already removed a stale gatekeeper:review-clean label.
+        "reviewCleanLabelRemoved": review_clean_removed,
+        "reviewCleanLabelError": review_clean_error,
         "url": pr["url"],
         "base": base,
         "draft": pr["isDraft"],

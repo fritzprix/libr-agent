@@ -1088,12 +1088,15 @@ class BlockedStatusTests(unittest.TestCase):
         self.assertIn("403", broken["blockerLookupError"])
         self.assertEqual(broken["status"], "blocked-unknown")
         self.assertFalse(broken["staleApprovedLabel"])
-        self.assertFalse(broken["staleReviewCleanLabel"])
+        self.assertFalse(broken["reviewCleanLabelRemoved"])
         self.assertIsNone(healthy["blockerLookupError"])
         self.assertEqual(healthy["status"], "review")
 
     def test_stale_review_clean_label_when_head_moved(self) -> None:
+        calls = []
+
         def fake_gh(*args):
+            calls.append(args)
             if args[:2] == ("pr", "view"):
                 return json.dumps({
                     "number": 3070,
@@ -1122,7 +1125,105 @@ class BlockedStatusTests(unittest.TestCase):
 
         with patch.object(review_queue, "gh", fake_gh):
             entry = summarize(3070, "fritzprix")
-        self.assertTrue(entry["staleReviewCleanLabel"])
+        self.assertTrue(entry["reviewCleanLabelRemoved"])
+        self.assertIsNone(entry["reviewCleanLabelError"])
+        self.assertNotIn("gatekeeper:review-clean", entry["labels"])
+        self.assertIn(("pr", "edit", "3070", "--remove-label", "gatekeeper:review-clean"), calls)
+
+    def test_review_clean_label_removal_error_is_reported(self) -> None:
+        def fake_gh(*args):
+            if args[:2] == ("pr", "edit"):
+                sys.exit("gh pr edit failed: HTTP 502")
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3070,
+                    "title": "CI PR",
+                    "body": "Fixes #3070",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3070",
+                    "headRefName": "feat/ci",
+                    "headRefOid": "head-new",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-27T00:00:00Z",
+                    "statusCheckRollup": [],
+                    "comments": [{
+                        "author": {"login": "fritzprix"},
+                        "createdAt": "2026-11-27T01:00:00Z",
+                        "body": "<!-- gatekeeper-loop: verdict=clean head=head-old base=dev/0.9.x -->",
+                    }],
+                    "labels": [{"name": "gatekeeper:review-clean"}],
+                    "files": [{"path": ".github/workflows/ci.yml"}],
+                })
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3070, "fritzprix")
+        self.assertFalse(entry["reviewCleanLabelRemoved"])
+        self.assertIn("502", entry["reviewCleanLabelError"])
+        self.assertIn("gatekeeper:review-clean", entry["labels"])
+
+    def _approve_at_head_payload(self, checks: list[dict]) -> str:
+        return json.dumps({
+            "number": 3070,
+            "title": "CI PR",
+            "body": "Fixes #3070",
+            "url": "https://github.com/fritzprix/libr-agent/pull/3070",
+            "headRefName": "feat/ci",
+            "headRefOid": "head-same",
+            "baseRefName": "dev/0.9.x",
+            "isDraft": False,
+            "mergeable": "MERGEABLE",
+            "createdAt": "2026-11-27T00:00:00Z",
+            "statusCheckRollup": checks,
+            "comments": [
+                {
+                    "author": {"login": "fritzprix"},
+                    "createdAt": "2026-11-27T01:00:00Z",
+                    "body": "<!-- gatekeeper-loop: verdict=clean head=head-same base=dev/0.9.x -->",
+                },
+                {
+                    "author": {"login": "fritzprix"},
+                    "createdAt": "2026-11-27T01:30:00Z",
+                    "body": "<!-- gatekeeper-loop: round=1 verdict=approve head=head-same base=dev/0.9.x -->",
+                },
+            ],
+            "labels": [{"name": "gatekeeper:review-clean"}, {"name": "gatekeeper:approved"}],
+            "files": [{"path": ".github/workflows/ci.yml"}],
+        })
+
+    def test_review_clean_label_removed_when_approve_has_no_ci_at_head(self) -> None:
+        calls = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            if args[:2] == ("pr", "view"):
+                return self._approve_at_head_payload([])
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3070, "fritzprix")
+        self.assertEqual(entry["status"], "review")
+        self.assertEqual(entry["reason"], review_queue.APPROVE_WITHOUT_GREEN_CI)
+        self.assertTrue(entry["reviewCleanLabelRemoved"])
+        self.assertIn(("pr", "edit", "3070", "--remove-label", "gatekeeper:review-clean"), calls)
+
+    def test_review_clean_label_kept_when_approve_ci_is_pending(self) -> None:
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return self._approve_at_head_payload([
+                    {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
+                    {"name": "Test (macos-15)", "status": "IN_PROGRESS"},
+                ])
+            if args[:2] == ("pr", "edit"):
+                raise AssertionError("label must stay while CI is pending")
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3070, "fritzprix")
+        self.assertEqual(entry["reason"], review_queue.APPROVE_WITHOUT_GREEN_CI)
+        self.assertFalse(entry["reviewCleanLabelRemoved"])
+        self.assertIn("gatekeeper:review-clean", entry["labels"])
 
     def test_review_clean_label_not_stale_after_approve_at_same_head(self) -> None:
         def fake_gh(*args):
@@ -1142,6 +1243,7 @@ class BlockedStatusTests(unittest.TestCase):
                         {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
                         {"name": "Test (windows-latest)", "conclusion": "SUCCESS"},
                         {"name": "Test (macos-15)", "conclusion": "SUCCESS"},
+                        {"name": "Build (macos-15)", "conclusion": "SUCCESS"},
                     ],
                     "comments": [
                         {
@@ -1162,7 +1264,8 @@ class BlockedStatusTests(unittest.TestCase):
 
         with patch.object(review_queue, "gh", fake_gh):
             entry = summarize(3070, "fritzprix")
-        self.assertFalse(entry["staleReviewCleanLabel"])
+        self.assertEqual(entry["status"], "approved")
+        self.assertFalse(entry["reviewCleanLabelRemoved"])
 
     def test_review_clean_label_not_stale_after_nopush_worker_response(self) -> None:
         def fake_gh(*args):
@@ -1206,7 +1309,7 @@ class BlockedStatusTests(unittest.TestCase):
 
         with patch.object(review_queue, "gh", fake_gh):
             entry = summarize(3070, "fritzprix")
-        self.assertFalse(entry["staleReviewCleanLabel"])
+        self.assertFalse(entry["reviewCleanLabelRemoved"])
 
 
 def _pr_payload(number: int, checks: list[dict], comments: list[dict] | None = None) -> str:
