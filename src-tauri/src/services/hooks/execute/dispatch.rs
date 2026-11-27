@@ -229,6 +229,40 @@ pub async fn notify_stub_event(event: HookEvent, session_id: &str, mut params: H
     );
 }
 
+/// Injectable hook dispatch seam so production runs installed plugin hooks
+/// while tests can record emissions without touching the user profile.
+#[async_trait::async_trait]
+pub trait HookDispatcher: Send + Sync {
+    async fn dispatch(
+        &self,
+        event: HookEvent,
+        matcher_value: &str,
+        envelope_params: &HookEnvelopeParams,
+        session_id: &str,
+    ) -> HookDispatchResult;
+
+    fn spawn_session_start(&self, session_id: &str, source: SessionStartSource);
+}
+
+pub struct DefaultHookDispatcher;
+
+#[async_trait::async_trait]
+impl HookDispatcher for DefaultHookDispatcher {
+    async fn dispatch(
+        &self,
+        event: HookEvent,
+        matcher_value: &str,
+        envelope_params: &HookEnvelopeParams,
+        session_id: &str,
+    ) -> HookDispatchResult {
+        dispatch_hook_event(event, matcher_value, envelope_params, session_id).await
+    }
+
+    fn spawn_session_start(&self, session_id: &str, source: SessionStartSource) {
+        spawn_session_start(session_id, source);
+    }
+}
+
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ObservedHookDispatch {
@@ -238,39 +272,84 @@ pub(crate) struct ObservedHookDispatch {
 }
 
 #[cfg(test)]
-static OBSERVED_HOOK_DISPATCHES: once_cell::sync::Lazy<
-    std::sync::Mutex<Vec<ObservedHookDispatch>>,
-> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
-
-#[cfg(test)]
-pub(crate) fn observed_hook_dispatches_for_session(session_id: &str) -> Vec<ObservedHookDispatch> {
-    OBSERVED_HOOK_DISPATCHES
-        .lock()
-        .expect("observed hook dispatches lock")
-        .iter()
-        .filter(|entry| entry.session_id == session_id)
-        .cloned()
-        .collect()
+#[derive(Default)]
+pub(crate) struct RecordingHookDispatcher {
+    events: std::sync::Mutex<Vec<ObservedHookDispatch>>,
+    notify: tokio::sync::Notify,
 }
 
 #[cfg(test)]
-pub(crate) async fn wait_for_hook_dispatch(
-    session_id: &str,
-    event: HookEvent,
-    timeout: std::time::Duration,
-) -> Option<ObservedHookDispatch> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        if let Some(found) = observed_hook_dispatches_for_session(session_id)
-            .into_iter()
-            .find(|entry| entry.event == event)
-        {
-            return Some(found);
-        }
-        if tokio::time::Instant::now() >= deadline {
-            return None;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+impl RecordingHookDispatcher {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn events_for_session(&self, session_id: &str) -> Vec<ObservedHookDispatch> {
+        self.events
+            .lock()
+            .expect("recorded hook events lock")
+            .iter()
+            .filter(|entry| entry.session_id == session_id)
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) async fn wait_for(
+        &self,
+        session_id: &str,
+        event: HookEvent,
+        timeout: std::time::Duration,
+    ) -> Option<ObservedHookDispatch> {
+        tokio::time::timeout(timeout, async {
+            loop {
+                let notified = self.notify.notified();
+                if let Some(found) = self
+                    .events_for_session(session_id)
+                    .into_iter()
+                    .find(|entry| entry.event == event)
+                {
+                    return found;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .ok()
+    }
+}
+
+#[cfg(test)]
+#[async_trait::async_trait]
+impl HookDispatcher for RecordingHookDispatcher {
+    async fn dispatch(
+        &self,
+        event: HookEvent,
+        matcher_value: &str,
+        _envelope_params: &HookEnvelopeParams,
+        session_id: &str,
+    ) -> HookDispatchResult {
+        self.events
+            .lock()
+            .expect("recorded hook events lock")
+            .push(ObservedHookDispatch {
+                event,
+                matcher_value: matcher_value.to_string(),
+                session_id: session_id.to_string(),
+            });
+        self.notify.notify_waiters();
+        HookDispatchResult::default()
+    }
+
+    fn spawn_session_start(&self, session_id: &str, source: SessionStartSource) {
+        self.events
+            .lock()
+            .expect("recorded hook events lock")
+            .push(ObservedHookDispatch {
+                event: HookEvent::SessionStart,
+                matcher_value: session_start_source_label(source).to_string(),
+                session_id: session_id.to_string(),
+            });
+        self.notify.notify_waiters();
     }
 }
 
@@ -280,17 +359,6 @@ pub async fn dispatch_hook_event(
     envelope_params: &HookEnvelopeParams,
     session_id: &str,
 ) -> HookDispatchResult {
-    #[cfg(test)]
-    {
-        OBSERVED_HOOK_DISPATCHES
-            .lock()
-            .expect("observed hook dispatches lock")
-            .push(ObservedHookDispatch {
-                event,
-                matcher_value: matcher_value.to_string(),
-                session_id: session_id.to_string(),
-            });
-    }
     let plugins_dir = match get_user_plugins_directory() {
         Ok(dir) => dir,
         Err(e) => {

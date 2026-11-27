@@ -9,7 +9,7 @@ use tauri::AppHandle;
 /// work continues in the background; workflows soft-wait via `ensure_proxy_ready`.
 pub async fn spawn_create_proxy_for_session(
     proxy_manager: Arc<MCPServiceProxyManager>,
-    app_handle: Option<AppHandle>,
+    app_handle: AppHandle,
     session_id: String,
     tool_ids: Vec<String>,
     mcp_server_ids: Vec<String>,
@@ -39,7 +39,7 @@ pub async fn spawn_create_proxy_for_session(
                 .set_runtime_state(
                     &session_id,
                     SessionRuntimeState::hydrating(),
-                    app_handle.as_ref(),
+                    Some(&app_handle),
                 )
                 .await;
         }
@@ -51,7 +51,7 @@ pub async fn spawn_create_proxy_for_session(
                 session_id.clone(),
                 tool_ids,
                 mcp_server_ids,
-                app_handle.clone(),
+                Some(app_handle.clone()),
             )
             .await
         {
@@ -71,7 +71,7 @@ pub async fn spawn_create_proxy_for_session(
                     .set_runtime_state(
                         &session_id,
                         SessionRuntimeState::failed(error),
-                        app_handle.as_ref(),
+                        Some(&app_handle),
                     )
                     .await;
             }

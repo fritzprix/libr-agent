@@ -16,32 +16,145 @@ use crate::services::workspace_runtime_manager::{DockerStepReporter, WorkspaceRu
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-pub struct DockerProvisioningDeps {
-    pub session_repo: Arc<dyn SessionRepository>,
-    pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
-    pub proxy_manager: Arc<MCPServiceProxyManager>,
-    pub app_handle: Option<AppHandle>,
+/// Injectable runtime effects for Docker provisioning so production uses Tauri
+/// `AppHandle` while tests can drive the real path without optional skip branches.
+#[async_trait::async_trait]
+pub trait DockerProvisioningRuntime: Send + Sync {
+    fn app_handle_for_runtime_state(&self) -> Option<&AppHandle>;
+    async fn start_workflow(
+        &self,
+        session_id: String,
+        message: crate::models::chat::Message,
+    ) -> Result<(), String>;
+    async fn queue_user_message(
+        &self,
+        session_id: &str,
+        message: &crate::models::chat::Message,
+    ) -> Result<(), String>;
+    async fn finalize_session_error(
+        &self,
+        session_id: &str,
+        error: crate::agent::llm::types::AgentRuntimeError,
+    );
 }
 
-struct NoopEventDispatcher;
+struct TauriDockerProvisioningRuntime {
+    session_repo: Arc<dyn SessionRepository>,
+    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: Arc<MCPServiceProxyManager>,
+    app_handle: AppHandle,
+}
 
-impl crate::agent::events::AgentEventDispatcher for NoopEventDispatcher {
-    fn emit_agent_event(&self, _event: crate::agent::events::AgentEvent) -> Result<(), String> {
-        Ok(())
+#[async_trait::async_trait]
+impl DockerProvisioningRuntime for TauriDockerProvisioningRuntime {
+    fn app_handle_for_runtime_state(&self) -> Option<&AppHandle> {
+        Some(&self.app_handle)
+    }
+
+    async fn start_workflow(
+        &self,
+        session_id: String,
+        message: crate::models::chat::Message,
+    ) -> Result<(), String> {
+        crate::agent::workflow::start_workflow(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+            message,
+        )
+        .await
+    }
+
+    async fn queue_user_message(
+        &self,
+        session_id: &str,
+        message: &crate::models::chat::Message,
+    ) -> Result<(), String> {
+        MessageService::queue_user_message(
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+            message,
+        )
+        .await
+    }
+
+    async fn finalize_session_error(
+        &self,
+        session_id: &str,
+        error: crate::agent::llm::types::AgentRuntimeError,
+    ) {
+        let _ = crate::agent::workflow::finish::finalize_session_error(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+            error,
+        )
+        .await;
+    }
+}
+
+impl crate::agent::events::AgentEventDispatcher for TauriDockerProvisioningRuntime {
+    fn emit_agent_event(&self, event: crate::agent::events::AgentEvent) -> Result<(), String> {
+        crate::agent::tauri_events::TauriEventDispatcher::new(&self.app_handle)
+            .emit_agent_event(event)
     }
 
     fn emit_compact_state(
         &self,
-        _event: crate::agent::llm::types::CompactStateEvent,
+        event: crate::agent::llm::types::CompactStateEvent,
     ) -> Result<(), String> {
-        Ok(())
+        crate::agent::tauri_events::TauriEventDispatcher::new(&self.app_handle)
+            .emit_compact_state(event)
     }
 
     fn emit_completion_cancel(
         &self,
-        _request: crate::agent::llm::types::CompletionCancelRequest,
+        request: crate::agent::llm::types::CompletionCancelRequest,
     ) -> Result<(), String> {
-        Ok(())
+        crate::agent::tauri_events::TauriEventDispatcher::new(&self.app_handle)
+            .emit_completion_cancel(request)
+    }
+}
+
+pub struct DockerProvisioningDeps {
+    pub session_repo: Arc<dyn SessionRepository>,
+    pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    pub proxy_manager: Arc<MCPServiceProxyManager>,
+    pub event_dispatcher: Arc<dyn crate::agent::events::AgentEventDispatcher>,
+    pub hook_dispatcher: Arc<dyn crate::services::hooks::execute::HookDispatcher>,
+    pub runtime: Arc<dyn DockerProvisioningRuntime>,
+}
+
+impl DockerProvisioningDeps {
+    pub fn tauri(
+        session_repo: Arc<dyn SessionRepository>,
+        active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+        proxy_manager: Arc<MCPServiceProxyManager>,
+        app_handle: AppHandle,
+    ) -> Self {
+        let tauri_runtime = Arc::new(TauriDockerProvisioningRuntime {
+            session_repo: Arc::clone(&session_repo),
+            active_sessions: Arc::clone(&active_sessions),
+            proxy_manager: Arc::clone(&proxy_manager),
+            app_handle,
+        });
+        let event_dispatcher: Arc<dyn crate::agent::events::AgentEventDispatcher> =
+            Arc::clone(&tauri_runtime) as Arc<dyn crate::agent::events::AgentEventDispatcher>;
+        let hook_dispatcher: Arc<dyn crate::services::hooks::execute::HookDispatcher> =
+            Arc::new(crate::services::hooks::execute::DefaultHookDispatcher);
+        let runtime: Arc<dyn DockerProvisioningRuntime> = tauri_runtime;
+        Self {
+            session_repo,
+            active_sessions,
+            proxy_manager,
+            event_dispatcher,
+            hook_dispatcher,
+            runtime,
+        }
     }
 }
 
@@ -132,7 +245,9 @@ pub async fn ensure_provisioning_task_for_session(
             session_repo: Arc::clone(&deps.session_repo),
             active_sessions: Arc::clone(&deps.active_sessions),
             proxy_manager: Arc::clone(&deps.proxy_manager),
-            app_handle: deps.app_handle.clone(),
+            event_dispatcher: Arc::clone(&deps.event_dispatcher),
+            hook_dispatcher: Arc::clone(&deps.hook_dispatcher),
+            runtime: Arc::clone(&deps.runtime),
         },
         session.clone(),
         false,
@@ -176,7 +291,7 @@ async fn run_docker_provisioning(
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
-        deps.app_handle.as_ref(),
+        deps.runtime.app_handle_for_runtime_state(),
         DockerRuntimeStepParams {
             session_id: &session.id,
             image: image.as_deref(),
@@ -190,19 +305,19 @@ async fn run_docker_provisioning(
 
     let session_id = session.id.clone();
     let proxy_manager = Arc::clone(&deps.proxy_manager);
-    let app_handle = deps.app_handle.clone();
+    let runtime = Arc::clone(&deps.runtime);
     let image_for_reporter = image.clone();
 
     let reporter: DockerStepReporter = Arc::new(move |step: &str| {
         let proxy_manager = Arc::clone(&proxy_manager);
-        let app_handle = app_handle.clone();
+        let runtime = Arc::clone(&runtime);
         let session_id = session_id.clone();
         let image = image_for_reporter.clone();
         let step = step.to_string();
         tokio::spawn(async move {
             emit_docker_runtime_step(
                 &proxy_manager,
-                app_handle.as_ref(),
+                runtime.app_handle_for_runtime_state(),
                 DockerRuntimeStepParams {
                     session_id: &session_id,
                     image: image.as_deref(),
@@ -235,7 +350,7 @@ async fn complete_docker_provisioning(
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
-        deps.app_handle.as_ref(),
+        deps.runtime.app_handle_for_runtime_state(),
         DockerRuntimeStepParams {
             session_id,
             image: image.as_deref(),
@@ -247,28 +362,16 @@ async fn complete_docker_provisioning(
     )
     .await;
 
-    if let Some(app_handle) = deps.app_handle.as_ref() {
-        crate::agent::lifecycle::update_session_status(
-            &deps.session_repo,
-            &deps.active_sessions,
-            app_handle,
-            session_id,
-            SessionStatus::Idle,
-        )
-        .await?;
-    } else {
-        let dispatcher = NoopEventDispatcher;
-        crate::agent::lifecycle::update_session_status_with_dispatcher(
-            &deps.session_repo,
-            &deps.active_sessions,
-            &dispatcher,
-            session_id,
-            SessionStatus::Idle,
-        )
-        .await?;
-    }
+    crate::agent::lifecycle::update_session_status_with_dispatcher(
+        &deps.session_repo,
+        &deps.active_sessions,
+        deps.event_dispatcher.as_ref(),
+        session_id,
+        SessionStatus::Idle,
+    )
+    .await?;
 
-    crate::services::hooks::spawn_session_start(
+    deps.hook_dispatcher.spawn_session_start(
         session_id,
         crate::services::hooks::SessionStartSource::Startup,
     );
@@ -287,11 +390,12 @@ async fn complete_docker_provisioning(
         })
     };
     if let Some((Some(parent_id), assistant_id, name)) = child_identity {
-        crate::agent::workflow::finish::spawn_subagent_start(
+        crate::agent::workflow::finish::spawn_subagent_start_with_dispatcher(
             session_id,
             &parent_id,
             assistant_id.as_deref(),
             name.as_deref(),
+            Arc::clone(&deps.hook_dispatcher),
         );
     }
 
@@ -312,7 +416,7 @@ async fn fail_docker_provisioning(
 
     emit_docker_runtime_step(
         &deps.proxy_manager,
-        deps.app_handle.as_ref(),
+        deps.runtime.app_handle_for_runtime_state(),
         DockerRuntimeStepParams {
             session_id: &session.id,
             image: image.as_deref(),
@@ -334,27 +438,15 @@ async fn fail_docker_provisioning(
         return Ok(());
     }
 
-    if let Some(app_handle) = deps.app_handle.as_ref() {
-        crate::agent::lifecycle::update_session_status_with_reason(
-            &deps.session_repo,
-            &deps.active_sessions,
-            app_handle,
-            &session.id,
-            SessionStatus::Error,
-            &reason,
-        )
-        .await?;
-    } else {
-        let dispatcher = NoopEventDispatcher;
-        crate::agent::lifecycle::record_session_error_with_dispatcher(
-            &deps.session_repo,
-            &deps.active_sessions,
-            &dispatcher,
-            &session.id,
-            &reason,
-        )
-        .await?;
-    }
+    crate::agent::lifecycle::update_session_status_with_reason_and_dispatcher(
+        &deps.session_repo,
+        &deps.active_sessions,
+        deps.event_dispatcher.as_ref(),
+        &session.id,
+        SessionStatus::Error,
+        &reason,
+    )
+    .await?;
 
     Ok(())
 }
@@ -455,17 +547,7 @@ async fn emit_drain_workflow_failure(
         error_message,
     )
     .with_code("DOCKER_DRAIN_WORKFLOW_FAILED");
-    let Some(app_handle) = deps.app_handle.as_ref() else {
-        return;
-    };
-    let _ = crate::agent::workflow::finish::finalize_session_error(
-        &deps.session_repo,
-        &deps.active_sessions,
-        app_handle,
-        session_id,
-        error,
-    )
-    .await;
+    deps.runtime.finalize_session_error(session_id, error).await;
 }
 
 async fn drain_and_start_pending_workflows(
@@ -517,33 +599,17 @@ async fn drain_and_start_pending_workflows(
         }
     };
 
-    let Some(app_handle) = deps.app_handle.as_ref() else {
-        return Ok(());
-    };
-
     for (index, message) in messages.into_iter().enumerate() {
         if index == 0 {
-            if let Err(error) = crate::agent::workflow::start_workflow(
-                &deps.session_repo,
-                &deps.active_sessions,
-                &deps.proxy_manager,
-                app_handle,
-                session_id.to_string(),
-                message,
-            )
-            .await
+            if let Err(error) = deps
+                .runtime
+                .start_workflow(session_id.to_string(), message)
+                .await
             {
                 emit_drain_workflow_failure(deps, session_id, error).await;
                 return Ok(());
             }
-        } else if let Err(error) = MessageService::queue_user_message(
-            &deps.active_sessions,
-            app_handle,
-            session_id,
-            &message,
-        )
-        .await
-        {
+        } else if let Err(error) = deps.runtime.queue_user_message(session_id, &message).await {
             emit_drain_workflow_failure(deps, session_id, error).await;
             return Ok(());
         }
@@ -613,23 +679,58 @@ mod tests {
         assert!(reason.ends_with('…'));
     }
 
+    #[derive(Default)]
+    struct RecordingDockerRuntime {
+        started_workflows: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DockerProvisioningRuntime for RecordingDockerRuntime {
+        fn app_handle_for_runtime_state(&self) -> Option<&AppHandle> {
+            None
+        }
+
+        async fn start_workflow(
+            &self,
+            session_id: String,
+            _message: crate::models::chat::Message,
+        ) -> Result<(), String> {
+            self.started_workflows
+                .lock()
+                .expect("started_workflows lock")
+                .push(session_id);
+            Ok(())
+        }
+
+        async fn queue_user_message(
+            &self,
+            _session_id: &str,
+            _message: &crate::models::chat::Message,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        async fn finalize_session_error(
+            &self,
+            _session_id: &str,
+            _error: crate::agent::llm::types::AgentRuntimeError,
+        ) {
+        }
+    }
+
     #[tokio::test]
     async fn complete_docker_provisioning_dispatches_subagent_start_for_child_session() {
         use crate::agent::context::registry::ContextRegistry;
+        use crate::agent::lifecycle::creation::test_support::{
+            init_isolated_test_env, RecordingEventDispatcher,
+        };
         use crate::repositories::InMemorySessionRepository;
-        use crate::services::hooks::execute::wait_for_hook_dispatch;
+        use crate::services::hooks::execute::RecordingHookDispatcher;
         use crate::services::hooks::HookEvent;
-        use sea_orm::Database;
         use std::time::Duration;
 
-        let db = Arc::new(
-            Database::connect("sqlite::memory:")
-                .await
-                .expect("connect in-memory sqlite"),
-        );
-        let session_manager =
-            Arc::new(crate::session::SessionManager::new().expect("SessionManager"));
-        let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
+        let _lock = crate::state::lock_test_global_state().await;
+        let env = init_isolated_test_env().await;
         let session_repo: Arc<dyn SessionRepository> = Arc::new(InMemorySessionRepository::new());
 
         let child_id = format!("docker-child-{}", uuid::Uuid::new_v4());
@@ -650,21 +751,31 @@ mod tests {
             AgentSession::new(session, Arc::new(ContextRegistry::new()), None),
         )])));
 
+        let events = Arc::new(RecordingEventDispatcher::default());
+        let hooks = Arc::new(RecordingHookDispatcher::new());
+        let runtime = Arc::new(RecordingDockerRuntime::default());
+
         let deps = DockerProvisioningDeps {
             session_repo: Arc::clone(&session_repo),
             active_sessions,
-            proxy_manager,
-            app_handle: None,
+            proxy_manager: Arc::clone(&env.proxy_manager),
+            event_dispatcher: events.clone(),
+            hook_dispatcher: hooks.clone(),
+            runtime,
         };
 
         complete_docker_provisioning(&deps, &child_id)
             .await
             .expect("complete_docker_provisioning should succeed without AppHandle");
 
-        let observed =
-            wait_for_hook_dispatch(&child_id, HookEvent::SubagentStart, Duration::from_secs(2))
-                .await
-                .expect("SubagentStart must be dispatched after Docker provisioning completes");
+        assert!(
+            !events.agent_events.lock().expect("agent_events").is_empty(),
+            "status transition event must be emitted through injected dispatcher"
+        );
+        let observed = hooks
+            .wait_for(&child_id, HookEvent::SubagentStart, Duration::from_secs(2))
+            .await
+            .expect("SubagentStart must be dispatched after Docker provisioning completes");
         assert_eq!(observed.event, HookEvent::SubagentStart);
         assert_eq!(observed.session_id, child_id);
         assert_eq!(observed.matcher_value, "docker-worker");

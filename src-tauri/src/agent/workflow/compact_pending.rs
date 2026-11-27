@@ -65,11 +65,40 @@ pub async fn continue_pending_after_compaction(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: Option<&AppHandle>,
+    app_handle: &AppHandle,
     session_id: &str,
     resume_action: CompactionResumeAction,
     spawn_resume_completion: impl FnOnce(),
 ) -> Result<(), String> {
+    continue_pending_after_compaction_with(
+        active_sessions,
+        session_id,
+        resume_action,
+        spawn_resume_completion,
+        || {
+            start_workflow_from_pending_queue(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+            )
+        },
+    )
+    .await
+}
+
+pub async fn continue_pending_after_compaction_with<F, Fut>(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    resume_action: CompactionResumeAction,
+    spawn_resume_completion: impl FnOnce(),
+    start_from_pending: F,
+) -> Result<(), String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
     let (status, has_pending) = {
         let active = active_sessions.read().await;
         let Some(session) = active.get(session_id) else {
@@ -92,26 +121,16 @@ pub async fn continue_pending_after_compaction(
             Ok(())
         }
         CompactPendingContinueKind::StartFromPending => {
-            let Some(app_handle) = app_handle else {
-                return Ok(());
-            };
             log::info!(
                 "▶️ Starting workflow from pending queue after manual compaction for session {}",
                 session_id
             );
-            start_workflow_from_pending_queue(
-                session_repo,
-                active_sessions,
-                proxy_manager,
-                app_handle,
-                session_id,
-            )
-            .await
+            start_from_pending().await
         }
     }
 }
 
-async fn start_workflow_from_pending_queue(
+pub(crate) async fn start_workflow_from_pending_queue(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
