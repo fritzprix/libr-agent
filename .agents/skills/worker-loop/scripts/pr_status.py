@@ -70,12 +70,8 @@ FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STAR
 PENDING = {"PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "EXPECTED", "REQUESTED"}
 PR_FIELDS = (
     "number,title,body,url,headRefName,headRefOid,baseRefName,isDraft,mergeable,"
-    "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels,files"
+    "mergeStateStatus,reviewDecision,statusCheckRollup,commits,comments,labels"
 )
-# Base commits missing from the PR before the worker rebases it. GitHub reports
-# mergeStateStatus BEHIND only when branch protection requires up-to-date
-# branches, so drift is measured with the compare API as well.
-BASE_DRIFT_COMMITS = 10
 UNKNOWN_RETRY_DELAYS = (2.0, 4.0, 8.0)
 
 
@@ -130,26 +126,6 @@ def fetch_until_mergeable_known(
     return pr
 
 
-def base_drift_needs_rebase(
-    *,
-    merge_state: str | None,
-    base_ahead_by: int,
-    base_files: Iterable[str],
-    pr_files: Iterable[str],
-    threshold: int = BASE_DRIFT_COMMITS,
-) -> bool:
-    """True when the base moved enough that CI on the PR head is out of date.
-
-    That is: GitHub reports BEHIND, the base has `threshold` or more commits the
-    PR lacks, or a base commit since the merge base touched a file the PR changes.
-    """
-    if base_ahead_by <= 0:
-        return False
-    if merge_state == "BEHIND" or base_ahead_by >= threshold:
-        return True
-    return not set(base_files).isdisjoint(pr_files)
-
-
 def select_next_action(
     *,
     turn: str,
@@ -162,7 +138,6 @@ def select_next_action(
     blockers: list[int] | None = None,
     rebase_ready: bool = False,
     behind: bool = False,
-    base_drift: bool = False,
     blocker_lookup_error: str | None = None,
 ) -> str:
     if blocker_lookup_error:
@@ -181,8 +156,6 @@ def select_next_action(
         return "resolve-conflict"
     if rebase_ready or behind:
         return "rebase"
-    if base_drift:
-        return "rebase-base"
     if turn == "worker" and gatekeeper and gatekeeper["awaitingWorker"]:
         return "address-gatekeeper"
     if turn == "gatekeeper":
@@ -226,25 +199,9 @@ def new_triage_comments(
     return new_comments
 
 
-def base_drift(owner: str, name: str, pr: dict) -> tuple[int, list[str]]:
-    """Commits on the base that the PR head lacks, and the files they changed."""
-    compare = json.loads(gh(
-        "api", f"repos/{owner}/{name}/compare/{pr['headRefOid']}...{pr['baseRefName']}",
-        "--jq", "{ahead_by, files: [.files[]?.filename]}",
-    ))
-    return compare.get("ahead_by") or 0, compare.get("files") or []
-
-
 def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | None = None) -> dict:
     pr = fetch_until_mergeable_known(lambda: json.loads(gh("pr", "view", str(number), "--json", PR_FIELDS)))
     mergeable_unknown = pr.get("mergeable") == "UNKNOWN"
-    base_ahead_by, base_files = base_drift(owner, name, pr)
-    needs_rebase = base_drift_needs_rebase(
-        merge_state=pr.get("mergeStateStatus"),
-        base_ahead_by=base_ahead_by,
-        base_files=base_files,
-        pr_files=[f["path"] for f in pr.get("files") or []],
-    )
     comments = pr.get("comments") or []
     head_sha = pr["headRefOid"]
     labels = sorted(label["name"] for label in pr.get("labels") or [])
@@ -319,7 +276,6 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         blockers=open_dep,
         rebase_ready=ready_to_rebase,
         behind=pr.get("mergeStateStatus") == "BEHIND",
-        base_drift=needs_rebase,
         blocker_lookup_error=blocker_error,
     )
     if claimed_by:
@@ -338,7 +294,6 @@ def summarize(number: int, owner: str, name: str, me: str, claimed_by: str | Non
         "mergeable": pr.get("mergeable"),
         "mergeState": pr.get("mergeStateStatus"),
         "mergeableUnknown": mergeable_unknown,
-        "baseAheadBy": base_ahead_by,
         "reviewDecision": pr.get("reviewDecision"),
         "failingChecks": failing,
         "pendingChecks": pending,
