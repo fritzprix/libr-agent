@@ -1060,6 +1060,90 @@ class BlockedStatusTests(unittest.TestCase):
             entry = summarize(3070, "fritzprix")
         self.assertTrue(entry["staleReviewCleanLabel"])
 
+    def test_review_clean_label_not_stale_after_approve_at_same_head(self) -> None:
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3070,
+                    "title": "CI PR",
+                    "body": "Fixes #3070",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3070",
+                    "headRefName": "feat/ci",
+                    "headRefOid": "head-same",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-27T00:00:00Z",
+                    "statusCheckRollup": [
+                        {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
+                        {"name": "Test (windows-latest)", "conclusion": "SUCCESS"},
+                        {"name": "Test (macos-15)", "conclusion": "SUCCESS"},
+                    ],
+                    "comments": [
+                        {
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-27T01:00:00Z",
+                            "body": "<!-- gatekeeper-loop: verdict=clean head=head-same base=dev/0.9.x -->",
+                        },
+                        {
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-27T01:30:00Z",
+                            "body": "<!-- gatekeeper-loop: round=1 verdict=approve head=head-same base=dev/0.9.x -->",
+                        },
+                    ],
+                    "labels": [{"name": "gatekeeper:review-clean"}, {"name": "gatekeeper:approved"}],
+                    "files": [{"path": ".github/workflows/ci.yml"}],
+                })
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3070, "fritzprix")
+        self.assertFalse(entry["staleReviewCleanLabel"])
+
+    def test_review_clean_label_not_stale_after_nopush_worker_response(self) -> None:
+        def fake_gh(*args):
+            if args[:2] == ("pr", "view"):
+                return json.dumps({
+                    "number": 3070,
+                    "title": "CI PR",
+                    "body": "Fixes #3070",
+                    "url": "https://github.com/fritzprix/libr-agent/pull/3070",
+                    "headRefName": "feat/ci",
+                    "headRefOid": "head-same",
+                    "baseRefName": "dev/0.9.x",
+                    "isDraft": False,
+                    "mergeable": "MERGEABLE",
+                    "createdAt": "2026-11-27T00:00:00Z",
+                    "statusCheckRollup": [
+                        {"name": "Test (ubuntu-latest)", "conclusion": "SUCCESS"},
+                        {"name": "Test (windows-latest)", "conclusion": "SUCCESS"},
+                    ],
+                    "comments": [
+                        {
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-27T01:00:00Z",
+                            "body": "<!-- gatekeeper-loop: round=1 verdict=changes-requested head=head-same base=dev/0.9.x -->",
+                        },
+                        {
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-27T01:10:00Z",
+                            "body": "<!-- gatekeeper-loop: verdict=clean head=head-same base=dev/0.9.x -->",
+                        },
+                        {
+                            "author": {"login": "fritzprix"},
+                            "createdAt": "2026-11-27T01:20:00Z",
+                            "body": "<!-- worker-loop: response round=1 head=head-same -->",
+                        },
+                    ],
+                    "labels": [{"name": "gatekeeper:review-clean"}],
+                    "files": [{"path": ".github/workflows/ci.yml"}],
+                })
+            return json.dumps([])
+
+        with patch.object(review_queue, "gh", fake_gh):
+            entry = summarize(3070, "fritzprix")
+        self.assertFalse(entry["staleReviewCleanLabel"])
+
 
 if __name__ == "__main__":
     unittest.main()

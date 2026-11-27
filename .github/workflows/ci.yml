@@ -318,7 +318,7 @@ jobs:
             sleep $((attempt * 5))
             attempt=$((attempt + 1))
           done
-          actual="$(sha256sum "$zip_path" | awk '{print $1}')"
+          actual="$(sha256sum < "$zip_path" | awk '{print $1}')"
           if [ "$actual" != "$WIX_SHA256" ]; then
             echo "::error::WiX SHA-256 mismatch: got ${actual}, expected ${WIX_SHA256}"
             exit 1

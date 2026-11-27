@@ -519,10 +519,10 @@ def summarize(number: int, me: str, state: dict | None = None) -> dict:
         "postingChecks": posting_checks(head=head, markers=markers, last_verdict=last),
         "labels": labels,
         "staleApprovedLabel": "gatekeeper:approved" in labels and status not in ("approved", "blocked-unknown"),
-        # Label is stale when the head moved since the clean marker that caused it (#3070).
+        # Label is stale when the head moved since the newest clean marker (#3070).
         "staleReviewCleanLabel": (
             "gatekeeper:review-clean" in labels
-            and (clean is None or clean.get("head") != head)
+            and (not cleans or cleans[-1].get("head") != head)
         ),
         "url": pr["url"],
         "base": base,
