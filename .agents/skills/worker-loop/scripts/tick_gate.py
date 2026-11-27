@@ -49,6 +49,7 @@ from pathlib import Path
 
 import issue_candidates
 import lease
+import lease_heartbeat
 import tick_lock
 import worker_claims
 import worker_slots
@@ -454,6 +455,9 @@ def main() -> None:
         if args.force_unlock:
             if not args.worker:
                 sys.exit("--force-unlock requires --worker")
+            # #3031: the dead run's heartbeat must go before its slot record,
+            # or it keeps renewing a lease nobody can see any more.
+            lease_heartbeat.stop(args.worker)
             release_lock(lease.lock_path(args.worker, args.state_file))
             worker_slots.force_release_slot(args.worker)
             print(f"FORCE UNLOCKED {args.worker}")

@@ -9,10 +9,12 @@ over during the operation it protects.
 from __future__ import annotations
 
 import os
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+import lease_heartbeat
 import tick_lock
 import worker_claims
 import worker_slots
@@ -69,6 +71,13 @@ def acquire(owner: Owner, requested: str | None = None, state_file: Path | None 
     except BaseException:
         release(worker, token, state_file)
         raise
+    # #3031: the tick must keep its lease even when it never calls --renew, so
+    # the lease starts its own renewal. A heartbeat that cannot start must not
+    # fail the tick: the lease is ours and `--renew` still works by hand.
+    try:
+        lease_heartbeat.start(worker, token, owner.pid, state_file)
+    except OSError as e:
+        sys.stderr.write(f"lease heartbeat did not start ({e}); run `tick_gate.py --renew`\n")
     return Lease(worker, token)
 
 
@@ -82,5 +91,12 @@ def renew(worker: str, token: str, state_file: Path | None = None) -> bool:
 
 
 def release(worker: str, token: str, state_file: Path | None = None) -> None:
+    """End the lease: stop its heartbeat, then free the lock and the slot.
+
+    The stop is scoped to `token`. `tick_lock.release` and `release_slot` are
+    already no-ops for a stale token; stopping the recorded PID regardless would
+    take down the heartbeat of the run that now owns the slot (#3031 G1.4).
+    """
+    lease_heartbeat.stop(worker, token)
     tick_lock.release(lock_path(worker, state_file), token)
     worker_slots.release_slot(worker, token)

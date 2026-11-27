@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import lease
+import lease_heartbeat
 import tick_gate
 import tick_lock
 import worker_claims
@@ -65,6 +66,12 @@ class StateDirCase(unittest.TestCase):
         lookup = patch.object(worker_state, "_process_info_lookup", lambda pid: None)
         lookup.start()
         self.addCleanup(lookup.stop)
+        self.addCleanup(self._stop_heartbeats)
+
+    def _stop_heartbeats(self):
+        """Each acquire starts a heartbeat that outlives the test unless stopped."""
+        for worker in list(worker_slots.load_slots()):
+            lease_heartbeat.stop(worker)
 
     def age(self, worker, seconds):
         """Make a lease look `seconds` older: slot and tick lock alike."""
@@ -731,6 +738,10 @@ class WorktreeIsolationTest(StateDirCase):
         self.set_state("worker", {"current": {"ref": "issue:1", "branch": "fix/a-1"}})
         self.assertIsNone(worker_claims.claim("worker", "issue:1"))
         self.age("worker", age)
+        # A dead run took its heartbeat with it. Without this the aged lease is
+        # renewed by a live writer and the takeover tests measure heartbeat
+        # timing instead of liveness (#3031 G1.1).
+        lease_heartbeat.stop("worker")
         return dead
 
     def takeover(self, held, *extra):
