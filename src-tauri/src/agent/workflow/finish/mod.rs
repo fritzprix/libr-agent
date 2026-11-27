@@ -34,7 +34,9 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use messages::emit_settlement_agent_event;
-use persist::{handle_terminal_persist_failure, transition_to_terminal_status_and_emit};
+use persist::{
+    handle_terminal_persist_failure, transition_to_terminal_status_and_emit, TerminalTransition,
+};
 use stop_hook::{maybe_continue_from_stop_hook, subagent_matcher_value, StopHookTransition};
 
 /// Starts one more LLM turn after settlement finds pending work or a stop hook
@@ -493,13 +495,15 @@ pub async fn settle_session_and_go_idle_with_dispatcher(
         active_sessions,
         dispatcher,
         session_id,
-        SessionStatus::Idle,
-        AgentEvent::WorkflowCompleted {
-            session_id: session_id.to_string(),
-            reason: completion_reason,
-            stop_reason: None,
+        TerminalTransition {
+            status: SessionStatus::Idle,
+            event: AgentEvent::WorkflowCompleted {
+                session_id: session_id.to_string(),
+                reason: completion_reason,
+                stop_reason: None,
+            },
+            event_label: "WorkflowCompleted",
         },
-        "WorkflowCompleted",
     )
     .await?;
 
@@ -567,12 +571,14 @@ pub async fn settle_session_and_finalize_error_with_dispatcher(
         active_sessions,
         dispatcher,
         session_id,
-        SessionStatus::Error,
-        AgentEvent::WorkflowError {
-            session_id: session_id.to_string(),
-            error,
+        TerminalTransition {
+            status: SessionStatus::Error,
+            event: AgentEvent::WorkflowError {
+                session_id: session_id.to_string(),
+                error,
+            },
+            event_label: "WorkflowError",
         },
-        "WorkflowError",
     )
     .await
 }

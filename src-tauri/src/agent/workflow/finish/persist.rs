@@ -160,39 +160,49 @@ pub(super) async fn handle_terminal_persist_failure(
     Err(persist_error)
 }
 
+/// Terminal status plus the UI event and its log label for one settlement.
+///
+/// The three values only ever travel together, so grouping them keeps both
+/// settlement entry points under the clippy argument limit without a lint
+/// allow (#3071 G1.1).
+pub(super) struct TerminalTransition {
+    pub status: SessionStatus,
+    pub event: AgentEvent,
+    pub event_label: &'static str,
+}
+
 pub(super) async fn transition_to_terminal_status_and_emit(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
-    status: SessionStatus,
-    event: AgentEvent,
-    event_label: &str,
+    transition: TerminalTransition,
 ) -> Result<(), String> {
     transition_to_terminal_status_and_emit_with_hook_sink(
         session_repo,
         active_sessions,
         dispatcher,
         session_id,
-        status,
-        event,
-        event_label,
+        transition,
         spawn_stop_failure,
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn transition_to_terminal_status_and_emit_with_hook_sink(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     dispatcher: &dyn AgentEventDispatcher,
     session_id: &str,
-    status: SessionStatus,
-    event: AgentEvent,
-    event_label: &str,
+    transition: TerminalTransition,
     emit_stop_failure: impl FnOnce(Arc<RwLock<HashMap<String, AgentSession>>>, String, &'static str),
 ) -> Result<(), String> {
+    let TerminalTransition {
+        status,
+        event,
+        event_label,
+    } = transition;
+
     // Error settlements share one helper so every Error path emits
     // `WorkflowError` before fire-and-forget `StopFailure` (#3071 G1.1/G1.2).
     if status == SessionStatus::Error {

@@ -4,7 +4,7 @@ use super::messages::{
 };
 use super::persist::{
     latest_assistant_message_from_cache, mark_error_after_persist_failure,
-    transition_to_terminal_status_and_emit_with_hook_sink,
+    transition_to_terminal_status_and_emit_with_hook_sink, TerminalTransition,
 };
 use super::stop_hook::{evaluate_stop_hook_outcome, settle_stub_event, StopHookTransition};
 use super::*;
@@ -799,13 +799,15 @@ async fn settle_to_idle_does_not_leave_session_in_error() {
         &active_sessions,
         &dispatcher,
         "sess-idle-no-stop-failure",
-        SessionStatus::Idle,
-        AgentEvent::WorkflowCompleted {
-            session_id: "sess-idle-no-stop-failure".to_string(),
-            reason: WorkflowCompletionReason::Natural,
-            stop_reason: None,
+        TerminalTransition {
+            status: SessionStatus::Idle,
+            event: AgentEvent::WorkflowCompleted {
+                session_id: "sess-idle-no-stop-failure".to_string(),
+                reason: WorkflowCompletionReason::Natural,
+                stop_reason: None,
+            },
+            event_label: "WorkflowCompleted",
         },
-        "WorkflowCompleted",
         |_sessions, _sid, _error_type| {
             stop_failure_emitted = true;
         },
