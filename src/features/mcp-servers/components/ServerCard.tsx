@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Server,
   CheckCircle2,
@@ -22,7 +22,14 @@ import {
 import { Switch } from '@/components/ui/switch';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ServerToolsModal } from './ServerToolsModal';
-import { hasOAuthToken, startOAuthFlow, revokeOAuthToken } from '@/lib/backend';
+import {
+  cancelOAuthFlow,
+  takeOAuthFlowLastOutcome,
+  hasOAuthToken,
+  isOAuthFlowActive,
+  revokeOAuthToken,
+  startOAuthFlow,
+} from '@/lib/backend';
 import { listAssistants } from '@/lib/backend/assistants';
 import { safeInvoke } from '@/lib/backend/core';
 import { toast } from 'sonner';
@@ -30,10 +37,48 @@ import {
   humanizeVerificationError,
   pendingVerificationHint,
 } from '../utils/verification-feedback';
+import {
+  applyBackendFlowOutcome,
+  beginAuthFlow,
+  ensureOAuthFlowEndedListener,
+  getAuthFlow,
+  subscribeToAuthFlow,
+  type AuthFlowRecord,
+} from '../authFlowStore';
 import { getTransportEndpointLabel } from '../utils/transport-display';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('ServerCard');
+
+/**
+ * Machine-readable prefixes emitted by the backend OAuth flow (#3040 G1.6).
+ * The card classifies the outcome by these prefixes, never by matching
+ * human-readable text: a provider denial whose description happens to read
+ * "The user cancelled the request" must stay a provider error.
+ */
+const AUTH_ERROR_PREFIX_CANCELLED = 'AUTH_CANCELLED:';
+const AUTH_ERROR_PREFIX_TIMEOUT = 'AUTH_TIMEOUT:';
+
+interface AuthNotice {
+  kind: 'cancelled' | 'timedOut' | 'providerError';
+  /** Human-readable cause shown on the card (#3040 G1.6). */
+  message: string;
+}
+
+function classifyAuthFailure(message: string): AuthNotice {
+  if (message.startsWith(AUTH_ERROR_PREFIX_CANCELLED)) {
+    return { kind: 'cancelled', message: stripAuthPrefix(message) };
+  }
+  if (message.startsWith(AUTH_ERROR_PREFIX_TIMEOUT)) {
+    return { kind: 'timedOut', message: stripAuthPrefix(message) };
+  }
+  return { kind: 'providerError', message };
+}
+
+function stripAuthPrefix(message: string): string {
+  const separator = message.indexOf(':');
+  return separator === -1 ? message : message.slice(separator + 1).trim();
+}
 
 interface ServerCardProps {
   server: MCPServerEntity;
@@ -64,16 +109,94 @@ export const ServerCard = React.memo(
 
     const [hasToken, setHasToken] = useState<boolean>(false);
     const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
+    const [authNotice, setAuthNotice] = useState<AuthNotice | null>(null);
+    // Identity of the flow record whose outcome has already been applied to
+    // this card, so a settled outcome is never applied twice.
+    const appliedRecordRef = useRef<AuthFlowRecord | null>(null);
+    // True only while this card is waiting on a backend-held flow (#3040 G4.1).
+    // Cold remounts must not replay a stored success/error.
+    const waitingForBackendFlowRef = useRef(false);
+    const onRevalidateRef = useRef(onRevalidate);
+    onRevalidateRef.current = onRevalidate;
     const [isRetryingVerify, setIsRetryingVerify] = useState(false);
     const [pendingElapsedSec, setPendingElapsedSec] = useState(0);
     const [isOpeningWizard, setIsOpeningWizard] = useState(false);
 
     useEffect(() => {
-      if (server.authentication?.type === 'oauth2.1') {
-        hasOAuthToken(server.id)
-          .then(setHasToken)
-          .catch(() => setHasToken(false));
-      }
+      if (server.authentication?.type !== 'oauth2.1') return;
+      // Cards without a local promise learn endings from the backend emit
+      // (and a takeable last outcome only while waiting) (#3040 G3.1 / G4.1).
+      ensureOAuthFlowEndedListener();
+      hasOAuthToken(server.id)
+        .then(setHasToken)
+        .catch(() => setHasToken(false));
+
+      // Sync from the flow store first (flows started in this app session,
+      // including ones begun by a card that has since unmounted, #3040 G2.2),
+      // then fall back to the backend's single-flight slot (flows still
+      // running across an app reload, #3040 G1.5).
+      const applySettledOutcome = (record: AuthFlowRecord) => {
+        if (appliedRecordRef.current === record || !record.settled) return;
+        appliedRecordRef.current = record;
+        waitingForBackendFlowRef.current = false;
+        if (record.settled.kind === 'success') {
+          setAuthNotice(null);
+          // Connected state always comes from the keychain (#3040 G4.1).
+          void hasOAuthToken(server.id)
+            .then(setHasToken)
+            .catch(() => setHasToken(false));
+          // The flow store runs the single probe per settle even with no
+          // card mounted (#3068 G2.1); revalidate after that verification
+          // attempt, whether it succeeded or was logged as failed.
+          void record.verified.finally(() => onRevalidateRef.current?.());
+        } else {
+          setAuthNotice(classifyAuthFailure(record.settled.message));
+        }
+      };
+
+      const sync = () => {
+        const record = getAuthFlow(server.id);
+        if (record && record.settled === null) {
+          setIsAuthorizing(true);
+          return;
+        }
+        if (record && record.settled) {
+          applySettledOutcome(record);
+          setIsAuthorizing(false);
+          return;
+        }
+        isOAuthFlowActive(server.id)
+          .then(async (backendActive) => {
+            // A flow may have started in the store while this check was in
+            // flight; never override it with a stale answer.
+            if (getAuthFlow(server.id) !== null) return;
+            if (backendActive) {
+              waitingForBackendFlowRef.current = true;
+              setIsAuthorizing(true);
+              return;
+            }
+            setIsAuthorizing(false);
+            // Only a card that was waiting may take the last outcome (#3040 G4.1).
+            if (!waitingForBackendFlowRef.current) return;
+            try {
+              const last = await takeOAuthFlowLastOutcome(server.id);
+              if (getAuthFlow(server.id) !== null) return;
+              if (!last) {
+                waitingForBackendFlowRef.current = false;
+                return;
+              }
+              applyBackendFlowOutcome(last);
+            } catch {
+              // Backend unreachable: keep waiting until the emit arrives.
+            }
+          })
+          .catch(() => setIsAuthorizing(false));
+      };
+
+      waitingForBackendFlowRef.current = false;
+      const unsubscribe = subscribeToAuthFlow(server.id, sync);
+      sync();
+      return unsubscribe;
     }, [server.id, server.authentication]);
 
     useEffect(() => {
@@ -143,27 +266,98 @@ export const ServerCard = React.memo(
       }
     }, [navigate, t]);
 
+    const authNoticeText = useCallback(
+      (notice: AuthNotice): string => {
+        switch (notice.kind) {
+          case 'cancelled':
+            return t(
+              'mcpServer.toasts.authCancelled',
+              'Authorization cancelled.',
+            );
+          case 'timedOut':
+            return t(
+              'mcpServer.toasts.authTimedOut',
+              'Authorization timed out. Try Authorize again.',
+            );
+          default:
+            return t('mcpServer.toasts.authFailed', {
+              error: notice.message,
+              defaultValue: 'Authorization failed: {{error}}',
+            });
+        }
+      },
+      [t],
+    );
+
     const handleAuthorize = useCallback(async () => {
       if (!server.authentication) return;
+      const authentication = server.authentication;
+      setAuthNotice(null);
+      const { record, started } = beginAuthFlow(server.id, async () => {
+        try {
+          await startOAuthFlow(server.id, authentication);
+          return { kind: 'success' as const };
+        } catch (error) {
+          return {
+            kind: 'failure' as const,
+            message: error instanceof Error ? error.message : String(error),
+          };
+        }
+      });
       setIsAuthorizing(true);
-      try {
-        await startOAuthFlow(server.id, server.authentication);
-        setHasToken(true);
+      const outcome = await record.promise;
+      if (!started) return;
+      // Only the initiating card reports toasts (#3040 G2.2); the probe and
+      // revalidation happen once per settle in the subscription path
+      // (`applySettledOutcome`) for every card, including this one (#3068 G1.2).
+      if (outcome.kind === 'success') {
         toast.success(
           t('mcpServer.toasts.authSuccess', 'Successfully authenticated!'),
         );
-        // Probe to trigger re-verification and fetch tools
-        await safeInvoke('probe_mcp_server', { serverId: server.id });
-        if (onRevalidate) onRevalidate();
+      } else {
+        const notice = classifyAuthFailure(outcome.message);
+        const label = authNoticeText(notice);
+        if (notice.kind === 'cancelled') toast.message(label);
+        else toast.error(label);
+      }
+    }, [server.id, server.authentication, t, authNoticeText]);
+
+    const handleCancelAuthorize = useCallback(async () => {
+      try {
+        await cancelOAuthFlow(server.id);
+        if (getAuthFlow(server.id) === null) {
+          // A card remounted onto a backend-held flow has no local promise to
+          // resolve after cancel — sync the card itself (#3040 G1.5).
+          setIsAuthorizing(false);
+          setAuthNotice({
+            kind: 'cancelled',
+            message: t(
+              'mcpServer.toasts.authCancelled',
+              'Authorization cancelled.',
+            ),
+          });
+        }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         toast.error(
-          t('mcpServer.toasts.authFailed', `Authorization failed: ${msg}`),
+          t('mcpServer.toasts.authCancelFailed', {
+            error: msg,
+            defaultValue: 'Could not cancel: {{error}}',
+          }),
         );
-      } finally {
-        setIsAuthorizing(false);
+        // Refused / failed cancel: this card is waiting. Take the terminal
+        // outcome if the flow already ended (#3040 G3.1 / G4.1).
+        waitingForBackendFlowRef.current = true;
+        try {
+          const last = await takeOAuthFlowLastOutcome(server.id);
+          if (last && getAuthFlow(server.id) === null) {
+            applyBackendFlowOutcome(last);
+          }
+        } catch {
+          // Keep spinner until the emit arrives.
+        }
       }
-    }, [server.id, server.authentication, t, onRevalidate]);
+    }, [server.id, t]);
 
     const handleDisconnect = useCallback(async () => {
       try {
@@ -299,21 +493,32 @@ export const ServerCard = React.memo(
                         variant="outline"
                         size="sm"
                         onClick={handleDisconnect}
+                        data-testid="oauth-disconnect"
                         className="h-6 shrink-0 px-2 text-xs text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/20"
                       >
                         {t('mcpServer.disconnect', 'Disconnect')}
+                      </Button>
+                    ) : isAuthorizing ? (
+                      /* The wait is cancellable end-to-end (#3040): the
+                         button flips to Cancel while the flow runs. */
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCancelAuthorize}
+                        data-testid="oauth-cancel"
+                        className="h-6 shrink-0 px-2 text-xs"
+                      >
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        {t('mcpServer.cancelAuthorize', 'Cancel')}
                       </Button>
                     ) : (
                       <Button
                         variant="default"
                         size="sm"
-                        disabled={isAuthorizing}
                         onClick={handleAuthorize}
+                        data-testid="oauth-authorize"
                         className="h-6 shrink-0 px-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                       >
-                        {isAuthorizing && (
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                        )}
                         {t('mcpServer.authorize', 'Authorize')}
                       </Button>
                     )}
@@ -470,6 +675,19 @@ export const ServerCard = React.memo(
           </div>
         </CardHeader>
         <CardContent className="mt-auto">
+          {authNotice && (
+            <div
+              data-testid="oauth-result"
+              role="status"
+              className={
+                authNotice.kind === 'cancelled'
+                  ? 'mb-3 rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300'
+                  : 'mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200'
+              }
+            >
+              {authNoticeText(authNotice)}
+            </div>
+          )}
           <div className="flex w-full items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               {/* Every card shows Tools / Edit / Delete in the same slots

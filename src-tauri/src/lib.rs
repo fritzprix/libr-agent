@@ -84,9 +84,11 @@ use commands::log_commands::{
     log_debug, log_error_from_frontend, log_info, log_trace, log_warn,
 };
 use commands::mcp_commands::{
-    get_oauth_token, has_oauth_token, list_available_builtin_server_definitions,
-    list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, probe_mcp_server,
-    retry_session_mcp_server, revoke_oauth_token, start_oauth_flow, validate_tool_schema,
+    cancel_oauth_flow, get_oauth_token, has_oauth_token, is_oauth_flow_active,
+    list_available_builtin_server_definitions, list_builtin_servers,
+    list_builtin_servers_with_metadata, list_builtin_tools, probe_mcp_server,
+    retry_session_mcp_server, revoke_oauth_token, start_oauth_flow, take_oauth_flow_last_outcome,
+    validate_tool_schema,
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
@@ -284,6 +286,9 @@ pub(crate) fn configure_tauri_builder(
             has_oauth_token,
             get_oauth_token,
             revoke_oauth_token,
+            cancel_oauth_flow,
+            is_oauth_flow_active,
+            take_oauth_flow_last_outcome,
             start_oauth_flow,
             // Message management commands
             messages_get_page,

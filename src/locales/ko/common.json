@@ -1131,7 +1131,10 @@
       "toggled": "확장 기능이 {{status}}되었습니다",
       "toggleFailed": "확장 기능 상태 변경 실패: {{error}}",
       "activated": "활성화",
-      "deactivated": "비활성화"
+      "deactivated": "비활성화",
+      "authCancelled": "인증을 취소했습니다.",
+      "authTimedOut": "인증 시간이 초과되었습니다. 다시 인증해 보세요.",
+      "authCancelFailed": "취소할 수 없습니다: {{error}}"
     },
     "toolsModal": {
       "description": "MCP 서버에서 반환된 도구 이름 및 설명입니다.",
@@ -1142,7 +1145,8 @@
       "inputSchema": "입력 스키마",
       "toolsCount_one": "({{count}}개 도구)",
       "toolsCount_other": "({{count}}개 도구)"
-    }
+    },
+    "cancelAuthorize": "취소"
   },
   "playbook": {
     "title": "플레이북",

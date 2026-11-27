@@ -43,9 +43,13 @@ export {
   getOAuthToken,
   revokeOAuthToken,
   startOAuthFlow,
+  cancelOAuthFlow,
+  isOAuthFlowActive,
+  takeOAuthFlowLastOutcome,
   sampleFromModel,
   validateToolSchema,
 } from './mcp-server';
+export type { OAuthFlowEndedPayload } from './mcp-server';
 
 // Built-in tools
 export {

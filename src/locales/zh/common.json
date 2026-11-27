@@ -1103,7 +1103,10 @@
       "toggled": "扩展已{{status}}",
       "toggleFailed": "切换扩展状态失败: {{error}}",
       "activated": "激活",
-      "deactivated": "停用"
+      "deactivated": "停用",
+      "authCancelled": "授权已取消。",
+      "authTimedOut": "授权超时。请重试授权。",
+      "authCancelFailed": "无法取消：{{error}}"
     },
     "toolsModal": {
       "description": "工具名称和说明来自 MCP 服务器返回内容。",
@@ -1114,7 +1117,8 @@
       "inputSchema": "输入模式",
       "toolsCount_one": "（{{count}} 个工具）",
       "toolsCount_other": "（{{count}} 个工具）"
-    }
+    },
+    "cancelAuthorize": "取消"
   },
   "playbook": {
     "title": "剧本",
