@@ -30,6 +30,7 @@ Scope: <one line — what the PR claims and whether the diff matches it>
 - **G2.2** <missing test> — Expected: a unit test covering <case>.
 - **G2.3** `CI failure (<job-name>)` — <diagnosed root cause from CI logs, PR-introduced only>. Expected: <concrete fix>.
   - Base-branch / out-of-scope CI: **no `G` item** — note “Out-of-scope base CI: #<issue>” (gatekeeper-created §8 follow-up).
+- **G2.4** (major, timer-based synchronization) `src/features/example/usePanel.ts:84` — uses `setTimeout(..., 150)` to wait for the panel mount/layout state before focusing. Expected: synchronize on the mount/state change directly (e.g. a ref callback, React effect, `requestAnimationFrame`, or awaiting the event/Promise; in tests, `waitFor`/`findBy`).
 
 ### Suggestions (non-blocking)
 
