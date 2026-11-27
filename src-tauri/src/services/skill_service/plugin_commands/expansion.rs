@@ -38,17 +38,7 @@ pub struct ExpandedCommand {
     pub body: String,
 }
 
-#[cfg(test)]
-
-pub(super) fn expand_in_dirs(
-    global_dir: &Path,
-    session_records: Vec<PluginSourceRecord>,
-    command_text: &str,
-) -> Option<String> {
-    expand_named_in_dirs(global_dir, session_records, command_text).map(|expanded| expanded.body)
-}
-
-fn expand_named_in_dirs(
+pub(super) fn expand_named_in_dirs(
     global_dir: &Path,
     session_records: Vec<PluginSourceRecord>,
     command_text: &str,

@@ -4,6 +4,7 @@
 
 use super::secrets::SecretMap;
 use super::PersistentShellManager;
+use crate::utils::shell_runtime::powershell_single_quote;
 use log::warn;
 
 /// Shell statements that take the environment from `before` to `after`. The
@@ -17,11 +18,10 @@ pub(super) fn env_sync_script(before: &SecretMap, after: &SecretMap, powershell:
         }
         let saved = format!("__libragent_saved_{name}");
         if powershell {
-            let value = value.replace('\'', "''");
             lines.push(format!(
                 "if (-not (Test-Path variable:global:{saved})) {{ $global:{saved} = $env:{name} }}"
             ));
-            lines.push(format!("$env:{name} = '{value}'"));
+            lines.push(format!("$env:{name} = {}", powershell_single_quote(value)));
         } else {
             let value = value.replace('\'', r"'\''");
             lines.push(format!(
@@ -101,5 +101,37 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             "it's new|$(echo no);original|gone"
         );
+    }
+
+    #[test]
+    fn powershell_script_doubles_every_single_quote_delimiter() {
+        // #3008 G1.1: ' and U+2018..U+201B all close a PowerShell
+        // single-quoted string; a hook-supplied value containing them must
+        // not break out of the literal.
+        let value = "C:\\hooks\\it's\u{2018}dir\u{2019}\u{201A}\u{201B}";
+        let script = env_sync_script(&map(&[]), &map(&[("HOOK_DIR", value)]), true);
+        let line = script
+            .lines()
+            .find(|line| line.starts_with("$env:HOOK_DIR = "))
+            .expect("assignment line");
+        let literal = line.trim_start_matches("$env:HOOK_DIR = ");
+        assert!(
+            literal.starts_with('\'') && literal.ends_with('\''),
+            "{literal}"
+        );
+        let inner = &literal[1..literal.len() - 1];
+        let mut recovered = String::new();
+        let mut chars = inner.chars();
+        while let Some(ch) = chars.next() {
+            if matches!(ch, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+                assert_eq!(
+                    chars.next(),
+                    Some(ch),
+                    "delimiter {ch:?} must be doubled in {inner:?}"
+                );
+            }
+            recovered.push(ch);
+        }
+        assert_eq!(recovered, value);
     }
 }

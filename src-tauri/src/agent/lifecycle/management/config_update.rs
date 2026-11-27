@@ -156,3 +156,152 @@ async fn planned_model_switches(
     }
     Ok(switches)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repositories::{InMemorySessionRepository, SessionMetadata, SessionStatus};
+
+    fn metadata(session_id: &str, model: &str, provider: &str) -> SessionMetadata {
+        SessionMetadata {
+            id: session_id.to_string(),
+            name: None,
+            status: SessionStatus::Idle,
+            model: model.to_string(),
+            provider: provider.to_string(),
+            assistant_id: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
+            org_id: None,
+            org_name: None,
+            org_root_session_id: None,
+            created_at: 0,
+            updated_at: 0,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
+            is_bookmarked: false,
+            execution_mode: crate::execution_mode::ExecutionMode::Normal,
+            workspace_override: None,
+            workspace_isolation: crate::models::workspace_isolation::WorkspaceIsolationMode::Host,
+            docker_config: None,
+            docker_container_name: None,
+            docker_host_workspace_path: None,
+            status_reason: None,
+            forked_from: None,
+        }
+    }
+
+    fn no_active_sessions() -> Arc<RwLock<HashMap<String, AgentSession>>> {
+        Arc::new(RwLock::new(HashMap::new()))
+    }
+
+    #[tokio::test]
+    async fn planned_model_switches_reports_only_sessions_that_change() {
+        // Recursive list: two sessions move, one already matches the new
+        // model, and one id is absent from the repository (#3008 G1.3).
+        let repo = Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>;
+        repo.upsert_session(&metadata("root", "gpt-5.4", "openai"))
+            .await
+            .unwrap();
+        repo.upsert_session(&metadata("child", "gpt-5.4", "openai"))
+            .await
+            .unwrap();
+        repo.upsert_session(&metadata("same", "claude", "anthropic"))
+            .await
+            .unwrap();
+
+        let ids = vec![
+            "root".to_string(),
+            "child".to_string(),
+            "same".to_string(),
+            "missing".to_string(),
+        ];
+        let switches = planned_model_switches(
+            &repo,
+            &no_active_sessions(),
+            &ids,
+            Some("claude"),
+            Some("anthropic"),
+            "picker",
+        )
+        .await
+        .unwrap();
+
+        let planned: Vec<(&str, &str, &str)> = switches
+            .iter()
+            .map(|(id, switch)| {
+                (
+                    id.as_str(),
+                    switch.from_model.as_str(),
+                    switch.to_model.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            planned,
+            vec![
+                ("root", "gpt-5.4", "claude"),
+                ("child", "gpt-5.4", "claude"),
+            ],
+            "changed sessions plan a switch; unchanged and missing sessions do not"
+        );
+        for (_, switch) in &switches {
+            assert_eq!(switch.source, "picker");
+            assert_eq!(switch.context_tokens, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn planned_model_switches_plans_provider_only_change() {
+        let repo = Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>;
+        repo.upsert_session(&metadata("root", "gpt-5.4", "openai"))
+            .await
+            .unwrap();
+
+        let switches = planned_model_switches(
+            &repo,
+            &no_active_sessions(),
+            &["root".to_string()],
+            None,
+            Some("azure"),
+            "sdk",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(switches.len(), 1);
+        assert_eq!(switches[0].1.from_model, "gpt-5.4");
+        assert_eq!(
+            switches[0].1.to_model, "gpt-5.4",
+            "a provider-only change keeps the model and still plans the switch"
+        );
+    }
+
+    #[tokio::test]
+    async fn planned_model_switches_is_empty_for_no_change() {
+        let repo = Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>;
+        repo.upsert_session(&metadata("root", "gpt-5.4", "openai"))
+            .await
+            .unwrap();
+
+        let switches = planned_model_switches(
+            &repo,
+            &no_active_sessions(),
+            &["root".to_string()],
+            Some("gpt-5.4"),
+            Some("openai"),
+            "picker",
+        )
+        .await
+        .unwrap();
+        assert!(
+            switches.is_empty(),
+            "identical model and provider plan no switch"
+        );
+    }
+}
