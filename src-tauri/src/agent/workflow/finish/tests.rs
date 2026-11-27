@@ -2,7 +2,10 @@ use super::messages::{
     user_facing_persist_session_missing_error, user_facing_persist_storage_error,
     user_facing_workflow_event_emit_error,
 };
-use super::persist::{latest_assistant_message_from_cache, mark_error_after_persist_failure};
+use super::persist::{
+    latest_assistant_message_from_cache, mark_error_after_persist_failure,
+    transition_to_terminal_status_and_emit_with_hook_sink, TerminalTransition,
+};
 use super::stop_hook::{evaluate_stop_hook_outcome, settle_stub_event, StopHookTransition};
 use super::*;
 use crate::agent::context::registry::ContextRegistry;
@@ -10,7 +13,8 @@ use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 use crate::agent::state::{CompactionRuntimeState, PendingEvent, PendingEventManager};
 use crate::repositories::{
-    InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
+    DbError, InMemorySessionRepository, SessionListCursor, SessionListPage, SessionMetadata,
+    SessionRepository, SessionStatus,
 };
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -128,6 +132,170 @@ impl AgentEventDispatcher for RecordingDispatcher {
         _request: crate::agent::llm::types::CompletionCancelRequest,
     ) -> Result<(), String> {
         Ok(())
+    }
+}
+
+/// `SessionRepository` double that always fails status writes (#3071
+/// G2.1) while delegating everything else to an in-memory store.
+struct StatusWriteFailingRepository {
+    inner: InMemorySessionRepository,
+}
+
+impl StatusWriteFailingRepository {
+    fn new() -> Self {
+        Self {
+            inner: InMemorySessionRepository::new(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl SessionRepository for StatusWriteFailingRepository {
+    async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
+        self.inner.upsert_session(session).await
+    }
+
+    async fn get_session(&self, session_id: &str) -> Result<Option<SessionMetadata>, DbError> {
+        self.inner.get_session(session_id).await
+    }
+
+    async fn update_status(
+        &self,
+        _session_id: &str,
+        _status: SessionStatus,
+        _reason: Option<&str>,
+    ) -> Result<(), DbError> {
+        Err(DbError::TransactionFailed(
+            "test double: status write always fails".to_string(),
+        ))
+    }
+
+    async fn update_session_config(
+        &self,
+        session_id: &str,
+        model: Option<String>,
+        provider: Option<String>,
+    ) -> Result<(), DbError> {
+        self.inner
+            .update_session_config(session_id, model, provider)
+            .await
+    }
+
+    async fn update_assistant_id(
+        &self,
+        session_id: &str,
+        assistant_id: Option<String>,
+    ) -> Result<(), DbError> {
+        self.inner
+            .update_assistant_id(session_id, assistant_id)
+            .await
+    }
+
+    async fn update_name(&self, session_id: &str, name: String) -> Result<(), DbError> {
+        self.inner.update_name(session_id, name).await
+    }
+
+    async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
+        self.inner.get_all_sessions().await
+    }
+
+    async fn get_all_session_ids(&self) -> Result<Vec<String>, DbError> {
+        self.inner.get_all_session_ids().await
+    }
+
+    async fn list_sessions(
+        &self,
+        cursor: Option<SessionListCursor>,
+        limit: u64,
+        search: Option<&str>,
+        bookmarked_only: bool,
+        status: Option<&str>,
+    ) -> Result<SessionListPage, DbError> {
+        self.inner
+            .list_sessions(cursor, limit, search, bookmarked_only, status)
+            .await
+    }
+
+    async fn list_attention_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
+        self.inner.list_attention_sessions().await
+    }
+
+    async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError> {
+        self.inner.get_child_session_ids(parent_session_id).await
+    }
+
+    async fn get_child_sessions(
+        &self,
+        parent_session_id: &str,
+    ) -> Result<Vec<SessionMetadata>, DbError> {
+        self.inner.get_child_sessions(parent_session_id).await
+    }
+
+    async fn get_sessions_by_org_id(&self, org_id: &str) -> Result<Vec<SessionMetadata>, DbError> {
+        self.inner.get_sessions_by_org_id(org_id).await
+    }
+
+    async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {
+        self.inner.delete_session(session_id).await
+    }
+
+    async fn orphan_and_delete_session(&self, session_id: &str) -> Result<(), DbError> {
+        self.inner.orphan_and_delete_session(session_id).await
+    }
+
+    async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError> {
+        self.inner.toggle_bookmark(session_id, bookmarked).await
+    }
+
+    async fn update_execution_mode(
+        &self,
+        session_id: &str,
+        mode: crate::execution_mode::ExecutionMode,
+    ) -> Result<(), DbError> {
+        self.inner.update_execution_mode(session_id, mode).await
+    }
+
+    async fn update_workspace_override(
+        &self,
+        session_id: &str,
+        override_path: Option<String>,
+    ) -> Result<(), DbError> {
+        self.inner
+            .update_workspace_override(session_id, override_path)
+            .await
+    }
+
+    async fn update_org_identity(
+        &self,
+        session_id: &str,
+        org_id: Option<String>,
+        org_name: Option<String>,
+        org_root_session_id: Option<String>,
+    ) -> Result<(), DbError> {
+        self.inner
+            .update_org_identity(session_id, org_id, org_name, org_root_session_id)
+            .await
+    }
+
+    async fn update_last_viewed_at(
+        &self,
+        session_id: &str,
+        last_viewed_at: i64,
+    ) -> Result<(), DbError> {
+        self.inner
+            .update_last_viewed_at(session_id, last_viewed_at)
+            .await
+    }
+
+    async fn update_attention(
+        &self,
+        session_id: &str,
+        last_attention_at: i64,
+        reason: crate::repositories::session_repository::SessionAttentionReason,
+    ) -> Result<(), DbError> {
+        self.inner
+            .update_attention(session_id, last_attention_at, reason)
+            .await
     }
 }
 
@@ -511,4 +679,215 @@ fn stop_hook_continue_false_settles_with_user_visible_reason_even_with_block() {
         "stopping must not consume the continuation budget"
     );
     clear_hook_context(sid);
+}
+
+#[test]
+fn stop_failure_error_type_labels_are_stable() {
+    // #3007: `StopFailure` matchers compare against these labels, so
+    // renames are a breaking change for plugin configs.
+    assert_eq!(
+        error_type_label(&AgentRuntimeErrorType::RateLimitError),
+        "rate_limit"
+    );
+    assert_eq!(
+        error_type_label(&AgentRuntimeErrorType::AuthenticationError),
+        "authentication"
+    );
+    assert_eq!(
+        error_type_label(&AgentRuntimeErrorType::ContextLimitError),
+        "context_limit"
+    );
+    assert_eq!(error_type_label(&AgentRuntimeErrorType::McpError), "mcp");
+    assert_eq!(
+        error_type_label(&AgentRuntimeErrorType::EmptySelectionError),
+        "empty_selection"
+    );
+}
+
+#[tokio::test]
+async fn finalize_session_error_emits_workflow_error_through_shared_helper() {
+    // #3071 G1.1/G1.4: Error settlement must go through the shared helper
+    // (status Error + WorkflowError). Removing the helper call breaks this.
+    crate::init_session_bus(crate::agent::session_bus::SessionBus::new());
+    crate::state::init_concurrency_gate(crate::agent::concurrency::ConcurrencyGate::new(
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_PROCESSES,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+
+    let session_repo = Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>;
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    seed_in_memory_session(
+        &session_repo,
+        &active_sessions,
+        "sess-finalize-error",
+        SessionStatus::Busy,
+    )
+    .await;
+
+    let dispatcher = RecordingDispatcher::default();
+    let error = AgentRuntimeError::new(AgentRuntimeErrorType::RateLimitError, "rate limited");
+    let mut stop_failure_recorded = None;
+    finalize_session_error_with_hook_sink(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        "sess-finalize-error",
+        error,
+        |_sessions, sid, error_type| {
+            stop_failure_recorded = Some((sid, error_type));
+        },
+    )
+    .await
+    .expect("finalize");
+
+    assert_eq!(
+        session_repo
+            .get_session("sess-finalize-error")
+            .await
+            .expect("load")
+            .expect("exists")
+            .status,
+        SessionStatus::Error
+    );
+    let events = dispatcher.agent_events();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEvent::WorkflowError { session_id, error }
+                if session_id == "sess-finalize-error"
+                    && matches!(
+                        error.error_type,
+                        AgentRuntimeErrorType::RateLimitError
+                    )
+        )),
+        "WorkflowError must be emitted before StopFailure is spawned: {events:?}"
+    );
+    assert_eq!(
+        stop_failure_recorded,
+        Some(("sess-finalize-error".to_string(), "rate_limit")),
+        "StopFailure must be dispatched from the shared Error settlement path"
+    );
+}
+
+#[tokio::test]
+async fn settle_to_idle_does_not_leave_session_in_error() {
+    // #3071 G1.4: normal Idle settlement must not use the Error/StopFailure path.
+    crate::init_session_bus(crate::agent::session_bus::SessionBus::new());
+    crate::state::init_concurrency_gate(crate::agent::concurrency::ConcurrencyGate::new(
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_PROCESSES,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+
+    let session_repo = Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>;
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    seed_in_memory_session(
+        &session_repo,
+        &active_sessions,
+        "sess-idle-no-stop-failure",
+        SessionStatus::Busy,
+    )
+    .await;
+
+    let dispatcher = RecordingDispatcher::default();
+    let mut stop_failure_emitted = false;
+    transition_to_terminal_status_and_emit_with_hook_sink(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        "sess-idle-no-stop-failure",
+        TerminalTransition {
+            status: SessionStatus::Idle,
+            event: AgentEvent::WorkflowCompleted {
+                session_id: "sess-idle-no-stop-failure".to_string(),
+                reason: WorkflowCompletionReason::Natural,
+                stop_reason: None,
+            },
+            event_label: "WorkflowCompleted",
+        },
+        |_sessions, _sid, _error_type| {
+            stop_failure_emitted = true;
+        },
+    )
+    .await
+    .expect("idle settle");
+
+    assert_eq!(
+        session_repo
+            .get_session("sess-idle-no-stop-failure")
+            .await
+            .expect("load")
+            .expect("exists")
+            .status,
+        SessionStatus::Idle
+    );
+    assert!(
+        !dispatcher
+            .agent_events()
+            .iter()
+            .any(|e| matches!(e, AgentEvent::WorkflowError { .. })),
+        "Idle settlement must not emit WorkflowError"
+    );
+    assert!(
+        !stop_failure_emitted,
+        "Idle settlement must not dispatch StopFailure"
+    );
+}
+
+#[tokio::test]
+async fn finalize_session_error_emits_workflow_error_when_status_write_fails() {
+    // #3071 G2.1 / G3.1: the WorkflowError emission and StopFailure dispatch
+    // must not depend on the persisted status write succeeding, observed
+    // through an injected sink with no test branch in production dispatch.
+    crate::init_session_bus(crate::agent::session_bus::SessionBus::new());
+    crate::state::init_concurrency_gate(crate::agent::concurrency::ConcurrencyGate::new(
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_AGENTS,
+        crate::agent::concurrency::DEFAULT_MAX_ACTIVE_PROCESSES,
+        crate::agent::concurrency::DEFAULT_MAX_SUSPENDED_PROCESSES,
+    ));
+
+    let session_repo = Arc::new(StatusWriteFailingRepository::new()) as Arc<dyn SessionRepository>;
+    let active_sessions = Arc::new(RwLock::new(HashMap::new()));
+    seed_in_memory_session(
+        &session_repo,
+        &active_sessions,
+        "sess-finalize-error-write-fail",
+        SessionStatus::Busy,
+    )
+    .await;
+
+    let dispatcher = RecordingDispatcher::default();
+    let error = AgentRuntimeError::new(AgentRuntimeErrorType::NetworkError, "network down");
+    let mut stop_failure_recorded = None;
+    finalize_session_error_with_hook_sink(
+        &session_repo,
+        &active_sessions,
+        &dispatcher,
+        "sess-finalize-error-write-fail",
+        error,
+        |_sessions, sid, error_type| {
+            stop_failure_recorded = Some((sid, error_type));
+        },
+    )
+    .await
+    .expect("Error settlement must complete despite a failed status write");
+
+    let events = dispatcher.agent_events();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEvent::WorkflowError { session_id, .. }
+                if session_id == "sess-finalize-error-write-fail"
+        )),
+        "WorkflowError must be emitted even when the Error status write fails: {events:?}"
+    );
+    assert_eq!(
+        stop_failure_recorded,
+        Some(("sess-finalize-error-write-fail".to_string(), "network")),
+        "StopFailure must be dispatched even when the Error status write fails"
+    );
 }

@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::agent::events::AgentEventDispatcher;
 use crate::agent::runtime_state::{
     SessionRuntimeDockerState, SessionRuntimeInitResult, SessionRuntimePhase,
 };
 use crate::agent::state::AgentSession;
-use crate::agent::tauri_events::TauriEventDispatcher;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::workspace_isolation::WorkspaceIsolationMode;
 use crate::repositories::message_repository::MessageRepository;
@@ -241,6 +239,28 @@ async fn complete_docker_provisioning(
         crate::services::hooks::SessionStartSource::Startup,
     );
 
+    // #3071 G1.3: Docker children defer SessionStart until provisioning
+    // completes; SubagentStart must fire here too (creation skipped it while
+    // status was Provisioning).
+    let child_identity = {
+        let active = deps.active_sessions.read().await;
+        active.get(session_id).map(|s| {
+            (
+                s.metadata.parent_session_id.clone(),
+                s.metadata.assistant_id.clone(),
+                s.metadata.name.clone(),
+            )
+        })
+    };
+    if let Some((Some(parent_id), assistant_id, name)) = child_identity {
+        crate::agent::workflow::finish::spawn_subagent_start(
+            session_id,
+            &parent_id,
+            assistant_id.as_deref(),
+            name.as_deref(),
+        );
+    }
+
     drain_and_start_pending_workflows(deps, session_id).await
 }
 
@@ -384,24 +404,19 @@ async fn emit_drain_workflow_failure(
     session_id: &str,
     error_message: String,
 ) {
-    let _ = crate::agent::lifecycle::update_session_status(
+    let error = crate::agent::llm::types::AgentRuntimeError::new(
+        crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+        error_message,
+    )
+    .with_code("DOCKER_DRAIN_WORKFLOW_FAILED");
+    let _ = crate::agent::workflow::finish::finalize_session_error(
         &deps.session_repo,
         &deps.active_sessions,
         &deps.app_handle,
         session_id,
-        SessionStatus::Error,
+        error,
     )
     .await;
-
-    let error_event = crate::agent::events::AgentEvent::WorkflowError {
-        session_id: session_id.to_string(),
-        error: crate::agent::llm::types::AgentRuntimeError::new(
-            crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
-            error_message,
-        )
-        .with_code("DOCKER_DRAIN_WORKFLOW_FAILED"),
-    };
-    let _ = TauriEventDispatcher::from_handle(&deps.app_handle).emit_agent_event(error_event);
 }
 
 async fn drain_and_start_pending_workflows(

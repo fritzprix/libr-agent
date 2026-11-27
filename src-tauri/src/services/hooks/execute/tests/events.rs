@@ -153,6 +153,81 @@ async fn post_tool_use_and_stop_and_session_end_and_notification_and_pre_compact
     clear_hook_context(&sid);
 }
 
+// #3007: SubagentStart / PostCompact / StopFailure dispatch and matchers.
+async fn dispatched_context(event: HookEvent, matcher_value: &str) -> Option<String> {
+    let ctx_json = r#"{"additionalContext":"ran"}"#;
+    let hooks_json = serde_json::json!({
+        "hooks": {
+            (event.as_str()): [{
+                "matcher": "keep",
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("printf '%s' '{ctx_json}'"),
+                    "powershell": format!("Write-Output '{ctx_json}'"),
+                }]
+            }]
+        }
+    })
+    .to_string();
+    let (temp, root) = setup_approved_plugin(&hooks_json);
+    let sid = format!("ev-{}", uuid::Uuid::new_v4());
+    let outcome = dispatch_hook_event_in(
+        temp.path(),
+        event,
+        matcher_value,
+        &HookEnvelopeParams::new(&sid, root, event),
+        &sid,
+    )
+    .await;
+    clear_hook_context(&sid);
+    outcome.joined_additional_context()
+}
+
+#[tokio::test]
+async fn subagent_start_runs_only_for_matching_agent_type() {
+    // The matcher value is the agent type, like SubagentStop (#3007).
+    assert_eq!(
+        dispatched_context(HookEvent::SubagentStart, "keep")
+            .await
+            .as_deref(),
+        Some("ran")
+    );
+    assert_eq!(
+        dispatched_context(HookEvent::SubagentStart, "other-agent").await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn post_compact_runs_only_for_matching_trigger() {
+    // The matcher value is the compaction trigger ("auto" / "manual").
+    assert_eq!(
+        dispatched_context(HookEvent::PostCompact, "keep")
+            .await
+            .as_deref(),
+        Some("ran")
+    );
+    assert_eq!(
+        dispatched_context(HookEvent::PostCompact, "auto").await,
+        None
+    );
+}
+
+#[tokio::test]
+async fn stop_failure_runs_only_for_matching_error_type() {
+    // The matcher value is the error-type label (#3007).
+    assert_eq!(
+        dispatched_context(HookEvent::StopFailure, "keep")
+            .await
+            .as_deref(),
+        Some("ran")
+    );
+    assert_eq!(
+        dispatched_context(HookEvent::StopFailure, "rate_limit").await,
+        None
+    );
+}
+
 #[test]
 fn decision_aggregation_precedence_is_block_over_ask_over_allow() {
     let mut res = HookDispatchResult::default();

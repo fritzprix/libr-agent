@@ -160,8 +160,7 @@ fn without_args_the_handler_stays_in_shell_form() {
 #[test]
 fn records_unknown_and_newer_events_as_unsupported_without_failing() {
     for key in [
-        "PostCompact",
-        "SubagentStart",
+        "Setup",
         "PostToolUseFailure",
         "PermissionRequest",
         "bogusEvent",
@@ -179,6 +178,31 @@ fn records_unknown_and_newer_events_as_unsupported_without_failing() {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].matcher.as_deref(), Some("Bash"));
         assert_eq!(entries[0].command, "echo hi");
+    }
+}
+
+#[test]
+fn parses_new_session_and_subagent_events_as_supported() {
+    // #3007: SubagentStart, PostCompact, and StopFailure moved from the
+    // reserved set into the supported event schema.
+    for (key, event) in [
+        ("SubagentStart", HookEvent::SubagentStart),
+        ("subagentStart", HookEvent::SubagentStart),
+        ("PostCompact", HookEvent::PostCompact),
+        ("postCompact", HookEvent::PostCompact),
+        ("StopFailure", HookEvent::StopFailure),
+        ("stopFailure", HookEvent::StopFailure),
+    ] {
+        let json = format!(
+            r#"{{"hooks":{{"{key}":[{{"matcher":"x","hooks":[{{"type":"command","command":"echo hi"}}]}}]}}}}"#
+        );
+        let cfg = parse_hooks_value(&serde_json::from_str(&json).unwrap(), Path::new("t.json"))
+            .expect("supported hook events must parse");
+        assert!(
+            cfg.events.contains_key(&event),
+            "{key} must parse as {event:?}"
+        );
+        assert!(cfg.unsupported_events.is_empty());
     }
 }
 

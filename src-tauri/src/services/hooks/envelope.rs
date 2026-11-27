@@ -87,6 +87,9 @@ pub struct HookEnvelopeParams {
     pub custom_compact_instructions: Option<String>,
     pub notification_message: Option<String>,
     pub notification_type: Option<String>,
+    /// Error class a `StopFailure` fired for (e.g. `rate_limit`), matched by
+    /// the event matcher and surfaced in the envelope (#3007).
+    pub error_type: Option<String>,
 }
 
 impl HookEnvelopeParams {
@@ -113,6 +116,7 @@ impl HookEnvelopeParams {
             custom_compact_instructions: None,
             notification_message: None,
             notification_type: None,
+            error_type: None,
         }
     }
 }
@@ -181,7 +185,10 @@ pub fn build_envelope_value(params: &HookEnvelopeParams) -> Value {
                 json!(params.stop_hook_active),
             );
         }
-        HookEvent::SubagentStop => {
+        HookEvent::StopFailure => {
+            if let Some(kind) = &params.error_type {
+                obj.insert("error_type".to_string(), json!(kind));
+            }
             if let Some(id) = &params.agent_id {
                 obj.insert("agent_id".to_string(), json!(id));
             }
@@ -192,7 +199,18 @@ pub fn build_envelope_value(params: &HookEnvelopeParams) -> Value {
                 obj.insert("child_session_id".to_string(), json!(id));
             }
         }
-        HookEvent::PreCompact => {
+        HookEvent::SubagentStart | HookEvent::SubagentStop => {
+            if let Some(id) = &params.agent_id {
+                obj.insert("agent_id".to_string(), json!(id));
+            }
+            if let Some(kind) = &params.agent_type {
+                obj.insert("agent_type".to_string(), json!(kind));
+            }
+            if let Some(id) = &params.child_session_id {
+                obj.insert("child_session_id".to_string(), json!(id));
+            }
+        }
+        HookEvent::PreCompact | HookEvent::PostCompact => {
             if let Some(source) = &params.compact_source {
                 obj.insert("source".to_string(), json!(source));
             }
@@ -297,7 +315,23 @@ mod tests {
                 p.agent_type = Some("my-plugin:reviewer".into());
                 p.child_session_id = Some("child-1".into());
             }),
+            (HookEvent::SubagentStart, |p| {
+                p.agent_id = Some("agent-9".into());
+                p.agent_type = Some("my-plugin:reviewer".into());
+                p.child_session_id = Some("child-1".into());
+            }),
+            (HookEvent::StopFailure, |p| {
+                p.error_type = Some("rate_limit".into());
+                p.agent_id = Some("agent-9".into());
+                p.agent_type = Some("my-plugin:reviewer".into());
+                p.child_session_id = Some("child-1".into());
+            }),
             (HookEvent::PreCompact, |p| {
+                p.compact_source = Some("auto".into());
+                p.compact_trigger = Some("manual".into());
+                p.custom_compact_instructions = Some("keep todos".into());
+            }),
+            (HookEvent::PostCompact, |p| {
                 p.compact_source = Some("auto".into());
                 p.compact_trigger = Some("manual".into());
                 p.custom_compact_instructions = Some("keep todos".into());
