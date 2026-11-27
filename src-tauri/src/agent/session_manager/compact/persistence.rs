@@ -361,6 +361,15 @@ pub(super) async fn persist_compact_summary_and_resume(
     let proxy_manager = context.proxy_manager.clone();
     let app_handle = context.app_handle.clone();
     let session_id = context.session_id.to_string();
+    // #3007: the `PostCompact` matcher value is the compaction trigger
+    // ("auto" / "manual"), matching the `PreCompact` convention: a resumed
+    // completion means the compaction was auto-triggered by context
+    // pressure, a bare settle means the user asked for it. Computed here
+    // because `resume_action` is moved into `continue_pending_after_compaction`.
+    let post_compact_trigger = match &resume_action {
+        CompactionResumeAction::ResumeCompletion => "auto",
+        CompactionResumeAction::Nothing => "manual",
+    };
     crate::agent::workflow::continue_pending_after_compaction(
         context.session_repo,
         context.active_sessions,
@@ -385,6 +394,22 @@ pub(super) async fn persist_compact_summary_and_resume(
         context.session_id,
         crate::services::hooks::SessionStartSource::Compact,
     );
+
+    // #3007 / #3071 G1.4: production emission site for PostCompact.
+    let mut post_compact_params = crate::services::hooks::HookEnvelopeParams::new(
+        context.session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::PostCompact,
+    );
+    post_compact_params.compact_source = Some(post_compact_trigger.to_string());
+    post_compact_params.compact_trigger = Some(post_compact_trigger.to_string());
+    let _ = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::PostCompact,
+        post_compact_trigger,
+        &post_compact_params,
+        context.session_id,
+    )
+    .await;
 
     Ok(CompactResponseOutcome { retried: false })
 }

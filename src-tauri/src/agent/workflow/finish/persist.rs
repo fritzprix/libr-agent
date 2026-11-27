@@ -18,6 +18,10 @@ use super::messages::{
 };
 use super::pending::continue_workflow_if_pending_events;
 use super::WorkflowRestart;
+use super::{
+    finalize_session_error_with_dispatcher, finalize_session_error_with_hook_sink,
+    spawn_stop_failure,
+};
 
 pub(super) fn latest_assistant_message_from_cache(messages: &[Message]) -> Option<Message> {
     messages
@@ -107,28 +111,24 @@ pub(super) async fn mark_error_after_persist_failure(
         session_id,
         user_facing_error
     );
-    crate::agent::lifecycle::update_session_status_with_dispatcher(
-        session_repo,
-        active_sessions,
-        dispatcher,
-        session_id,
-        SessionStatus::Error,
-    )
-    .await?;
-
     let workflow_error =
         AgentRuntimeError::new(AgentRuntimeErrorType::AiServiceError, user_facing_error)
             .with_code("TERMINAL_PERSIST_FAILED");
 
-    if let Err(emit_error) = dispatcher.emit_agent_event(AgentEvent::WorkflowError {
-        session_id: session_id.to_string(),
-        error: workflow_error,
-    }) {
+    if let Err(mark_error) = finalize_session_error_with_dispatcher(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        workflow_error,
+    )
+    .await
+    {
         log::error!(
-            "Session {} is Error after terminal persist failure, but WorkflowError failed to emit: {}. \
-             StatusChanged should still have reached the UI.",
+            "Session {} could not complete Error settlement after terminal persist failure: {}. \
+             StatusChanged may still have reached the UI.",
             session_id,
-            emit_error
+            mark_error
         );
     }
 
@@ -169,6 +169,52 @@ pub(super) async fn transition_to_terminal_status_and_emit(
     event: AgentEvent,
     event_label: &str,
 ) -> Result<(), String> {
+    transition_to_terminal_status_and_emit_with_hook_sink(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        status,
+        event,
+        event_label,
+        spawn_stop_failure,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn transition_to_terminal_status_and_emit_with_hook_sink(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    status: SessionStatus,
+    event: AgentEvent,
+    event_label: &str,
+    emit_stop_failure: impl FnOnce(Arc<RwLock<HashMap<String, AgentSession>>>, String, &'static str),
+) -> Result<(), String> {
+    // Error settlements share one helper so every Error path emits
+    // `WorkflowError` before fire-and-forget `StopFailure` (#3071 G1.1/G1.2).
+    if status == SessionStatus::Error {
+        let error = match event {
+            AgentEvent::WorkflowError { error, .. } => error,
+            other => {
+                return Err(format!(
+                    "Error settlement requires WorkflowError, got {other:?}"
+                ));
+            }
+        };
+        return finalize_session_error_with_hook_sink(
+            session_repo,
+            active_sessions,
+            dispatcher,
+            session_id,
+            error,
+            emit_stop_failure,
+        )
+        .await;
+    }
+
     crate::agent::lifecycle::update_session_status_with_dispatcher(
         session_repo,
         active_sessions,

@@ -9,20 +9,12 @@ use std::path::Path;
 
 const RESERVED_UNKNOWN_EVENTS: &[(&str, &str)] = &[
     (
-        "PostCompact",
-        "PostCompact is not supported; use SessionStart with source=compact",
+        "Setup",
+        "Setup is not emitted by LibrAgent: sessions have no init-only / maintenance startup path",
     ),
     (
-        "postCompact",
-        "PostCompact is not supported; use SessionStart with source=compact",
-    ),
-    (
-        "SubagentStart",
-        "SubagentStart is reserved for a later schema version",
-    ),
-    (
-        "subagentStart",
-        "SubagentStart is reserved for a later schema version",
+        "setup",
+        "Setup is not emitted by LibrAgent: sessions have no init-only / maintenance startup path",
     ),
 ];
 
@@ -154,8 +146,11 @@ fn normalize_event_key(key: &str) -> Result<HookEvent, String> {
         "PreToolUse" | "preToolUse" => Ok(HookEvent::PreToolUse),
         "PostToolUse" | "postToolUse" => Ok(HookEvent::PostToolUse),
         "Stop" | "stop" => Ok(HookEvent::Stop),
+        "StopFailure" | "stopFailure" => Ok(HookEvent::StopFailure),
+        "SubagentStart" | "subagentStart" => Ok(HookEvent::SubagentStart),
         "SubagentStop" | "subagentStop" => Ok(HookEvent::SubagentStop),
         "PreCompact" | "preCompact" => Ok(HookEvent::PreCompact),
+        "PostCompact" | "postCompact" => Ok(HookEvent::PostCompact),
         "Notification" | "notification" => Ok(HookEvent::Notification),
         _ => Err("event name is not in the supported v1 set".to_string()),
     }

@@ -21,7 +21,7 @@ mod tests;
 mod tests_subagent_matcher;
 
 use crate::agent::events::{AgentEvent, AgentEventDispatcher, WorkflowCompletionReason};
-use crate::agent::llm::types::AgentRuntimeError;
+use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
@@ -35,7 +35,7 @@ use tokio::sync::RwLock;
 
 use messages::emit_settlement_agent_event;
 use persist::{handle_terminal_persist_failure, transition_to_terminal_status_and_emit};
-use stop_hook::{maybe_continue_from_stop_hook, StopHookTransition};
+use stop_hook::{maybe_continue_from_stop_hook, subagent_matcher_value, StopHookTransition};
 
 /// Starts one more LLM turn after settlement finds pending work or a stop hook
 /// asks to continue.
@@ -143,6 +143,223 @@ fn emit_hook_stopped_notice(
             error
         );
     }
+}
+
+/// Shared Error terminal settlement for every path that leaves a session in
+/// `Error` (#3007 / #3071 G1.1).
+///
+/// Order is fixed (#3071 G1.2): set `Error` → emit `WorkflowError` to the UI →
+/// fire-and-forget `StopFailure`. Callers must not hand-roll status + emit.
+pub async fn finalize_session_error_with_dispatcher(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    finalize_session_error_with_hook_sink(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        error,
+        spawn_stop_failure,
+    )
+    .await
+}
+
+pub(super) async fn finalize_session_error_with_hook_sink(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    dispatcher: &dyn AgentEventDispatcher,
+    session_id: &str,
+    error: AgentRuntimeError,
+    emit_stop_failure: impl FnOnce(Arc<RwLock<HashMap<String, AgentSession>>>, String, &'static str),
+) -> Result<(), String> {
+    let error_type = error_type_label(&error.error_type);
+    if let Err(status_error) = crate::agent::lifecycle::update_session_status_with_dispatcher(
+        session_repo,
+        active_sessions,
+        dispatcher,
+        session_id,
+        SessionStatus::Error,
+    )
+    .await
+    {
+        // The Error event and StopFailure must still reach the UI and hooks:
+        // every caller is a background path that discards this result, so
+        // returning early here would hide the turn failure entirely
+        // (#3071 G2.1).
+        log::error!(
+            "Session {} could not persist Error status before WorkflowError settlement: {}",
+            session_id,
+            status_error
+        );
+    }
+
+    emit_settlement_agent_event(
+        dispatcher,
+        session_id,
+        AgentEvent::WorkflowError {
+            session_id: session_id.to_string(),
+            error,
+        },
+        "WorkflowError",
+    )?;
+
+    // Do not await the hook: a slow or hanging StopFailure must not withhold
+    // the error from the UI (#3071 G1.2).
+    emit_stop_failure(
+        Arc::clone(active_sessions),
+        session_id.to_string(),
+        error_type,
+    );
+    Ok(())
+}
+
+/// AppHandle wrapper for background paths that do not already hold a dispatcher.
+pub async fn finalize_session_error(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    error: AgentRuntimeError,
+) -> Result<(), String> {
+    let dispatcher = crate::agent::tauri_events::TauriEventDispatcher::new(app_handle);
+    finalize_session_error_with_dispatcher(
+        session_repo,
+        active_sessions,
+        &dispatcher,
+        session_id,
+        error,
+    )
+    .await
+}
+
+/// Map a LibrAgent runtime error class to the stable snake_case label a
+/// `StopFailure` matcher is compared against (#3007). Claude Code matches on
+/// error type (`rate_limit`, …); these labels are LibrAgent's equivalents.
+pub(crate) fn error_type_label(error: &AgentRuntimeErrorType) -> &'static str {
+    match error {
+        AgentRuntimeErrorType::RateLimitError => "rate_limit",
+        AgentRuntimeErrorType::AuthenticationError => "authentication",
+        AgentRuntimeErrorType::NetworkError => "network",
+        AgentRuntimeErrorType::AiServiceError => "ai_service",
+        AgentRuntimeErrorType::ContextLimitError => "context_limit",
+        AgentRuntimeErrorType::McpError => "mcp",
+        AgentRuntimeErrorType::ToolExecutionError => "tool_execution",
+        AgentRuntimeErrorType::ValidationError => "validation",
+        AgentRuntimeErrorType::MalformedFunctionCall => "malformed_function_call",
+        AgentRuntimeErrorType::JsonParsingError => "json_parsing",
+        AgentRuntimeErrorType::EmptySelectionError => "empty_selection",
+    }
+}
+
+/// Fire-and-forget `StopFailure` for a session whose turn ended in error
+/// (#3007 / #3071 G1.2). Child sessions carry the same agent identity
+/// envelope fields as `SubagentStop`.
+pub(super) fn spawn_stop_failure(
+    active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: String,
+    error_type: &'static str,
+) {
+    // Spawn on the caller's runtime, not tauri's global one: the detached
+    // task reaches process-global stores (hook plugin dirs, session
+    // workspace lookup). Pinning it to the caller's runtime keeps those
+    // accesses on the runtime that owns them — the global runtime outliving
+    // a caller-owned SQLite pool crashed `integration_tests` with SIGSEGV
+    // (#3071 round 2 CI).
+    tokio::spawn(async move {
+        run_stop_failure(&active_sessions, &session_id, error_type).await;
+    });
+}
+
+async fn run_stop_failure(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+    error_type: &'static str,
+) {
+    let (parent_session_id, assistant_id, session_name) = {
+        let active = active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|s| {
+                (
+                    s.metadata.parent_session_id.clone(),
+                    s.metadata.assistant_id.clone(),
+                    s.metadata.name.clone(),
+                )
+            })
+            .unwrap_or((None, None, None))
+    };
+    let mut params = crate::services::hooks::HookEnvelopeParams::new(
+        session_id,
+        std::path::PathBuf::from("."),
+        crate::services::hooks::HookEvent::StopFailure,
+    );
+    params.error_type = Some(error_type.to_string());
+    if parent_session_id.is_some() {
+        params.child_session_id = Some(session_id.to_string());
+        params.agent_id = Some(session_id.to_string());
+        let agent_type = subagent_matcher_value(
+            parent_session_id.as_deref(),
+            assistant_id.as_deref(),
+            session_name.as_deref(),
+        )
+        .await;
+        if !agent_type.is_empty() {
+            params.agent_type = Some(agent_type);
+        }
+    }
+    let _ = crate::services::hooks::dispatch_hook_event(
+        crate::services::hooks::HookEvent::StopFailure,
+        error_type,
+        &params,
+        session_id,
+    )
+    .await;
+}
+
+/// Fire-and-forget `SubagentStart` for a child session (#3007 / #3071 G1.3).
+/// No-op when `parent_session_id` is absent. Matcher value is the agent type.
+pub fn spawn_subagent_start(
+    session_id: &str,
+    parent_session_id: &str,
+    assistant_id: Option<&str>,
+    session_name: Option<&str>,
+) {
+    let child_session_id = session_id.to_string();
+    let parent_id = parent_session_id.to_string();
+    let assistant_id = assistant_id.map(str::to_string);
+    let child_name = session_name.map(str::to_string);
+    // Caller-runtime spawn for the same reason as `spawn_stop_failure`
+    // (#3071 round 2 CI: detached hook work must not outlive the runtime
+    // that owns the globals it reads).
+    tokio::spawn(async move {
+        let matcher_value = subagent_matcher_value(
+            Some(&parent_id),
+            assistant_id.as_deref(),
+            child_name.as_deref(),
+        )
+        .await;
+        let mut params = crate::services::hooks::HookEnvelopeParams::new(
+            &child_session_id,
+            std::path::PathBuf::from("."),
+            crate::services::hooks::HookEvent::SubagentStart,
+        );
+        params.child_session_id = Some(child_session_id.clone());
+        params.agent_id = Some(child_session_id.clone());
+        if !matcher_value.is_empty() {
+            params.agent_type = Some(matcher_value.clone());
+        }
+        let _ = crate::services::hooks::dispatch_hook_event(
+            crate::services::hooks::HookEvent::SubagentStart,
+            &matcher_value,
+            &params,
+            &child_session_id,
+        )
+        .await;
+    });
 }
 
 /// Finish a workflow only after terminal messages are durable and no pending work remains.

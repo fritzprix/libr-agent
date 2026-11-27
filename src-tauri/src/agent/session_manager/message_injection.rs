@@ -223,24 +223,19 @@ pub async fn inject_messages(
                     session_id_clone,
                     e
                 );
-                let _ = crate::agent::lifecycle::update_session_status(
+                let error = crate::agent::llm::types::AgentRuntimeError::new(
+                    crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+                    e.to_string(),
+                )
+                .with_code("BACKGROUND_INJECTION_FAILED");
+                let _ = crate::agent::workflow::finish::finalize_session_error(
                     &session_repo,
                     &active_sessions,
                     &app_handle,
                     &session_id_clone,
-                    SessionStatus::Error,
+                    error,
                 )
                 .await;
-                let error_event = crate::agent::events::AgentEvent::WorkflowError {
-                    session_id: session_id_clone.clone(),
-                    error: crate::agent::llm::types::AgentRuntimeError::new(
-                        crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
-                        e.to_string(),
-                    )
-                    .with_code("BACKGROUND_INJECTION_FAILED"),
-                };
-                let _ =
-                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
                 return;
             }
 
@@ -259,24 +254,19 @@ pub async fn inject_messages(
                     session_id_clone,
                     e
                 );
-                let _ = crate::agent::lifecycle::update_session_status(
+                let error = crate::agent::llm::types::AgentRuntimeError::new(
+                    crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
+                    e.to_string(),
+                )
+                .with_code("BACKGROUND_INJECTION_FAILED");
+                let _ = crate::agent::workflow::finish::finalize_session_error(
                     &session_repo,
                     &active_sessions,
                     &app_handle,
                     &session_id_clone,
-                    SessionStatus::Error,
+                    error,
                 )
                 .await;
-                let error_event = crate::agent::events::AgentEvent::WorkflowError {
-                    session_id: session_id_clone.clone(),
-                    error: crate::agent::llm::types::AgentRuntimeError::new(
-                        crate::agent::llm::types::AgentRuntimeErrorType::AiServiceError,
-                        e.to_string(),
-                    )
-                    .with_code("BACKGROUND_INJECTION_FAILED"),
-                };
-                let _ =
-                    TauriEventDispatcher::from_handle(&app_handle).emit_agent_event(error_event);
             }
         });
     }

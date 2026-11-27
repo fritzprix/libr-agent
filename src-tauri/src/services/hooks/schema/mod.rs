@@ -33,8 +33,11 @@ pub enum HookEvent {
     PreToolUse,
     PostToolUse,
     Stop,
+    StopFailure,
+    SubagentStart,
     SubagentStop,
     PreCompact,
+    PostCompact,
     Notification,
 }
 
@@ -53,8 +56,11 @@ impl HookEvent {
             Self::PreToolUse => "PreToolUse",
             Self::PostToolUse => "PostToolUse",
             Self::Stop => "Stop",
+            Self::StopFailure => "StopFailure",
+            Self::SubagentStart => "SubagentStart",
             Self::SubagentStop => "SubagentStop",
             Self::PreCompact => "PreCompact",
+            Self::PostCompact => "PostCompact",
             Self::Notification => "Notification",
         }
     }

@@ -1,8 +1,7 @@
-use crate::agent::events::{AgentEvent, AgentEventDispatcher};
-use crate::agent::lifecycle::update_session_status_with_dispatcher;
+use crate::agent::events::AgentEventDispatcher;
 use crate::agent::llm::types::{AgentRuntimeError, CompactStateEvent, CompactStatePhase};
 use crate::agent::state::AgentSession;
-use crate::repositories::{SessionRepository, SessionStatus};
+use crate::repositories::SessionRepository;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -150,19 +149,14 @@ pub async fn handle_compact_error_state_with_raw_output(
             "Blocking compaction failed for session {}. Failing workflow.",
             session_id
         );
-        update_session_status_with_dispatcher(
+        crate::agent::workflow::finish::finalize_session_error_with_dispatcher(
             session_repo,
             active_sessions,
             dispatcher,
             &session_id,
-            SessionStatus::Error,
+            error.clone(),
         )
         .await?;
-
-        dispatcher.emit_agent_event(AgentEvent::WorkflowError {
-            session_id,
-            error: error.clone(),
-        })?;
     }
 
     Ok(())

@@ -314,6 +314,17 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
             &session_id,
             crate::services::hooks::SessionStartSource::Startup,
         );
+
+        if let Some(parent_id) = session.parent_session_id.as_deref() {
+            // #3007 / #3071 G1.3: shared fire-and-forget SubagentStart helper
+            // (Docker children call the same helper after provisioning).
+            crate::agent::workflow::finish::spawn_subagent_start(
+                &session_id,
+                parent_id,
+                session.assistant_id.as_deref(),
+                session.name.as_deref(),
+            );
+        }
     }
 
     // Emit resource updated event for frontend cache revalidation
