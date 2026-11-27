@@ -16,18 +16,12 @@ use tokio::sync::RwLock;
 const MAX_COMPACTION_SUMMARY_RETRY_ATTEMPTS: u32 = 3;
 
 pub(super) struct CompactSummaryPersistenceContext<'a> {
-    pub active_sessions: &'a Arc<RwLock<HashMap<String, AgentSession>>>,
+    /// The fields the testable path needs; declared once, in the data type.
+    pub data: CompactSummaryPersistenceData<'a>,
+    /// Production-only handles used to build the Tauri runtime.
     pub app_handle: &'a AppHandle,
     pub session_repo: &'a Arc<dyn SessionRepository>,
     pub proxy_manager: &'a Arc<MCPServiceProxyManager>,
-    pub session_id: &'a str,
-    pub session_name: Option<String>,
-    pub to_id: String,
-    pub compacted_delta_count: usize,
-    pub telemetry_phase: CompactionTelemetryPhase,
-    pub epoch_path: Option<String>,
-    pub fallback_path: Option<String>,
-    pub raw_output_path: Option<String>,
 }
 
 /// Injectable runtime effects for compaction persistence so production uses
@@ -262,25 +256,37 @@ pub(super) async fn retry_invalid_compact_summary_if_possible(
 pub(super) async fn abort_empty_delta_compaction_and_resume(
     context: CompactSummaryPersistenceContext<'_>,
 ) -> Result<CompactResponseOutcome, String> {
+    let CompactSummaryPersistenceContext {
+        data,
+        app_handle,
+        session_repo,
+        proxy_manager,
+    } = context;
+    let active_sessions = data.active_sessions;
+    let session_id = data.session_id;
+    let to_id = data.to_id;
+    let session_name = data.session_name;
+    let compacted_delta_count = data.compacted_delta_count;
+
     log::warn!(
         "⏭️ Aborting empty-delta compaction without persist: session={}, to_id={}, compacted_delta_count={}",
-        context.session_id,
-        context.to_id,
-        context.compacted_delta_count
+        session_id,
+        to_id,
+        compacted_delta_count
     );
 
     let resume_action = {
         let compaction = {
-            let active = context.active_sessions.read().await;
+            let active = active_sessions.read().await;
             active
-                .get(context.session_id)
+                .get(session_id)
                 .map(|session| session.compaction.clone())
         };
         if let Some(compaction) = compaction {
             compaction
                 .push_telemetry_event(CompactionTelemetryEventDraft {
                     phase: CompactionTelemetryPhase::Failed,
-                    to_id: Some(context.to_id.clone()),
+                    to_id: Some(to_id.clone()),
                     condensed_count: Some(0),
                     error: Some(
                         crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR
@@ -304,39 +310,39 @@ pub(super) async fn abort_empty_delta_compaction_and_resume(
 
     // Still emit Failed so UI clears compacting/awaiting flags; frontend silences
     // the toast for EMPTY_DELTA_NOOP_ERROR (intentional skip, not a user error).
-    let dispatcher = TauriEventDispatcher::from_handle(context.app_handle);
+    let dispatcher = TauriEventDispatcher::from_handle(app_handle);
     if let Err(error) = dispatcher.emit_compact_finished(
-        context.session_id.to_string(),
-        context.session_name,
+        session_id.to_string(),
+        session_name,
         CompactStatePhase::Failed,
         Some(crate::agent::llm::completion::compaction::EMPTY_DELTA_NOOP_ERROR.to_string()),
     ) {
         log::warn!(
             "Failed to emit compact finished state for session {} after empty-delta abort: {}",
-            context.session_id,
+            session_id,
             error
         );
     }
 
-    let session_repo = context.session_repo.clone();
-    let active_sessions = context.active_sessions.clone();
-    let proxy_manager = context.proxy_manager.clone();
-    let app_handle = context.app_handle.clone();
-    let session_id = context.session_id.to_string();
+    let resume_repo = session_repo.clone();
+    let resume_active_sessions = active_sessions.clone();
+    let resume_proxy_manager = proxy_manager.clone();
+    let resume_app_handle = app_handle.clone();
+    let resume_session_id = session_id.to_string();
     crate::agent::workflow::continue_pending_after_compaction(
-        context.session_repo,
-        context.active_sessions,
-        context.proxy_manager,
-        context.app_handle,
-        context.session_id,
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        session_id,
         resume_action,
         || {
             spawn_resume_completion(
-                &session_repo,
-                &active_sessions,
-                &proxy_manager,
-                &app_handle,
-                &session_id,
+                &resume_repo,
+                &resume_active_sessions,
+                &resume_proxy_manager,
+                &resume_app_handle,
+                &resume_session_id,
                 "LLM completion after empty-delta compaction abort",
             );
         },
@@ -350,30 +356,20 @@ pub(super) async fn persist_compact_summary_and_resume(
     context: CompactSummaryPersistenceContext<'_>,
     summary: String,
 ) -> Result<CompactResponseOutcome, String> {
+    let CompactSummaryPersistenceContext {
+        data,
+        app_handle,
+        session_repo,
+        proxy_manager,
+    } = context;
     let runtime = TauriCompactPersistenceRuntime {
-        session_repo: context.session_repo,
-        active_sessions: context.active_sessions,
-        proxy_manager: context.proxy_manager,
-        app_handle: context.app_handle,
+        session_repo,
+        active_sessions: data.active_sessions,
+        proxy_manager,
+        app_handle,
     };
     let hook_dispatcher = crate::services::hooks::execute::DefaultHookDispatcher;
-    persist_compact_summary_and_resume_with_runtime(
-        CompactSummaryPersistenceData {
-            active_sessions: context.active_sessions,
-            session_id: context.session_id,
-            session_name: context.session_name,
-            to_id: context.to_id,
-            compacted_delta_count: context.compacted_delta_count,
-            telemetry_phase: context.telemetry_phase,
-            epoch_path: context.epoch_path,
-            fallback_path: context.fallback_path,
-            raw_output_path: context.raw_output_path,
-        },
-        &runtime,
-        &hook_dispatcher,
-        summary,
-    )
-    .await
+    persist_compact_summary_and_resume_with_runtime(data, &runtime, &hook_dispatcher, summary).await
 }
 
 pub(super) async fn persist_compact_summary_and_resume_with_runtime(

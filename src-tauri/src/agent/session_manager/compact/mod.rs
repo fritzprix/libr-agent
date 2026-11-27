@@ -14,6 +14,7 @@ use self::fallback::{
 use self::persistence::{
     abort_empty_delta_compaction_and_resume, persist_compact_summary_and_resume,
     retry_invalid_compact_summary_if_possible, CompactSummaryPersistenceContext,
+    CompactSummaryPersistenceData,
 };
 use self::summary::validate_compact_summary;
 use super::AgentSessionManager;
@@ -213,18 +214,21 @@ async fn complete_compaction_with_hard_fallback(
     snapshot: Option<&crate::agent::state::CompactionSnapshot>,
 ) -> Result<CompactResponseOutcome, String> {
     let compacted_messages = compacted_messages_prefix_for_to_id(
-        context.active_sessions,
-        context.session_id,
-        &context.to_id,
+        context.data.active_sessions,
+        context.data.session_id,
+        &context.data.to_id,
     )
     .await;
     let created_at = chrono::Utc::now().timestamp_millis();
-    let artifact_relative_path =
-        compaction_fallback_artifact_relative_path(context.session_id, &context.to_id, created_at);
+    let artifact_relative_path = compaction_fallback_artifact_relative_path(
+        context.data.session_id,
+        &context.data.to_id,
+        created_at,
+    );
     let artifact_text = build_compaction_hard_fallback_artifact(
-        context.session_id,
-        &context.to_id,
-        context.compacted_delta_count,
+        context.data.session_id,
+        &context.data.to_id,
+        context.data.compacted_delta_count,
         &compacted_messages,
         &artifact_relative_path,
         snapshot,
@@ -233,7 +237,7 @@ async fn complete_compaction_with_hard_fallback(
     let artifact_write_result = WorkspaceService::workspace_write_file(
         &artifact_relative_path,
         artifact_text.as_bytes(),
-        Some(context.session_id.to_string()),
+        Some(context.data.session_id.to_string()),
     )
     .await;
     let saved_artifact_relative_path = match artifact_write_result {
@@ -242,7 +246,7 @@ async fn complete_compaction_with_hard_fallback(
             log::warn!(
                 "Failed to persist compaction fallback artifact '{}' for session {}: {}",
                 artifact_relative_path,
-                context.session_id,
+                context.data.session_id,
                 error
             );
             None
@@ -251,7 +255,7 @@ async fn complete_compaction_with_hard_fallback(
 
     // ✅ NEW: Write pre-compaction markdown for AI context recovery in fallback path
     let markdown_result = md_export::write_compaction_markdown(
-        context.session_id,
+        context.data.session_id,
         &compacted_messages,
         3, // max_epochs
     )
@@ -260,13 +264,14 @@ async fn complete_compaction_with_hard_fallback(
     let mut summary = build_compaction_hard_fallback_summary(
         &compacted_messages,
         saved_artifact_relative_path,
-        &context.to_id,
-        context.compacted_delta_count,
+        &context.data.to_id,
+        context.data.compacted_delta_count,
         snapshot,
         failure_reason,
     );
     let planning_seeds =
-        crate::agent::llm::completion::load_compaction_planning_seeds(context.session_id).await;
+        crate::agent::llm::completion::load_compaction_planning_seeds(context.data.session_id)
+            .await;
     summary = crate::agent::llm::completion::ensure_must_and_intent_sections(
         &summary,
         &compacted_messages,
@@ -284,14 +289,14 @@ async fn complete_compaction_with_hard_fallback(
     if saved_artifact_relative_path.is_some() {
         log::warn!(
             "🧯 Stored deterministic compaction fallback for session {} at '{}' after failure: {}",
-            context.session_id,
+            context.data.session_id,
             artifact_relative_path,
             failure_reason
         );
     } else {
         log::warn!(
             "🧯 Stored deterministic compaction fallback summary without artifact for session {} after failure: {}",
-            context.session_id,
+            context.data.session_id,
             failure_reason
         );
     }
@@ -300,10 +305,10 @@ async fn complete_compaction_with_hard_fallback(
         .ok()
         .map(|(relative_path, _)| relative_path.clone());
     let mut context = context;
-    context.telemetry_phase =
+    context.data.telemetry_phase =
         crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback;
-    context.epoch_path = epoch_path;
-    context.fallback_path = saved_artifact_relative_path.map(|path| path.to_string());
+    context.data.epoch_path = epoch_path;
+    context.data.fallback_path = saved_artifact_relative_path.map(|path| path.to_string());
     persist_compact_summary_and_resume(context, summary).await
 }
 
@@ -368,18 +373,21 @@ pub async fn handle_compact_response(
         compacted_delta_count,
     ) {
         return abort_empty_delta_compaction_and_resume(CompactSummaryPersistenceContext {
-            active_sessions,
+            data: CompactSummaryPersistenceData {
+                active_sessions,
+                session_id,
+                session_name,
+                to_id,
+                compacted_delta_count,
+                telemetry_phase:
+                    crate::agent::compaction_telemetry::CompactionTelemetryPhase::Failed,
+                epoch_path: None,
+                fallback_path: None,
+                raw_output_path: None,
+            },
             app_handle,
             session_repo,
             proxy_manager,
-            session_id,
-            session_name,
-            to_id,
-            compacted_delta_count,
-            telemetry_phase: crate::agent::compaction_telemetry::CompactionTelemetryPhase::Failed,
-            epoch_path: None,
-            fallback_path: None,
-            raw_output_path: None,
         })
         .await;
     }
@@ -449,19 +457,21 @@ pub async fn handle_compact_response(
         };
         return complete_compaction_with_hard_fallback(
             CompactSummaryPersistenceContext {
-                active_sessions,
+                data: CompactSummaryPersistenceData {
+                    active_sessions,
+                    session_id,
+                    session_name,
+                    to_id,
+                    compacted_delta_count,
+                    telemetry_phase:
+                        crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
+                    epoch_path: None,
+                    fallback_path: None,
+                    raw_output_path,
+                },
                 app_handle,
                 session_repo,
                 proxy_manager,
-                session_id,
-                session_name,
-                to_id,
-                compacted_delta_count,
-                telemetry_phase:
-                    crate::agent::compaction_telemetry::CompactionTelemetryPhase::HardFallback,
-                epoch_path: None,
-                fallback_path: None,
-                raw_output_path,
             },
             &validation_error,
             fallback_snapshot.as_ref(),
@@ -508,19 +518,21 @@ pub async fn handle_compact_response(
         .map(|(relative_path, _)| relative_path.clone());
     persist_compact_summary_and_resume(
         CompactSummaryPersistenceContext {
-            active_sessions,
+            data: CompactSummaryPersistenceData {
+                active_sessions,
+                session_id,
+                session_name,
+                to_id,
+                compacted_delta_count,
+                telemetry_phase:
+                    crate::agent::compaction_telemetry::CompactionTelemetryPhase::Succeeded,
+                epoch_path,
+                fallback_path: None,
+                raw_output_path,
+            },
             app_handle,
             session_repo,
             proxy_manager,
-            session_id,
-            session_name,
-            to_id,
-            compacted_delta_count,
-            telemetry_phase:
-                crate::agent::compaction_telemetry::CompactionTelemetryPhase::Succeeded,
-            epoch_path,
-            fallback_path: None,
-            raw_output_path,
         },
         final_summary,
     )

@@ -11,20 +11,12 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-/// Parameters for session creation
-pub struct CreateSessionParams {
-    pub session_repo: Arc<dyn SessionRepository>,
-    pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+/// Parameters for session creation: the fields the testable core needs, plus
+/// the production handles used to build the Tauri runtime.
+pub(crate) struct CreateSessionParams {
+    pub core: CreateSessionCoreParams,
     pub proxy_manager: Arc<MCPServiceProxyManager>,
     pub app_handle: AppHandle,
-    pub context_registry: Arc<ContextRegistry>,
-    pub session_id: String,
-    pub name: Option<String>,
-    pub model: Option<String>,
-    pub provider: Option<String>,
-    pub agent_config: crate::agent::AgentConfig,
-    pub workspace_isolation: WorkspaceIsolationMode,
-    pub docker_config: Option<DockerWorkspaceConfig>,
 }
 
 /// Injectable runtime effects for session creation so production uses Tauri
@@ -184,32 +176,21 @@ pub async fn resolve_workspace_override(
 }
 
 /// Create or update a session in the database
-pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
+pub(crate) async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
+    let CreateSessionParams {
+        core,
+        proxy_manager,
+        app_handle,
+    } = params;
     let runtime: Arc<dyn SessionCreationRuntime> = Arc::new(TauriSessionCreationRuntime {
-        session_repo: Arc::clone(&params.session_repo),
-        active_sessions: Arc::clone(&params.active_sessions),
-        proxy_manager: Arc::clone(&params.proxy_manager),
-        app_handle: params.app_handle,
+        session_repo: Arc::clone(&core.session_repo),
+        active_sessions: Arc::clone(&core.active_sessions),
+        proxy_manager,
+        app_handle,
     });
     let hook_dispatcher: Arc<dyn crate::services::hooks::execute::HookDispatcher> =
         Arc::new(crate::services::hooks::execute::DefaultHookDispatcher);
-    create_session_with_runtime(
-        CreateSessionCoreParams {
-            session_repo: params.session_repo,
-            active_sessions: params.active_sessions,
-            context_registry: params.context_registry,
-            session_id: params.session_id,
-            name: params.name,
-            model: params.model,
-            provider: params.provider,
-            agent_config: params.agent_config,
-            workspace_isolation: params.workspace_isolation,
-            docker_config: params.docker_config,
-        },
-        runtime,
-        hook_dispatcher,
-    )
-    .await
+    create_session_with_runtime(core, runtime, hook_dispatcher).await
 }
 
 pub(crate) async fn create_session_with_runtime(
