@@ -1106,8 +1106,7 @@
       "deactivated": "deaktiviert",
       "authCancelled": "Autorisierung abgebrochen.",
       "authTimedOut": "Zeitüberschreitung bei der Autorisierung. Versuchen Sie es erneut.",
-      "authCancelFailed": "Abbrechen fehlgeschlagen: {{error}}",
-      "authEndedWithoutToken": "die Autorisierung endete ohne Speicherung eines Tokens"
+      "authCancelFailed": "Abbrechen fehlgeschlagen: {{error}}"
     },
     "toolsModal": {
       "description": "Tool-Namen und Beschreibungen, wie vom MCP-Server zurückgegeben.",

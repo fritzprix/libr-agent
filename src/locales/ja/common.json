@@ -1106,8 +1106,7 @@
       "deactivated": "無効",
       "authCancelled": "認証をキャンセルしました。",
       "authTimedOut": "認証がタイムアウトしました。もう一度認証してください。",
-      "authCancelFailed": "キャンセルできませんでした: {{error}}",
-      "authEndedWithoutToken": "トークンを保存せずに認証が終了しました"
+      "authCancelFailed": "キャンセルできませんでした: {{error}}"
     },
     "toolsModal": {
       "description": "MCPサーバーから返されたツール名と説明です。",

@@ -1106,8 +1106,7 @@
       "deactivated": "desativada",
       "authCancelled": "Autorização cancelada.",
       "authTimedOut": "Tempo de autorização esgotado. Tente novamente.",
-      "authCancelFailed": "Não foi possível cancelar: {{error}}",
-      "authEndedWithoutToken": "a autorização terminou sem armazenar um token"
+      "authCancelFailed": "Não foi possível cancelar: {{error}}"
     },
     "toolsModal": {
       "description": "Nomes e descrições das ferramentas conforme retornados pelo servidor MCP.",

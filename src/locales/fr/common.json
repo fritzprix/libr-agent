@@ -1106,8 +1106,7 @@
       "deactivated": "désactivée",
       "authCancelled": "Autorisation annulée.",
       "authTimedOut": "Délai d'autorisation dépassé. Réessayez.",
-      "authCancelFailed": "Impossible d'annuler : {{error}}",
-      "authEndedWithoutToken": "l'autorisation s'est terminée sans enregistrer de jeton"
+      "authCancelFailed": "Impossible d'annuler : {{error}}"
     },
     "toolsModal": {
       "description": "Noms et descriptions des outils tels que renvoyés par le serveur MCP.",

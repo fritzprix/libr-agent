@@ -109,11 +109,11 @@ export interface OAuthFlowEndedPayload {
  * Last terminal outcome for `serverId`, if the flow already ended (#3040 G3.1).
  * Used when a card mounts after the emit or misses the event.
  */
-export async function getOAuthFlowLastOutcome(
+export async function takeOAuthFlowLastOutcome(
   serverId: string,
 ): Promise<OAuthFlowEndedPayload | null> {
   return safeInvoke<OAuthFlowEndedPayload | null>(
-    'get_oauth_flow_last_outcome',
+    'take_oauth_flow_last_outcome',
     { serverId },
   );
 }

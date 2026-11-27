@@ -54,7 +54,7 @@ fn last_oauth_outcome() -> &'static Mutex<Option<OAuthFlowEndedPayload>> {
     LAST_OAUTH_OUTCOME.get_or_init(|| Mutex::new(None))
 }
 
-/// Payload for `mcp-oauth-flow-ended` and `get_oauth_flow_last_outcome` (#3040 G3.1).
+/// Payload for `mcp-oauth-flow-ended` and `take_oauth_flow_last_outcome` (#3040 G3.1).
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthFlowEndedPayload {
@@ -127,8 +127,10 @@ pub async fn clear_oauth_flow_last_outcome(server_id: &str) {
     }
 }
 
-/// Peek without consuming — used by tests and the command wrapper.
-pub async fn get_oauth_flow_last_outcome(server_id: &str) -> Option<OAuthFlowEndedPayload> {
+/// Peek without consuming — test-only (#3068 G1.3). Production callers use
+/// `take_oauth_flow_last_outcome`, which consumes the outcome.
+#[cfg(test)]
+pub async fn peek_oauth_flow_last_outcome(server_id: &str) -> Option<OAuthFlowEndedPayload> {
     last_oauth_outcome()
         .lock()
         .await
@@ -1080,27 +1082,29 @@ mod tests {
         .await;
         assert!(!ended.success);
         assert_eq!(
-            get_oauth_flow_last_outcome("srv-outcome").await,
+            peek_oauth_flow_last_outcome("srv-outcome").await,
             Some(ended.clone())
         );
-        assert!(get_oauth_flow_last_outcome("other").await.is_none());
+        assert!(peek_oauth_flow_last_outcome("other").await.is_none());
         assert_eq!(
             take_oauth_flow_last_outcome("srv-outcome").await,
             Some(ended)
         );
-        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
+        assert!(peek_oauth_flow_last_outcome("srv-outcome").await.is_none());
 
         let success = record_oauth_flow_outcome("srv-outcome", &Ok("ok".to_string())).await;
         assert!(success.success);
         clear_oauth_flow_last_outcome("srv-outcome").await;
-        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
+        assert!(peek_oauth_flow_last_outcome("srv-outcome").await.is_none());
 
         let _ = begin_oauth_flow("srv-outcome").await.expect("next begin");
         let _ = record_oauth_flow_outcome("srv-outcome", &Ok("ok".to_string())).await;
         end_oauth_flow("srv-outcome").await;
-        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_some());
-        let _ = begin_oauth_flow("srv-outcome").await.expect("begin clears outcome");
-        assert!(get_oauth_flow_last_outcome("srv-outcome").await.is_none());
+        assert!(peek_oauth_flow_last_outcome("srv-outcome").await.is_some());
+        let _ = begin_oauth_flow("srv-outcome")
+            .await
+            .expect("begin clears outcome");
+        assert!(peek_oauth_flow_last_outcome("srv-outcome").await.is_none());
         end_oauth_flow("srv-outcome").await;
     }
 

@@ -11,7 +11,7 @@ import { ServerCard } from '../ServerCard';
 import { __resetAuthFlowsForTest } from '../../authFlowStore';
 import {
   cancelOAuthFlow,
-  getOAuthFlowLastOutcome,
+  takeOAuthFlowLastOutcome,
   hasOAuthToken,
   isOAuthFlowActive,
   revokeOAuthToken,
@@ -86,7 +86,7 @@ vi.mock('@/lib/backend', () => ({
   cancelOAuthFlow: vi.fn().mockResolvedValue('cancelled'),
   revokeOAuthToken: vi.fn().mockResolvedValue('revoked'),
   isOAuthFlowActive: vi.fn().mockResolvedValue(false),
-  getOAuthFlowLastOutcome: vi.fn().mockResolvedValue(null),
+  takeOAuthFlowLastOutcome: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('@/lib/backend/core', () => ({
@@ -522,7 +522,7 @@ describe('ServerCard', () => {
       });
       vi.mocked(hasOAuthToken).mockResolvedValue(false);
       vi.mocked(isOAuthFlowActive).mockResolvedValue(false);
-      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue(null);
+      vi.mocked(takeOAuthFlowLastOutcome).mockResolvedValue(null);
       vi.mocked(cancelOAuthFlow).mockResolvedValue('cancelled');
       vi.mocked(revokeOAuthToken).mockResolvedValue('revoked');
       vi.mocked(safeInvoke).mockResolvedValue([]);
@@ -585,7 +585,7 @@ describe('ServerCard', () => {
       // Mount sync sees the backend holding the flow; the refused cancel
       // then recovers the terminal provider ending via last-outcome (#3040 G3.1).
       vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
-      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue({
+      vi.mocked(takeOAuthFlowLastOutcome).mockResolvedValue({
         serverId: oauthServer.id,
         success: false,
         message: 'the authorization ended without storing a token',
@@ -612,7 +612,7 @@ describe('ServerCard', () => {
       // then ends with success and the last-outcome query lands Disconnect
       // only after hasOAuthToken reports true (#3040 G4.1).
       vi.mocked(isOAuthFlowActive).mockResolvedValue(true);
-      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue({
+      vi.mocked(takeOAuthFlowLastOutcome).mockResolvedValue({
         serverId: oauthServer.id,
         success: true,
       });
@@ -849,11 +849,56 @@ describe('ServerCard', () => {
         }),
       );
       await vi.waitFor(() => expect(onRevalidate).toHaveBeenCalled());
+      // Exactly one probe / revalidate per settle (#3068 G1.2).
+      expect(
+        vi
+          .mocked(safeInvoke)
+          .mock.calls.filter(([cmd]) => cmd === 'probe_mcp_server'),
+      ).toHaveLength(1);
+      expect(onRevalidate).toHaveBeenCalledTimes(1);
+    });
+
+    it('probes exactly once per settle on the card that owns the flow (#3068 G1.2)', async () => {
+      // The initiating card also settles through the subscription path only;
+      // handleAuthorize must not probe a second time (#3068 G1.2).
+      const onRevalidate = vi.fn();
+      vi.mocked(startOAuthFlow).mockResolvedValue('authorized');
+      vi.mocked(hasOAuthToken)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValue(true);
+      renderCard(
+        <ServerCard
+          server={oauthServer}
+          onEdit={noop}
+          onDelete={noop}
+          onToggleActive={noop}
+          onRevalidate={onRevalidate}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('oauth-authorize'));
+      expect(
+        await screen.findByTestId('oauth-disconnect'),
+      ).toBeInTheDocument();
+      const toast = await import('sonner');
+      await vi.waitFor(() =>
+        expect(toast.toast.success).toHaveBeenCalledWith(
+          'Successfully authenticated!',
+        ),
+      );
+      await vi.waitFor(() => expect(onRevalidate).toHaveBeenCalled());
+
+      expect(
+        vi
+          .mocked(safeInvoke)
+          .mock.calls.filter(([cmd]) => cmd === 'probe_mcp_server'),
+      ).toHaveLength(1);
+      expect(onRevalidate).toHaveBeenCalledTimes(1);
     });
 
     it('does not resurrect Authorized after Disconnect remount (#3040 G4.1)', async () => {
       vi.mocked(hasOAuthToken).mockResolvedValue(true);
-      vi.mocked(getOAuthFlowLastOutcome).mockResolvedValue({
+      vi.mocked(takeOAuthFlowLastOutcome).mockResolvedValue({
         serverId: oauthServer.id,
         success: true,
       });

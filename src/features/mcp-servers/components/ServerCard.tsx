@@ -24,7 +24,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { ServerToolsModal } from './ServerToolsModal';
 import {
   cancelOAuthFlow,
-  getOAuthFlowLastOutcome,
+  takeOAuthFlowLastOutcome,
   hasOAuthToken,
   isOAuthFlowActive,
   revokeOAuthToken,
@@ -179,7 +179,7 @@ export const ServerCard = React.memo(
             // Only a card that was waiting may take the last outcome (#3040 G4.1).
             if (!waitingForBackendFlowRef.current) return;
             try {
-              const last = await getOAuthFlowLastOutcome(server.id);
+              const last = await takeOAuthFlowLastOutcome(server.id);
               if (getAuthFlow(server.id) !== null) return;
               if (!last) {
                 waitingForBackendFlowRef.current = false;
@@ -307,21 +307,20 @@ export const ServerCard = React.memo(
       setIsAuthorizing(true);
       const outcome = await record.promise;
       if (!started) return;
-      // Only the initiating card reports toasts and probes (#3040 G2.2).
+      // Only the initiating card reports toasts (#3040 G2.2); the probe and
+      // revalidation happen once per settle in the subscription path
+      // (`applySettledOutcome`) for every card, including this one (#3068 G1.2).
       if (outcome.kind === 'success') {
         toast.success(
           t('mcpServer.toasts.authSuccess', 'Successfully authenticated!'),
         );
-        // Probe to trigger re-verification and fetch tools
-        await safeInvoke('probe_mcp_server', { serverId: server.id });
-        onRevalidate?.();
       } else {
         const notice = classifyAuthFailure(outcome.message);
         const label = authNoticeText(notice);
         if (notice.kind === 'cancelled') toast.message(label);
         else toast.error(label);
       }
-    }, [server.id, server.authentication, t, onRevalidate, authNoticeText]);
+    }, [server.id, server.authentication, t, authNoticeText]);
 
     const handleCancelAuthorize = useCallback(async () => {
       try {
@@ -350,7 +349,7 @@ export const ServerCard = React.memo(
         // outcome if the flow already ended (#3040 G3.1 / G4.1).
         waitingForBackendFlowRef.current = true;
         try {
-          const last = await getOAuthFlowLastOutcome(server.id);
+          const last = await takeOAuthFlowLastOutcome(server.id);
           if (last && getAuthFlow(server.id) === null) {
             applyBackendFlowOutcome(last);
           }

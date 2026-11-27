@@ -1134,8 +1134,7 @@
       "deactivated": "deactivated",
       "authCancelled": "Authorization cancelled.",
       "authTimedOut": "Authorization timed out. Try Authorize again.",
-      "authCancelFailed": "Could not cancel: {{error}}",
-      "authEndedWithoutToken": "the authorization ended without storing a token"
+      "authCancelFailed": "Could not cancel: {{error}}"
     },
     "toolsModal": {
       "description": "Tool names and descriptions as returned by the MCP server.",

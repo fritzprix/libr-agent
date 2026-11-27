@@ -45,7 +45,7 @@ export {
   startOAuthFlow,
   cancelOAuthFlow,
   isOAuthFlowActive,
-  getOAuthFlowLastOutcome,
+  takeOAuthFlowLastOutcome,
   sampleFromModel,
   validateToolSchema,
 } from './mcp-server';

@@ -123,7 +123,7 @@ pub async fn is_oauth_flow_active(server_id: String) -> bool {
 /// Only a card that was waiting for the flow should call this; the outcome
 /// is consumed so it cannot resurrect Authorized / old notices on remount.
 #[tauri::command]
-pub async fn get_oauth_flow_last_outcome(
+pub async fn take_oauth_flow_last_outcome(
     server_id: String,
 ) -> Option<crate::mcp::oauth::OAuthFlowEndedPayload> {
     crate::mcp::oauth::take_oauth_flow_last_outcome(&server_id).await

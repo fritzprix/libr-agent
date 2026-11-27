@@ -1106,8 +1106,7 @@
       "deactivated": "停用",
       "authCancelled": "授权已取消。",
       "authTimedOut": "授权超时。请重试授权。",
-      "authCancelFailed": "无法取消：{{error}}",
-      "authEndedWithoutToken": "授权已结束，但未保存令牌"
+      "authCancelFailed": "无法取消：{{error}}"
     },
     "toolsModal": {
       "description": "工具名称和说明来自 MCP 服务器返回内容。",
