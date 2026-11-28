@@ -79,6 +79,44 @@ fn malformed_function_call_error() -> Box<AgentRuntimeError> {
     )
 }
 
+/// Strips media before the first call when this route already rejected media
+/// (#3090). `context` names the caller in the log line.
+async fn strip_media_for_known_route(
+    provider_id: &str,
+    model: &str,
+    messages: &[Message],
+    session_id: &str,
+    context: &str,
+) -> Vec<Message> {
+    if !(should_strip_for_route(provider_id, model) && messages_have_multimodal_parts(messages)) {
+        return messages.to_vec();
+    }
+    let (prepared, used_plugin) =
+        prepare_messages_for_media_assist_retry(messages, session_id).await;
+    log::info!(
+        "Rust LLM executor: media-assist pre-strip for remembered route {provider_id}:{model}{context} (used_plugin={used_plugin})"
+    );
+    prepared
+}
+
+/// Strips media after this route rejected it, and remembers the route so the
+/// next turn strips first (#3090). The caller retries exactly once.
+async fn strip_media_after_rejection(
+    provider_id: &str,
+    model: &str,
+    messages: &[Message],
+    session_id: &str,
+    context: &str,
+) -> Vec<Message> {
+    let (prepared, used_plugin) =
+        prepare_messages_for_media_assist_retry(messages, session_id).await;
+    remember_strip_for_route(provider_id, model);
+    log::warn!(
+        "Rust LLM executor: media-assist fallback for {provider_id}:{model}{context} (used_plugin={used_plugin}); retrying once"
+    );
+    prepared
+}
+
 /// One provider call for `request`: stream it live, and settle it.
 ///
 /// `provider_id` is the provider actually answering, so the #3089 retry
@@ -97,16 +135,14 @@ async fn complete_once(
     tools: &[MCPTool],
 ) -> Result<CompletedChat, Box<AgentRuntimeError>> {
     let provider = provider_for(provider_id, config).await?;
-    let mut active_messages = request.messages.clone();
-    if should_strip_for_route(provider_id, model) && messages_have_multimodal_parts(&active_messages)
-    {
-        let (prepared, used_plugin) =
-            prepare_messages_for_media_assist_retry(&active_messages, &request.session_id).await;
-        active_messages = prepared;
-        log::info!(
-            "Rust LLM executor: media-assist pre-strip for remembered route {provider_id}:{model} (used_plugin={used_plugin})"
-        );
-    }
+    let mut active_messages = strip_media_for_known_route(
+        provider_id,
+        model,
+        &request.messages,
+        &request.session_id,
+        "",
+    )
+    .await;
 
     let build_chat_request = |messages: &[Message]| {
         convert::chat_request(
@@ -141,14 +177,14 @@ async fn complete_once(
             if !has_yielded.load(Ordering::Relaxed)
                 && should_attempt_media_assist_fallback(&error, &active_messages) =>
         {
-            let (prepared, used_plugin) =
-                prepare_messages_for_media_assist_retry(&active_messages, &request.session_id)
-                    .await;
-            active_messages = prepared;
-            remember_strip_for_route(provider_id, model);
-            log::warn!(
-                "Rust LLM executor: media-assist fallback for {provider_id}:{model} (used_plugin={used_plugin}); retrying once"
-            );
+            active_messages = strip_media_after_rejection(
+                provider_id,
+                model,
+                &active_messages,
+                &request.session_id,
+                "",
+            )
+            .await;
             chat_request = build_chat_request(&active_messages);
             llm_client::complete_with_deltas(
                 provider.as_ref(),
@@ -298,17 +334,16 @@ pub(super) async fn run_compaction(
     // Compaction summaries must not spend a thinking budget (#2760).
     options.thinking_effort = ThinkingEffort::Off;
 
-    let mut active_messages = request.messages.clone();
-    if should_strip_for_route(provider_id, model)
-        && messages_have_multimodal_parts(&active_messages)
-    {
-        let (prepared, used_plugin) =
-            prepare_messages_for_media_assist_retry(&active_messages, &request.session_id).await;
-        active_messages = prepared;
-        log::info!(
-            "Rust LLM executor: media-assist pre-strip for remembered route {provider_id}:{model} during compaction (used_plugin={used_plugin})"
-        );
-    }
+    // Same media recovery as completions (#3090): a history with rejected
+    // media must not fail compaction on the Rust path.
+    let mut active_messages = strip_media_for_known_route(
+        provider_id,
+        model,
+        &request.messages,
+        &request.session_id,
+        " during compaction",
+    )
+    .await;
 
     let provider = provider_for(provider_id, config).await?;
     // No tools: the summary must be plain text.
@@ -326,16 +361,14 @@ pub(super) async fn run_compaction(
     let chat = match llm_client::complete(provider.as_ref(), &chat_request, retry).await {
         Ok(chat) => chat,
         Err(error) if should_attempt_media_assist_fallback(&error, &active_messages) => {
-            // Same recovery as completions (#3090): a history with rejected
-            // media must not fail compaction on the Rust path.
-            let (prepared, used_plugin) =
-                prepare_messages_for_media_assist_retry(&active_messages, &request.session_id)
-                    .await;
-            active_messages = prepared;
-            remember_strip_for_route(provider_id, model);
-            log::warn!(
-                "Rust LLM executor: media-assist fallback for {provider_id}:{model} during compaction (used_plugin={used_plugin}); retrying once"
-            );
+            active_messages = strip_media_after_rejection(
+                provider_id,
+                model,
+                &active_messages,
+                &request.session_id,
+                " during compaction",
+            )
+            .await;
             llm_client::complete(
                 provider.as_ref(),
                 &build_chat_request(&active_messages),

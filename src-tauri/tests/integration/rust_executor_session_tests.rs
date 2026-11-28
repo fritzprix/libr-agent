@@ -1888,6 +1888,7 @@ async fn failing_provider_with_body(
 #[tokio::test]
 async fn a_multimodal_reject_with_media_retries_once_without_media() {
     let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
     tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
     );
     let session_id = "rust-executor-media-fallback";
@@ -1909,13 +1910,11 @@ async fn a_multimodal_reject_with_media_retries_once_without_media() {
             PROVIDER,
             vec![message_with_image(session_id, "u1")]
         ),
-
         deliver_to(&sink),
     )
     .await
     .unwrap());
     wait_for("the retried answer", || {
-
         !sink.responses.lock().unwrap().is_empty()
     })
     .await;
@@ -1942,6 +1941,7 @@ async fn a_multimodal_reject_with_media_retries_once_without_media() {
 #[tokio::test]
 async fn a_media_fallback_never_retries_after_a_delta_was_sent() {
     let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
     tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
     );
     let session_id = "rust-executor-media-no-retry-after-delta";
@@ -1957,13 +1957,11 @@ async fn a_media_fallback_never_retries_after_a_delta_was_sent() {
             PROVIDER,
             vec![message_with_image(session_id, "u1")]
         ),
-
         deliver_to(&sink),
     )
     .await
     .unwrap());
     wait_for("the stream error", || {
-
         !sink.llm_errors.lock().unwrap().is_empty()
     })
     .await;
@@ -1984,6 +1982,7 @@ async fn a_media_fallback_never_retries_after_a_delta_was_sent() {
 #[tokio::test]
 async fn a_remembered_media_strip_route_pre_strips_the_next_turn() {
     let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
     tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
     );
     let session_id = "rust-executor-media-remembered-route";
@@ -2046,6 +2045,7 @@ async fn a_remembered_media_strip_route_pre_strips_the_next_turn() {
 #[tokio::test]
 async fn media_fallback_ignores_context_limit_rate_limit_and_opaque_5xx() {
     let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
     let cases: [(&str, u16, &str); 3] = [
         (
             "context",
@@ -2093,6 +2093,7 @@ async fn media_fallback_ignores_context_limit_rate_limit_and_opaque_5xx() {
 #[tokio::test]
 async fn a_compaction_with_rejected_media_retries_once_stripped() {
     let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
     tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
     );
     let session_id = "rust-executor-compaction-media";
@@ -2132,4 +2133,3 @@ async fn a_compaction_with_rejected_media_retries_once_stripped() {
     tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
     );
 }
-
