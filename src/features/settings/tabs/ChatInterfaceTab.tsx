@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { AdvancedSettings, ContextStrategy } from '@/context/SettingsContext';
 import { Button, Input, Slider } from '@/components/ui';
 import {
+  KEYBOARD_TOKEN_FAST_STEP,
+  KEYBOARD_TOKEN_STEP,
   SLIDER_MAX_POSITION,
   TOKEN_UNIT,
   clampAndRoundTokenValue,
@@ -51,6 +53,36 @@ function TokenSliderField({
 
   const sliderPosition = valueToSliderPosition(value, min, max);
 
+  // Arrow keys always move the token value itself by at least 1K. Radix's
+  // default key handling moves the logarithmic track position, which rounds
+  // back to the same value near the low end and sticks the thumb.
+  const handleSliderKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
+    const isFast =
+      event.shiftKey || event.key === 'PageUp' || event.key === 'PageDown';
+    const step = isFast ? KEYBOARD_TOKEN_FAST_STEP : KEYBOARD_TOKEN_STEP;
+    let delta = 0;
+    if (
+      event.key === 'ArrowRight' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'PageUp'
+    ) {
+      delta = step;
+    } else if (
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowDown' ||
+      event.key === 'PageDown'
+    ) {
+      delta = -step;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    const nextValue = clampAndRoundTokenValue(value + delta, min, max);
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
   const commitDraft = () => {
     const parsed = Number(draftValue.trim());
     if (draftValue.trim() === '' || !Number.isFinite(parsed)) {
@@ -65,12 +97,13 @@ function TokenSliderField({
   };
 
   return (
-    <div className="min-w-0 rounded-xl border border-border/70 p-4">
+    <div
+      role="group"
+      aria-label={label}
+      className="min-w-0 rounded-xl border border-border/70 p-4"
+    >
       <div className="mb-4 flex items-center justify-between gap-3">
-        <label
-          htmlFor={id}
-          className="block text-muted-foreground font-medium"
-        >
+        <label htmlFor={id} className="block text-muted-foreground font-medium">
           {label}
         </label>
         <span className="rounded-md bg-primary/10 px-2 py-1 text-sm font-mono text-primary">
@@ -83,7 +116,8 @@ function TokenSliderField({
           max={SLIDER_MAX_POSITION}
           step={1}
           value={[sliderPosition]}
-          aria-label={label}
+          thumbLabel={`${label} slider`}
+          onKeyDown={handleSliderKeyDown}
           onValueChange={([position]) => {
             const nextValue = sliderPositionToValue(position, min, max);
             if (nextValue !== value) {
@@ -99,7 +133,6 @@ function TokenSliderField({
           max={max}
           step={TOKEN_UNIT}
           value={draftValue}
-          aria-label={label}
           onChange={(e) => setDraftValue(e.target.value)}
           onBlur={commitDraft}
           onKeyDown={(e) => {

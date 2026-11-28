@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTING } from '@/context/SettingsContext';
 import ChatInterfaceTab from '../ChatInterfaceTab';
 import {
+  KEYBOARD_TOKEN_FAST_STEP,
+  KEYBOARD_TOKEN_STEP,
   SLIDER_MAX_POSITION,
   TOKEN_UNIT,
   clampAndRoundTokenValue,
@@ -15,68 +17,63 @@ import {
 } from '../tokenSlider';
 import { TEST_ADVANCED_SETTINGS } from '@/test/fixtures/settings';
 
+// The real Radix Slider measures the thumb with ResizeObserver, which jsdom
+// does not provide.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (!('ResizeObserver' in globalThis)) {
+  (
+    globalThis as unknown as { ResizeObserver: unknown }
+  ).ResizeObserver = ResizeObserverStub;
+}
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, defaultValue?: string) => defaultValue || key,
   }),
 }));
 
-vi.mock('@/components/ui', () => ({
-  Button: ({
-    children,
-    onClick,
-    disabled,
-    variant,
-    ...props
-  }: {
-    children: ReactNode;
-    onClick?: () => void;
-    disabled?: boolean;
-    variant?: string;
-  }) => (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      data-variant={variant}
-      {...props}
-    >
-      {children}
-    </button>
-  ),
-  Input: ({
-    value,
-    onChange,
-    ...props
-  }: {
-    value?: string | number;
-    onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  }) => <input value={value} onChange={onChange} {...props} />,
-  Slider: ({
-    value,
-    min,
-    max,
-    step,
-    onValueChange,
-    'aria-label': ariaLabel,
-  }: {
-    value?: number[];
-    min?: number;
-    max?: number;
-    step?: number;
-    onValueChange?: (values: number[]) => void;
-    'aria-label'?: string;
-  }) => (
-    <input
-      type="range"
-      aria-label={`${ariaLabel ?? 'Slider'} slider`}
-      min={min}
-      max={max}
-      step={step}
-      value={value?.[0] ?? 0}
-      onChange={(e) => onValueChange?.([Number(e.target.value)])}
-    />
-  ),
-}));
+// Only Button and Input are mocked (for compact assertions and the
+// data-variant check). The Slider is the real Radix component so keyboard
+// behavior is exercised on the production code path.
+vi.mock('@/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/ui')>();
+  return {
+    ...actual,
+    Button: ({
+      children,
+      onClick,
+      disabled,
+      variant,
+      ...props
+    }: {
+      children: ReactNode;
+      onClick?: () => void;
+      disabled?: boolean;
+      variant?: string;
+    }) => (
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        data-variant={variant}
+        {...props}
+      >
+        {children}
+      </button>
+    ),
+    Input: ({
+      value,
+      onChange,
+      ...props
+    }: {
+      value?: string | number;
+      onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    }) => <input value={value} onChange={onChange} {...props} />,
+  };
+});
 
 describe('tokenSlider helpers', () => {
   const MIN_INPUT = 8192;
@@ -116,11 +113,38 @@ describe('tokenSlider helpers', () => {
     expect(Math.abs(back200k - 204800)).toBeLessThanOrEqual(TOKEN_UNIT);
   });
 
-  it('formats token values in K and M', () => {
+  it('every 1K value in both ranges is reachable by keyboard steps', () => {
+    const ranges: Array<[number, number]> = [
+      [1024, 131072], // Max Output Tokens: 128 values
+      [MIN_INPUT, MAX_INPUT], // Max Input Context: 4089 values
+    ];
+    for (const [min, max] of ranges) {
+      let reached = 0;
+      for (let value = min; value < max; value += TOKEN_UNIT) {
+        // One arrow press from any 1K value lands exactly on the next one,
+        // so repeated presses visit every value in the range.
+        expect(
+          clampAndRoundTokenValue(value + KEYBOARD_TOKEN_STEP, min, max),
+        ).toBe(value + TOKEN_UNIT);
+        reached += 1;
+      }
+      expect(reached).toBe((max - min) / TOKEN_UNIT);
+      // One press past the end clamps instead of overshooting.
+      expect(
+        clampAndRoundTokenValue(max + KEYBOARD_TOKEN_STEP, min, max),
+      ).toBe(max);
+    }
+    expect(KEYBOARD_TOKEN_FAST_STEP).toBe(KEYBOARD_TOKEN_STEP * 10);
+  });
+
+  it('formats token values with exact 1K labels', () => {
     expect(formatTokenValue(8192)).toBe('8K');
     expect(formatTokenValue(204800)).toBe('200K');
     expect(formatTokenValue(1048576)).toBe('1M');
-    expect(formatTokenValue(1572864)).toBe('1.5M');
+    expect(formatTokenValue(4194304)).toBe('4M');
+    // Non-exact megabyte values keep the exact 1K label, never a rounded "1M".
+    expect(formatTokenValue(1049600)).toBe('1025K');
+    expect(formatTokenValue(1572864)).toBe('1536K');
   });
 });
 
@@ -208,15 +232,27 @@ describe('ChatInterfaceTab', () => {
       return { onMaxInputContextChange, onAdvancedSettingsChange, ...result };
     };
 
+    const inputSlider = () =>
+      screen.getByRole('slider', { name: 'Max Input Context slider' });
+    const outputSlider = () =>
+      screen.getByRole('slider', {
+        name: 'Max Output Tokens (Default) slider',
+      });
+
     it('shows the default as 48K and highlights only the matching preset', () => {
       renderCompact(DEFAULT_SETTING.maxInputContext);
       expect(DEFAULT_SETTING.maxInputContext).toBe(49152);
       expect(screen.getAllByText('48K').length).toBeGreaterThan(0);
 
-      const preset48k = screen.getByRole('button', { name: '48K' });
-      const preset64k = screen.getAllByRole('button', { name: '64K' })[1];
-      expect(preset48k).toHaveAttribute('data-variant', 'default');
-      expect(preset64k).toHaveAttribute('data-variant', 'outline');
+      const inputGroup = screen.getByRole('group', {
+        name: 'Max Input Context',
+      });
+      expect(
+        within(inputGroup).getByRole('button', { name: '48K' }),
+      ).toHaveAttribute('data-variant', 'default');
+      expect(
+        within(inputGroup).getByRole('button', { name: '64K' }),
+      ).toHaveAttribute('data-variant', 'outline');
     });
 
     it('can select 1M and the top preset, and reports the exact value', () => {
@@ -231,9 +267,10 @@ describe('ChatInterfaceTab', () => {
       expect(onMaxInputContextChange).toHaveBeenLastCalledWith(4194304);
     });
 
-    it('labels large values in M and keeps a stored non-preset value as is', () => {
-      const { onMaxInputContextChange } = renderCompact(1572864);
-      expect(screen.getAllByText('1.5M').length).toBeGreaterThan(0);
+    it('labels a stored non-preset value with its exact 1K label', () => {
+      const { onMaxInputContextChange } = renderCompact(1049600);
+      // 1025K must not render as "1M" like the (unselected) 1M preset.
+      expect(screen.getByText('1025K')).toBeInTheDocument();
       expect(onMaxInputContextChange).not.toHaveBeenCalled();
     });
 
@@ -258,6 +295,12 @@ describe('ChatInterfaceTab', () => {
         .getAllByRole('button')
         .filter((btn) => btn.getAttribute('data-variant') === 'default');
       expect(presetButtons).toHaveLength(0);
+
+      // The real slider thumb reflects the stored value positionally.
+      const thumb = inputSlider();
+      const now = Number(thumb.getAttribute('aria-valuenow'));
+      const expected = valueToSliderPosition(204800, 8192, 4194304);
+      expect(now).toBe(expected);
     });
 
     it('rounds and clamps typed values in the number input on blur and Enter', () => {
@@ -288,30 +331,60 @@ describe('ChatInterfaceTab', () => {
       );
     });
 
-    it('updates token value in 1K steps when moving the slider', () => {
-      const { onMaxInputContextChange, onAdvancedSettingsChange } =
-        renderCompact(49152, 8192);
+    it('arrow keys on the real slider step the token value by exactly 1K', () => {
+      // 64K was a stuck value before: one track position step rounded back to
+      // 64K, so the thumb never moved.
+      const { onMaxInputContextChange } = renderCompact(65536, 65536);
 
-      const inputSlider = screen.getByRole('slider', {
-        name: 'Max Input Context slider',
-      });
-      fireEvent.change(inputSlider, { target: { value: '500' } });
-      expect(onMaxInputContextChange).toHaveBeenCalledTimes(1);
-      const emittedInput = onMaxInputContextChange.mock.calls[0][0];
-      expect(emittedInput % TOKEN_UNIT).toBe(0);
-      expect(emittedInput).toBeGreaterThanOrEqual(8192);
-      expect(emittedInput).toBeLessThanOrEqual(4194304);
+      fireEvent.keyDown(inputSlider(), { key: 'ArrowRight' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(65536 + 1024);
 
-      const outputSlider = screen.getByRole('slider', {
-        name: 'Max Output Tokens (Default) slider',
-      });
-      fireEvent.change(outputSlider, { target: { value: '500' } });
-      expect(onAdvancedSettingsChange).toHaveBeenCalledTimes(1);
-      const [key, emittedOutput] = onAdvancedSettingsChange.mock.calls[0];
-      expect(key).toBe('defaultMaxOutputTokens');
-      expect(emittedOutput % TOKEN_UNIT).toBe(0);
-      expect(emittedOutput).toBeGreaterThanOrEqual(1024);
-      expect(emittedOutput).toBeLessThanOrEqual(131072);
+      fireEvent.keyDown(inputSlider(), { key: 'ArrowDown' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(65536 - 1024);
+
+      fireEvent.keyDown(inputSlider(), { key: 'ArrowLeft' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(65536 - 1024);
+
+      fireEvent.keyDown(inputSlider(), { key: 'PageUp' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(65536 + 10240);
+
+      fireEvent.keyDown(inputSlider(), { key: 'ArrowRight', shiftKey: true });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(65536 + 10240);
+    });
+
+    it('reaches values near the top of the range that track positions skipped', () => {
+      const { onMaxInputContextChange } = renderCompact(4194304);
+
+      // Neighbouring positions near 4M were about 26K apart; one ArrowLeft
+      // press must step exactly 1K below the maximum.
+      fireEvent.keyDown(inputSlider(), { key: 'ArrowLeft' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(4194304 - 1024);
+
+      // At the maximum, an up press is clamped and emits nothing new.
+      onMaxInputContextChange.mockClear();
+      fireEvent.keyDown(inputSlider(), { key: 'ArrowRight' });
+      expect(onMaxInputContextChange).not.toHaveBeenCalled();
+    });
+
+    it('Home and End jump the slider to the range ends', () => {
+      const { onMaxInputContextChange } = renderCompact(49152);
+
+      fireEvent.keyDown(inputSlider(), { key: 'End' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(4194304);
+
+      fireEvent.keyDown(inputSlider(), { key: 'Home' });
+      expect(onMaxInputContextChange).toHaveBeenLastCalledWith(8192);
+    });
+
+    it('keyboard steps work on the output tokens slider too', () => {
+      const { onAdvancedSettingsChange } = renderCompact(49152, 1024);
+
+      // 1K was stuck before as well.
+      fireEvent.keyDown(outputSlider(), { key: 'ArrowRight' });
+      expect(onAdvancedSettingsChange).toHaveBeenLastCalledWith(
+        'defaultMaxOutputTokens',
+        2048,
+      );
     });
   });
 });
