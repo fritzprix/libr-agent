@@ -458,37 +458,14 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   }
 
   /**
-   * Wraps a streaming generator with Time-To-First-Token (TTFT) measurement.
-   * Used by providers that don't provide native prefill timing metrics.
-   * @param generator The underlying streaming generator to wrap
-   * @returns A new generator that yields TTFT usage as the first chunk
+   * Passthrough wrapper retained for provider subclasses; timing metrics
+   * (TTFT, prefill, decode speed) are owned solely by the Rust backend (#3087).
    * @protected
    */
   protected async *streamChatWithTTFT(
     generator: AsyncGenerator<string, void, void>,
   ): AsyncGenerator<string, void, void> {
-    const startTime = performance.now();
-    let firstChunkReceived = false;
-
-    for await (const chunk of generator) {
-      if (!firstChunkReceived) {
-        const ttft = performance.now() - startTime;
-        firstChunkReceived = true;
-
-        // Yield TTFT metric as the first chunk.
-        // Only yield details — yielding zero token counts would briefly reset the
-        // gauge to 0% before the real usage chunk arrives at the end of the stream.
-        yield JSON.stringify({
-          usage: { details: { timeToFirstToken: ttft } },
-        });
-
-        this.logger.debug('TTFT measured', {
-          provider: this.getProvider(),
-          ttftMs: ttft.toFixed(2),
-        });
-      }
-      yield chunk;
-    }
+    yield* generator;
   }
 
   /**

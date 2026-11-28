@@ -246,7 +246,7 @@ describe('Rust stream handler', () => {
     expect(current()?.usage?.promptTokens).toBe(120);
     expect(current()?.usage?.completionTokens).toBe(30);
     expect(current()?.usage?.totalTokens).toBe(150);
-    expect(current()?.usage?.details?.evalDuration).toBeTypeOf('number');
+    expect(current()?.usage?.details?.evalDuration).toBeUndefined();
   });
 });
 

@@ -66,14 +66,12 @@ export function createRustStreamHandler(
       payload.maxTokens,
       settingsRef.current,
     );
-    const startTime = performance.now();
     const turn: ActiveTurn = {
       responseMessageId: payload.responseMessageId,
       accumulator: new StreamAccumulator(
         payload.sessionId,
         payload.responseMessageId,
         settingsRef,
-        startTime,
         providerSupportsReasoningBudgetCap(payload.provider)
           ? {
               reasoningBudgetMaxTokens: maxTokens,

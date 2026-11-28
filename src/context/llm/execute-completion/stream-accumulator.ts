@@ -55,7 +55,6 @@ export interface StreamAccumulatorState {
   currentThinkingTime?: number;
   currentThinkingText?: string;
   finalUsage?: TokenUsage;
-  firstChunkTime?: number;
   thinkingSignature?: string;
   currentStreamingText: string;
 }
@@ -103,7 +102,6 @@ export class StreamAccumulator {
   public currentThinkingTime?: number;
   public currentThinkingText?: string;
   public finalUsage?: TokenUsage;
-  public firstChunkTime?: number;
   public thinkingSignature?: string;
 
   private repeatedThinkingIssueReported = false;
@@ -131,7 +129,6 @@ export class StreamAccumulator {
     sessionId: string,
     responseMessageId: string,
     settingsRef: React.MutableRefObject<Settings>,
-    _startTime: number,
     options?: StreamAccumulatorOptions,
   ) {
     this.sessionId = sessionId;

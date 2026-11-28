@@ -15,7 +15,7 @@ const settingsRef = {
 
 describe('Backend timing SSOT', () => {
   it('preserves backend evalDuration and TTFT across a burst of chunks without overwriting them', () => {
-    const accumulator = new StreamAccumulator('sess-1', 'msg-1', settingsRef, 0);
+    const accumulator = new StreamAccumulator('sess-1', 'msg-1', settingsRef);
 
     // Simulate a burst of chunks arriving within <1ms in the webview
     for (let i = 0; i < 20; i++) {
@@ -51,7 +51,7 @@ describe('Backend timing SSOT', () => {
   });
 
   it('does not synthesize frontend durations when backend timing is missing or zero', () => {
-    const accumulator = new StreamAccumulator('sess-1', 'msg-2', settingsRef, 0);
+    const accumulator = new StreamAccumulator('sess-1', 'msg-2', settingsRef);
     accumulator.processChunk({ content: 'hello' });
     accumulator.processChunk({
       usage: {

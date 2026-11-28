@@ -17,16 +17,10 @@ function createAccumulator(maxTokens: number): StreamAccumulator {
   const settingsRef = {
     current: { advanced: {} } as Settings,
   };
-  return new StreamAccumulator(
-    'session-1',
-    'response-1',
-    settingsRef,
-    performance.now(),
-    {
-      reasoningBudgetMaxTokens: maxTokens,
-      reasoningBudgetMaxTokensSource: 'settings',
-    },
-  );
+  return new StreamAccumulator('session-1', 'response-1', settingsRef, {
+    reasoningBudgetMaxTokens: maxTokens,
+    reasoningBudgetMaxTokensSource: 'settings',
+  });
 }
 
 function charsForThresholdTokens(tokenThreshold: number): number {
@@ -177,7 +171,6 @@ describe('StreamAccumulator reasoning/output budget', () => {
       'session-1',
       'response-1',
       settingsRef,
-      performance.now(),
     );
 
     const thinking = accumulator.processChunk({

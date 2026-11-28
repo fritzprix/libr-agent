@@ -187,12 +187,10 @@ export function useExecuteCompletion({
           return next;
         });
 
-        const startTime = performance.now();
         const accumulator = new StreamAccumulator(
           sessionId,
           responseMessageId,
           settingsRef,
-          startTime,
           providerSupportsReasoningBudgetCap(provider)
             ? {
                 reasoningBudgetMaxTokens: resolvedMaxTokens,

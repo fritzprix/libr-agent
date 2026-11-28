@@ -1,7 +1,10 @@
 import { memo } from 'react';
 import type { TokenUsage } from '@/lib/ai-service/types';
 import type { PreflightTokenMetrics } from '@/models/agent-ipc';
-import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
+import {
+  calculateTokensPerSecond,
+  isPositiveFiniteDuration,
+} from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
@@ -38,10 +41,7 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
   // Calculate speed only from positive backend/provider evalDuration
   const evalDuration = usage.details?.evalDuration;
   const tokensPerSec =
-    evalDuration !== undefined &&
-    Number.isFinite(evalDuration) &&
-    evalDuration > 0 &&
-    usage.completionTokens > 0
+    isPositiveFiniteDuration(evalDuration) && usage.completionTokens > 0
       ? calculateTokensPerSecond(usage, evalDuration)
       : null;
 
@@ -77,15 +77,17 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
       ? `${cacheHitPercent}% · ${formatNumber(cachedTokens)}`
       : 'cache';
 
-  // Calculate prefill tokens per second only from positive backend/provider TTFT
+  // Calculate prefill tokens per second prioritizing provider promptEvalDuration over TTFT
   const ttft = usage.details?.timeToFirstToken;
   const promptEvalDuration = usage.details?.promptEvalDuration;
+  const prefillDurationMs = isPositiveFiniteDuration(promptEvalDuration)
+    ? promptEvalDuration
+    : isPositiveFiniteDuration(ttft)
+      ? ttft
+      : null;
   const prefillTPS =
-    ttft !== undefined &&
-    Number.isFinite(ttft) &&
-    ttft > 0 &&
-    usage.promptTokens > 0
-      ? (usage.promptTokens / (ttft / 1000)).toFixed(1)
+    prefillDurationMs !== null && usage.promptTokens > 0
+      ? (usage.promptTokens / (prefillDurationMs / 1000)).toFixed(1)
       : null;
 
   // Build prefill timing info based on user preference
@@ -95,13 +97,9 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
     prefillTPS
   ) {
     prefillInfo = ` • Prefill: ${prefillTPS} tok/s`;
-  } else if (
-    promptEvalDuration !== undefined &&
-    Number.isFinite(promptEvalDuration) &&
-    promptEvalDuration > 0
-  ) {
+  } else if (isPositiveFiniteDuration(promptEvalDuration)) {
     prefillInfo = ` • Prefill: ${promptEvalDuration.toFixed(0)}ms`;
-  } else if (ttft !== undefined && Number.isFinite(ttft) && ttft > 0) {
+  } else if (isPositiveFiniteDuration(ttft)) {
     prefillInfo = ` • TTFT: ${ttft.toFixed(0)}ms`;
   }
 

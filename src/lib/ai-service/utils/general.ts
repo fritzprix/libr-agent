@@ -64,15 +64,19 @@ export function normalizeRustMessage(msg: RustMessage | Message): Message {
   return msg as Message;
 }
 
+export function isPositiveFiniteDuration(
+  durationMs: number | undefined,
+): durationMs is number {
+  return (
+    durationMs !== undefined && Number.isFinite(durationMs) && durationMs > 0
+  );
+}
+
 export function calculateTokensPerSecond(
   usage: TokenUsage,
   durationMs: number,
 ): number {
-  if (
-    !Number.isFinite(durationMs) ||
-    durationMs <= 0 ||
-    usage.completionTokens <= 0
-  ) {
+  if (!isPositiveFiniteDuration(durationMs) || usage.completionTokens <= 0) {
     return 0;
   }
   return (usage.completionTokens / durationMs) * 1000;
@@ -93,13 +97,10 @@ export function formatUsageMetrics(usage: TokenUsage): {
       : undefined;
 
   const evalDuration = usage.details?.evalDuration;
-  const speed =
-    evalDuration !== undefined &&
-    Number.isFinite(evalDuration) &&
-    evalDuration > 0 &&
-    usage.completionTokens > 0
-      ? `${((usage.completionTokens / evalDuration) * 1000).toFixed(1)} t/s`
-      : undefined;
+  const tps = isPositiveFiniteDuration(evalDuration)
+    ? calculateTokensPerSecond(usage, evalDuration)
+    : 0;
+  const speed = tps > 0 ? `${tps.toFixed(1)} t/s` : undefined;
 
   return {
     input: formatNumber(usage.promptTokens),

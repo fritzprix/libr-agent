@@ -89,10 +89,6 @@ export async function* processGeminiStream(
     return;
   }
 
-  // Measure TTFT (Gemini doesn't provide native prefill timing)
-  const startTime = performance.now();
-  let firstChunkReceived = false;
-
   // Track cumulative usage metadata across chunks
   const currentUsage: TokenUsage & {
     details: Record<string, unknown>;
@@ -108,13 +104,6 @@ export async function* processGeminiStream(
     if (signal?.aborted) {
       logger.info('Stream aborted during iteration');
       break;
-    }
-
-    // Inject TTFT metric on first chunk
-    if (!firstChunkReceived) {
-      const ttft = performance.now() - startTime;
-      firstChunkReceived = true;
-      currentUsage.details.timeToFirstToken = ttft;
     }
 
     // Extract usage metadata from chunk if available

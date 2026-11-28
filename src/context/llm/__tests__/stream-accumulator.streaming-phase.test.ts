@@ -8,12 +8,7 @@ function createAccumulator(): StreamAccumulator {
       advanced: {},
     } as Settings,
   };
-  return new StreamAccumulator(
-    'test-session',
-    'msg-1',
-    settingsRef,
-    performance.now(),
-  );
+  return new StreamAccumulator('test-session', 'msg-1', settingsRef);
 }
 
 describe('StreamAccumulator streamingPhase lifecycle', () => {

@@ -78,4 +78,49 @@ describe('TokenMetricsBadge', () => {
     expect(screen.getByText('/65,536')).toBeInTheDocument();
     expect(screen.queryByText('1,200')).not.toBeInTheDocument();
   });
+
+  it('hides decode speed when evalDuration is missing, zero, or non-finite', () => {
+    const cases: Array<number | undefined> = [
+      undefined,
+      0,
+      -50,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ];
+    for (const evalDuration of cases) {
+      const { unmount } = render(
+        <TokenMetricsBadge
+          usage={{
+            promptTokens: 500,
+            completionTokens: 96,
+            totalTokens: 596,
+            details: evalDuration !== undefined ? { evalDuration } : {},
+          }}
+        />,
+      );
+      expect(screen.queryByTitle('Tokens per second')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('prioritizes provider promptEvalDuration over timeToFirstToken in prefill tooltip', () => {
+    render(
+      <TokenMetricsBadge
+        usage={{
+          promptTokens: 1000,
+          completionTokens: 100,
+          totalTokens: 1100,
+          details: {
+            evalDuration: 2000,
+            promptEvalDuration: 250,
+            timeToFirstToken: 900,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByTitle('Tokens per second')).toHaveTextContent('50.0');
+    const promptEl = screen.getByText('1,000').closest('span');
+    expect(promptEl?.getAttribute('title')).toContain('Prefill: 250ms');
+  });
 });

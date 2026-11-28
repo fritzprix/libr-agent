@@ -168,28 +168,18 @@ describe('OpenAIService – TTFT gauge-flicker regression', () => {
     service = new OpenAIService('sk-test-key', { maxTokens: 100 });
   });
 
-  it('TTFT chunk carries only details — no token count fields (service layer)', async () => {
+  it('does not emit a synthetic frontend TTFT chunk (backend is timing SSOT)', async () => {
     const messages = [makeMessage('m1', 'Hello')];
     const chunks = await collectChunks(
       service.streamChat(messages, { modelName: 'gpt-4o' }),
     );
 
-    const firstUsage = usageChunks(chunks)[0];
-    expect(firstUsage).toBeDefined();
-
-    // The TTFT chunk must carry timeToFirstToken in details.
-    const details = (firstUsage.usage as Record<string, unknown>)
-      ?.details as Record<string, unknown> | undefined;
-    expect(details?.timeToFirstToken).toBeTypeOf('number');
-
-    // The service intentionally omits token count fields from the TTFT chunk
-    // so that useLLMExecution.ts can detect a "details-only" first chunk and
-    // normalise them to 0 via `?? 0` before passing to the badge component.
-    // If these fields are present with value 0 we regress back to the flicker bug.
-    const usage = firstUsage.usage as Record<string, unknown>;
-    expect('promptTokens' in usage).toBe(false);
-    expect('completionTokens' in usage).toBe(false);
-    expect('totalTokens' in usage).toBe(false);
+    const syntheticTtftChunks = usageChunks(chunks).filter((c) => {
+      const details = (c.usage as Record<string, unknown>)
+        ?.details as Record<string, unknown> | undefined;
+      return typeof details?.timeToFirstToken === 'number';
+    });
+    expect(syntheticTtftChunks).toHaveLength(0);
   });
 
   it('real usage chunk arrives with non-zero token counts', async () => {
@@ -256,7 +246,7 @@ describe('GroqService – TTFT gauge-flicker regression', () => {
     expect('totalTokens' in usage).toBe(false);
   });
 
-  it('TTFT chunk must carry timeToFirstToken in details', async () => {
+  it('does not emit a synthetic frontend TTFT chunk (backend is timing SSOT)', async () => {
     const messages = [makeMessage('m1', 'Hi')];
     const chunks = await collectChunks(
       service.streamChat(messages, { modelName: 'llama-3.1-8b-instant' }),
@@ -268,6 +258,6 @@ describe('GroqService – TTFT gauge-flicker regression', () => {
       return typeof details?.timeToFirstToken === 'number';
     });
 
-    expect(usageWithTTFT).toBeDefined();
+    expect(usageWithTTFT).toBeUndefined();
   });
 });
