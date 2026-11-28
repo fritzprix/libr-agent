@@ -1,6 +1,6 @@
 use super::config::ExecutorConfig;
 use super::convert::{self, GenerationOptions};
-use super::events::{fallback_notice_event, stream_delta_event, ResponseSink};
+use super::events::{fallback_notice_event, stream_delta_event, stream_reset_event, ResponseSink};
 use super::settings::{
     chat_is_empty, generation_settings, provider_for, read_fallback_model, runtime_error,
 };
@@ -8,7 +8,7 @@ use crate::agent::llm::types::{
     AgentRuntimeError, AgentRuntimeErrorType, CompactRequest, CompletionRequest,
 };
 use crate::agent::session_manager::CompactStreamMeta;
-use crate::mcp::types::MCPContent;
+use crate::mcp::types::{MCPContent, MCPTool};
 use crate::models::chat::Message;
 use llm_client::{CompletedChat, RetryPolicy, ThinkingEffort};
 
@@ -50,6 +50,35 @@ pub(super) fn assistant_message(request: &CompletionRequest, chat: CompletedChat
     }
 }
 
+/// The provider this retry policy applies to (#3089).
+fn is_gemini(provider: &str) -> bool {
+    provider == "gemini"
+}
+
+/// The lowercased finish reason `llm-client` reports for Gemini's
+/// `MALFORMED_FUNCTION_CALL` (see `finish_reason_of` in `llm-client`).
+fn is_malformed_function_call(finish_reason: Option<&str>) -> bool {
+    finish_reason == Some("malformed_function_call")
+}
+
+/// The error the session settles with when a Gemini turn still ends in a
+/// malformed function call after the one tool-less retry (#3089).
+fn malformed_function_call_error() -> Box<AgentRuntimeError> {
+    Box::new(
+        AgentRuntimeError::new(
+            AgentRuntimeErrorType::MalformedFunctionCall,
+            "Gemini returned a malformed function call even after retrying without tools."
+                .to_string(),
+        )
+        .with_code("MALFORMED_FUNCTION_CALL"),
+    )
+}
+
+/// One provider call for `request`: stream it live, and settle it.
+///
+/// `provider_id` is the provider actually answering, so the #3089 retry
+/// applies to the individual call — a Gemini fallback behind another
+/// provider gets its own retry, and a non-Gemini answer is never retried.
 #[allow(clippy::too_many_arguments)] // 7-arg shape from #2804 plus the #2796 streaming sink
 async fn complete_once(
     provider_id: &str,
@@ -60,29 +89,64 @@ async fn complete_once(
     options: GenerationOptions,
     retry: RetryPolicy,
     max_tokens: Option<u32>,
+    tools: &[MCPTool],
 ) -> Result<CompletedChat, Box<AgentRuntimeError>> {
     let provider = provider_for(provider_id, config).await?;
     let chat_request = convert::chat_request(
         model,
         request.system_prompt.as_deref(),
         &request.messages,
-        request.available_tools.as_deref().unwrap_or(&[]),
+        tools,
         max_tokens,
         options,
     );
     // Each delta goes out as it is read, so a listener shows the turn live.
-    let chat = llm_client::complete_with_deltas(provider.as_ref(), &chat_request, retry, |delta| {
-        sink.llm_stream_delta(stream_delta_event(request, delta));
-    })
-    .await
-    .map_err(runtime_error)?;
+    let emit = |delta| sink.llm_stream_delta(stream_delta_event(request, delta));
+    let mut chat = llm_client::complete_with_deltas(provider.as_ref(), &chat_request, retry, &emit)
+        .await
+        .map_err(runtime_error)?;
+
+    // The finish reason is checked before the empty-response guard: a
+    // malformed turn often carries no content at all (#3089).
+    let mut no_tools_request: Option<llm_client::ChatRequest> = None;
+    if is_gemini(provider_id) && is_malformed_function_call(chat.finish_reason.as_deref()) {
+        if tools.is_empty() {
+            // No tools offered: nothing can recover here.
+            return Err(malformed_function_call_error());
+        }
+        log::warn!(
+            "Rust LLM executor: {model} ended with MALFORMED_FUNCTION_CALL; retrying once without tools"
+        );
+        // The attempt streamed live deltas; withdraw its message before the
+        // retry so the discarded text does not linger in the chat (#3089).
+        sink.llm_stream_reset(stream_reset_event(request));
+        let request = convert::chat_request(
+            model,
+            request.system_prompt.as_deref(),
+            &request.messages,
+            &[],
+            max_tokens,
+            options,
+        );
+        chat =
+            llm_client::complete_with_deltas(provider.as_ref(), &request, RetryPolicy::NONE, &emit)
+                .await
+                .map_err(runtime_error)?;
+        if is_malformed_function_call(chat.finish_reason.as_deref()) {
+            // Never a second retry: the session settles with the error instead.
+            return Err(malformed_function_call_error());
+        }
+        no_tools_request = Some(request);
+    }
+
     if chat_is_empty(&chat) {
         // One more try: empty completions are often transient.
-        let chat = llm_client::complete_with_deltas(
+        let active_request = no_tools_request.as_ref().unwrap_or(&chat_request);
+        chat = llm_client::complete_with_deltas(
             provider.as_ref(),
-            &chat_request,
+            active_request,
             RetryPolicy::NONE,
-            |delta| sink.llm_stream_delta(stream_delta_event(request, delta)),
+            &emit,
         )
         .await
         .map_err(runtime_error)?;
@@ -96,7 +160,6 @@ async fn complete_once(
                 .with_code("RUST_EXECUTOR_EMPTY_RESPONSE"),
             ));
         }
-        return Ok(chat);
     }
     Ok(chat)
 }
@@ -108,6 +171,7 @@ pub(super) async fn run_completion(
 ) -> Result<Message, Box<AgentRuntimeError>> {
     let (options, retry, default_max_tokens) = generation_settings().await;
     let max_tokens = request.max_tokens.or(default_max_tokens);
+    let request_tools = request.available_tools.as_deref().unwrap_or(&[]);
     let primary = complete_once(
         &request.provider,
         &request.model,
@@ -117,6 +181,7 @@ pub(super) async fn run_completion(
         options,
         retry,
         max_tokens,
+        request_tools,
     )
     .await;
     let chat = match primary {
@@ -150,6 +215,7 @@ pub(super) async fn run_completion(
                 options,
                 RetryPolicy::NONE,
                 max_tokens,
+                request_tools,
             )
             .await
             .map_err(|fallback_error| {

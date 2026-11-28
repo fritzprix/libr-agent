@@ -19,16 +19,19 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use warp::Filter;
 
+use indexmap::IndexMap;
 use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::events::AgentEvent;
 use tauri_mcp_agent_lib::agent::llm::rust_executor::{
-    configure, dispatch_compaction, dispatch_completion, Endpoint, ExecutorConfig, ResponseSink,
+    cancel, configure, dispatch_compaction, dispatch_completion, Endpoint, ExecutorConfig,
+    ResponseSink,
 };
 use tauri_mcp_agent_lib::agent::llm::types::{
     AgentRuntimeError, CompactRequest, CompactionParentRequest, CompletionRequest,
 };
 use tauri_mcp_agent_lib::agent::session_manager::CompactStreamMeta;
-use tauri_mcp_agent_lib::mcp::types::MCPContent;
+use tauri_mcp_agent_lib::mcp::schema::{JSONSchema, JSONSchemaType};
+use tauri_mcp_agent_lib::mcp::types::{MCPContent, MCPTool};
 use tauri_mcp_agent_lib::models::chat::Message;
 use tauri_mcp_agent_lib::repositories::{SettingsRepository, SqliteSettingsRepository};
 use tauri_mcp_agent_lib::set_settings_repository;
@@ -210,6 +213,11 @@ struct RecordingSink {
 #[async_trait::async_trait]
 impl ResponseSink for RecordingSink {
     fn llm_stream_delta(&self, event: AgentEvent) {
+        self.stream_events.lock().unwrap().push(event);
+    }
+    fn llm_stream_reset(&self, event: AgentEvent) {
+        // Same ordered list as the deltas, so a test can check that a reset
+        // falls between the discarded attempt and the retry's answer.
         self.stream_events.lock().unwrap().push(event);
     }
     fn llm_fallback_notice(&self, event: AgentEvent) {
@@ -1228,4 +1236,507 @@ async fn a_resample_requested_from_inside_a_running_call_settles_the_turn() {
     );
     // The mock saw exactly the original call and the resample.
     assert_eq!(provider.requests.lock().unwrap().len(), 2);
+}
+
+// ---------------------------------------------------------------------------
+// #3089: Gemini MALFORMED_FUNCTION_CALL retry without tools
+// ---------------------------------------------------------------------------
+
+/// A Gemini mock whose first `fail_count` requests answer with `fail_status`,
+/// and whose request at index `hold_from` (if any) answers with an SSE body
+/// that never yields data: it can only end when the client drops the
+/// connection, which sets `disconnected`. A cancel test waits on
+/// `disconnected` — the mock seeing the held call's connection die is the
+/// proof the abort stopped the task, and no timer can race it.
+struct GeminiMock {
+    provider: MockProvider,
+    disconnected: Arc<AtomicBool>,
+}
+
+/// Held-open SSE body: never yields, so its `Drop` means the client closed
+/// the connection while the response was still open.
+struct HeldSseBody {
+    disconnected: Arc<AtomicBool>,
+}
+
+impl Drop for HeldSseBody {
+    fn drop(&mut self) {
+        self.disconnected.store(true, Ordering::SeqCst);
+    }
+}
+
+impl futures::stream::Stream for HeldSseBody {
+    type Item = Result<Vec<u8>, std::io::Error>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Pending
+    }
+}
+
+/// A loopback server on the Gemini `:streamGenerateContent` path that answers
+/// from a script and keeps every request body. Unlike the OpenAI mock, the
+/// stream has no `[DONE]` sentinel: a Gemini stream simply ends.
+async fn mock_gemini(replies: Vec<Vec<Value>>) -> MockProvider {
+    mock_gemini_with(replies, 0, 500, None).await.provider
+}
+
+async fn mock_gemini_with(
+    replies: Vec<Vec<Value>>,
+    fail_count: usize,
+    fail_status: u16,
+    hold_from: Option<usize>,
+) -> GeminiMock {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let disconnected = Arc::new(AtomicBool::new(false));
+    let disconnected_in_route = disconnected.clone();
+    let route = warp::post()
+        .and(warp::path::tail())
+        .and(warp::body::json())
+        .and_then(move |_: warp::path::Tail, body: Value| {
+            seen.lock().unwrap().push(body);
+            let index = counter.fetch_add(1, Ordering::SeqCst);
+            // Failed attempts do not consume a scripted reply.
+            let reply_index = index.saturating_sub(fail_count);
+            let body = gemini_sse(&replies[reply_index.min(replies.len() - 1)]);
+            let disconnected = disconnected_in_route.clone();
+            async move {
+                if index < fail_count {
+                    return Ok(warp::http::Response::builder()
+                        .status(fail_status)
+                        .header("content-type", "text/plain")
+                        .body(warp::hyper::Body::from("provider exploded".to_string()))
+                        .unwrap());
+                }
+                if hold_from == Some(index) {
+                    return Ok(warp::http::Response::builder()
+                        .header("content-type", "text/event-stream")
+                        .body(warp::hyper::Body::wrap_stream(HeldSseBody { disconnected }))
+                        .unwrap());
+                }
+                Ok::<_, warp::Rejection>(body.map(warp::hyper::Body::from))
+            }
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    GeminiMock {
+        provider: MockProvider {
+            endpoint: Endpoint {
+                base_url: format!("http://{addr}/v1beta"),
+                api_key: Some("gemini-test-key".to_string()),
+            },
+            requests,
+        },
+        disconnected,
+    }
+}
+
+/// The SSE body of one Gemini stream: one `data:` line per chunk, no sentinel.
+fn gemini_sse(chunks: &[Value]) -> warp::http::Response<String> {
+    let body: String = chunks
+        .iter()
+        .map(|chunk| format!("data: {chunk}\n\n"))
+        .collect();
+    warp::http::Response::builder()
+        .header("content-type", "text/event-stream")
+        .body(body)
+        .unwrap()
+}
+
+/// A Gemini stream that ends in `MALFORMED_FUNCTION_CALL` with `text` as the
+/// only content — the shape the retry must throw away.
+fn gemini_malformed_reply(text: &str) -> Vec<Value> {
+    vec![
+        json!({"candidates":[{"content":{"parts":[{"text":text}]},"finishReason":"MALFORMED_FUNCTION_CALL"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":2}}),
+    ]
+}
+
+/// A normal Gemini text stream.
+fn gemini_text_reply(text: &str) -> Vec<Value> {
+    vec![
+        json!({"candidates":[{"content":{"parts":[{"text":text}]}}]}),
+        json!({"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3}}),
+    ]
+}
+
+/// One declared tool, so the executor has something to drop for the retry.
+fn one_tool() -> MCPTool {
+    MCPTool {
+        name: "mock__tool".to_string(),
+        title: None,
+        description: "A mock tool.".to_string(),
+        input_schema: JSONSchema {
+            schema_type: JSONSchemaType::Object {
+                properties: Some(IndexMap::new()),
+                required: None,
+                additional_properties: None,
+                property_names: None,
+                min_properties: None,
+                max_properties: None,
+            },
+            title: None,
+            description: None,
+            default: None,
+            examples: None,
+            enum_values: None,
+            const_value: None,
+            one_of: None,
+        },
+        output_schema: None,
+        annotations: None,
+        libragent_wait: None,
+    }
+}
+
+/// A completion request that offers the model a tool.
+fn request_with_tools(
+    session_id: &str,
+    response_id: &str,
+    provider: &str,
+    messages: Vec<Message>,
+) -> CompletionRequest {
+    CompletionRequest {
+        available_tools: Some(vec![one_tool()]),
+        ..request(session_id, response_id, provider, messages)
+    }
+}
+
+/// #3089: a Gemini turn ending in `MALFORMED_FUNCTION_CALL` is retried one
+/// time with no tools, and the retry's answer is what reaches the chat.
+/// The attempt streams live like any other turn; an `LlmStreamReset`
+/// withdraws its text before the retry's answer arrives.
+#[tokio::test]
+async fn gemini_malformed_function_call_retries_once_without_tools() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_gemini(vec![
+        gemini_malformed_reply("First-attempt text."),
+        gemini_text_reply("Recovered."),
+    ])
+    .await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-gm-retry", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-gm-retry", "resp-1", "gemini", vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the retried answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
+    // The first try carried the tool; the retry carried none.
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests[0]["tools"].as_array().map(Vec::len), Some(1));
+    assert!(
+        requests[1].get("tools").is_none(),
+        "the retry must send no tools: {:#}",
+        requests[1]
+    );
+    // Only the retry's answer reaches the chat; the malformed text does not.
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "Recovered.");
+    assert!(sink.llm_errors.lock().unwrap().is_empty());
+    // The attempt streamed live (turns stream even when a retry is possible),
+    // the reset withdrew it, and only then did the retry's answer stream.
+    let events = sink.stream_events.lock().unwrap();
+    let content_position = |needle: &str| {
+        events.iter().position(|event| {
+            matches!(event, AgentEvent::LlmStreamDelta { delta, .. }
+                if delta
+                    .content
+                    .as_deref()
+                    .is_some_and(|content| content.contains(needle)))
+        })
+    };
+    let discarded = content_position("First-attempt text.")
+        .expect("the attempt streams live, like any other turn");
+    let reset = events
+        .iter()
+        .position(|event| matches!(event, AgentEvent::LlmStreamReset { .. }))
+        .expect("the discarded attempt is withdrawn before the retry");
+    let recovered = content_position("Recovered.").expect("the retry streams live");
+    assert!(
+        discarded < reset && reset < recovered,
+        "the reset must fall between the discarded text and the retry: {events:?}"
+    );
+}
+
+/// #3089: a successful Gemini turn that offers tools streams live deltas —
+/// the malformed-retry path must not hold deltas back for normal turns.
+#[tokio::test]
+async fn gemini_turn_with_tools_streams_live_deltas() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_gemini(vec![gemini_text_reply("Answered.")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-gm-stream", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-gm-stream", "resp-1", "gemini", vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the delivered answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "Answered.");
+    let events = sink.stream_events.lock().unwrap();
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AgentEvent::LlmStreamDelta { delta, .. }
+                if delta
+                    .content
+                    .as_deref()
+                    .is_some_and(|content| content.contains("Answered."))
+        )),
+        "a successful Gemini turn must stream its answer live: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::LlmStreamReset { .. })),
+        "a successful turn has nothing to withdraw: {events:?}"
+    );
+}
+
+/// A Gemini stream that ends in `MALFORMED_FUNCTION_CALL` with no content at
+/// all — the shape the empty-response check used to swallow before the
+/// finish reason could trigger the retry (#3089).
+fn gemini_malformed_reply_without_content() -> Vec<Value> {
+    vec![
+        json!({"candidates":[{"content":{"parts":[]},"finishReason":"MALFORMED_FUNCTION_CALL"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":0}}),
+    ]
+}
+
+/// #3089: a content-free `MALFORMED_FUNCTION_CALL` is retried without tools
+/// too — the finish reason decides the retry before the empty-response check.
+#[tokio::test]
+async fn gemini_malformed_function_call_without_content_retries_once() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_gemini(vec![
+        gemini_malformed_reply_without_content(),
+        gemini_text_reply("Recovered."),
+    ])
+    .await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-gm-empty", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-gm-empty", "resp-1", "gemini", vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the retried answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 2);
+    let requests = provider.requests.lock().unwrap();
+    assert!(
+        requests[1].get("tools").is_none(),
+        "the retry must send no tools: {:#}",
+        requests[1]
+    );
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "Recovered.");
+    assert!(sink.llm_errors.lock().unwrap().is_empty());
+}
+
+/// #3089: the retry belongs to the individual provider call — a Gemini
+/// fallback model behind another provider gets its own tool-less retry, and
+/// the fallback notice is emitted exactly once.
+#[tokio::test]
+async fn gemini_fallback_model_behind_another_provider_retries_its_malformed_call() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[
+        ("advancedSettings", json!({ "maxRetries": 0 })),
+        (
+            "fallbackModel",
+            json!({ "provider": "gemini", "model": "gemini-2.5-flash" }),
+        ),
+    ])
+    .await;
+    // 1: the primary (non-Gemini) call fails; 2: the Gemini fallback answers
+    // malformed; 3: the fallback's own tool-less retry succeeds.
+    let provider = mock_gemini_with(
+        vec![
+            gemini_malformed_reply("Bad tool."),
+            gemini_text_reply("Recovered."),
+        ],
+        1,
+        500,
+        None,
+    )
+    .await
+    .provider;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-gm-fb", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-gm-fb", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the retried fallback answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 3);
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests[1]["tools"].as_array().map(Vec::len), Some(1));
+    assert!(
+        requests[2].get("tools").is_none(),
+        "the Gemini fallback's retry must send no tools: {:#}",
+        requests[2]
+    );
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "Recovered.");
+    assert_eq!(
+        sink.fallback_notices.lock().unwrap().len(),
+        1,
+        "the retry must not repeat the fallback notice"
+    );
+    assert!(sink.llm_errors.lock().unwrap().is_empty());
+}
+
+/// #3089: a second malformed result is not retried again — the session
+/// settles with a `MALFORMED_FUNCTION_CALL` error.
+#[tokio::test]
+async fn gemini_malformed_function_call_is_not_retried_twice() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_gemini(vec![gemini_malformed_reply("Still broken.")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-gm-twice", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-gm-twice", "resp-1", "gemini", vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the settled error", || {
+        !sink.llm_errors.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(
+        provider.requests.lock().unwrap().len(),
+        2,
+        "exactly one retry, never a second"
+    );
+    assert!(sink.responses.lock().unwrap().is_empty());
+    let errors = sink.llm_errors.lock().unwrap();
+    assert_eq!(
+        serde_json::to_value(&errors[0].error_type).expect("error type is serializable"),
+        "MALFORMED_FUNCTION_CALL"
+    );
+}
+
+/// #3089: the retry is Gemini-only — another provider ending with the same
+/// finish reason is delivered as-is, without a second call.
+#[tokio::test]
+async fn malformed_function_call_retry_is_gemini_only() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let provider = mock_provider(vec![vec![
+        json!({"choices":[{"delta":{"content":"OpenAI-shaped."},"finish_reason":"malformed_function_call"}]}),
+    ]])
+    .await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-non-gemini", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-non-gemini", "resp-1", PROVIDER, vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the delivered answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        text_of(&sink.responses.lock().unwrap()[0]),
+        "OpenAI-shaped."
+    );
+    assert!(sink.llm_errors.lock().unwrap().is_empty());
+}
+
+/// #3089: a cancel during the tool-less retry stops the call — nothing is
+/// delivered after the abort. The retry's response is held open forever, so
+/// the mock seeing its connection drop is proof the call task itself died:
+/// a `cancel` that failed to abort the task leaves the body (and any chance
+/// of delivery) alive until this wait times out — the test cannot pass
+/// vacuously.
+#[tokio::test]
+async fn cancel_during_the_malformed_function_call_retry_delivers_nothing() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let mock = mock_gemini_with(
+        vec![
+            gemini_malformed_reply("First-attempt text."),
+            gemini_text_reply("Never delivered."),
+        ],
+        0,
+        500,
+        Some(1),
+    )
+    .await;
+    let provider = &mock.provider;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+    let user = message("s-gm-cancel", "u1", "user", "hi", 1_000);
+
+    assert!(dispatch_completion(
+        app(),
+        &request_with_tools("s-gm-cancel", "resp-1", "gemini", vec![user]),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    // The tool-less retry is in flight, its response held open by the mock.
+    wait_for("the tool-less retry to start", || {
+        provider.requests.lock().unwrap().len() >= 2
+    })
+    .await;
+    cancel("s-gm-cancel");
+    // The abort's observable proof: the mock's held body drops only when the
+    // client's connection closes, which means the call task died with it.
+    wait_for("the cancelled call's connection to drop", || {
+        mock.disconnected.load(Ordering::SeqCst)
+    })
+    .await;
+
+    assert!(sink.responses.lock().unwrap().is_empty());
+    assert!(sink.llm_errors.lock().unwrap().is_empty());
 }

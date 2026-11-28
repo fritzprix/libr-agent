@@ -20,6 +20,18 @@ pub(super) fn stream_delta_event(request: &CompletionRequest, delta: StreamDelta
     }
 }
 
+/// The event that withdraws the live message of `request` (#3089).
+///
+/// Emitted when the executor throws away an attempt it already streamed
+/// (the Gemini malformed-function-call retry) and will answer again under
+/// the same response message id.
+pub(super) fn stream_reset_event(request: &CompletionRequest) -> AgentEvent {
+    AgentEvent::LlmStreamReset {
+        session_id: request.session_id.clone(),
+        response_message_id: request.response_message_id.clone(),
+    }
+}
+
 /// The notice that the primary model failed and the fallback is being tried (#2961).
 ///
 /// `status_code` is the HTTP status `runtime_error` stashed in the primary
@@ -58,6 +70,14 @@ pub trait ResponseSink: Send + Sync {
     /// default drops it, for a target that has no live view.
     fn llm_stream_delta(&self, _event: AgentEvent) {}
 
+    /// The streamed attempt was thrown away and will be answered again
+    /// under the same response message id (#3089).
+    ///
+    /// Sync and best effort like [`Self::llm_stream_delta`]: a missed reset
+    /// only leaves the discarded text on screen until the final message
+    /// replaces it.
+    fn llm_stream_reset(&self, _event: AgentEvent) {}
+
     /// The primary model failed and the fallback model is being tried (#2961).
     ///
     /// Sync and best effort like [`Self::llm_stream_delta`]: a lost notice only
@@ -86,6 +106,13 @@ impl ResponseSink for AgentSessionManager {
         let dispatcher = TauriEventDispatcher::from_handle(self.app_handle());
         if let Err(error) = dispatcher.emit_agent_event(event) {
             log::debug!("Rust LLM executor: could not emit a stream delta: {error}");
+        }
+    }
+
+    fn llm_stream_reset(&self, event: AgentEvent) {
+        let dispatcher = TauriEventDispatcher::from_handle(self.app_handle());
+        if let Err(error) = dispatcher.emit_agent_event(event) {
+            log::debug!("Rust LLM executor: could not emit a stream reset: {error}");
         }
     }
 

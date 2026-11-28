@@ -255,6 +255,18 @@ pub enum AgentEvent {
         fallback_model: String,
         error_message: String,
     },
+
+    /// The Rust LLM executor threw away the attempt it was streaming and
+    /// will answer again under the same `responseMessageId` (#3089).
+    ///
+    /// The Gemini malformed-function-call retry streams a first attempt whose
+    /// text must not linger in the chat: listeners drop the live message of
+    /// that id; a later delta starts a fresh live message.
+    #[serde(rename_all = "camelCase")]
+    LlmStreamReset {
+        session_id: String,
+        response_message_id: String,
+    },
 }
 
 pub trait AgentEventDispatcher: Send + Sync {
@@ -460,6 +472,10 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
                 .map(|status| status.to_string())
                 .unwrap_or_else(|| "-".to_string())
         ),
+        AgentEvent::LlmStreamReset {
+            session_id,
+            response_message_id,
+        } => format!("LlmStreamReset(session={session_id}, response={response_message_id})"),
     }
 }
 
