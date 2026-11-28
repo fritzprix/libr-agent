@@ -9,6 +9,8 @@ mod user_install;
 mod tests_hook_preview;
 #[cfg(test)]
 mod tests_plugin_install;
+#[cfg(test)]
+mod tests_source_flow;
 
 pub use super::scanning::skill_storage_directory_name;
 #[cfg(test)]

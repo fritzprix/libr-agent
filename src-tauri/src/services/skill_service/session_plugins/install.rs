@@ -29,12 +29,23 @@ fn session_same_source_skill_names(plugins_dir: &Path, source_key: &str) -> Vec<
         .unwrap_or_default()
 }
 
+/// The session workspace a relative local install path resolves against
+/// (#2928 gatekeeper G1.5). Best effort: `None` keeps the absolute-path
+/// fallback in the importer.
+async fn session_workspace_dir(session_id: &str) -> Option<std::path::PathBuf> {
+    let session_manager = crate::session::get_session_manager().ok()?;
+    crate::session::resolve_session_workspace_dir(session_manager, session_id)
+        .await
+        .ok()
+}
+
 pub async fn preview_session_plugin_install(
     session_id: String,
     source: String,
 ) -> Result<SkillImportPreview, String> {
     let dirs = session_dirs(&session_id)?;
-    let mut prepared = prepare_plugin_source_import(source).await?;
+    let workspace = session_workspace_dir(&session_id).await;
+    let mut prepared = prepare_plugin_source_import(source, workspace.as_deref()).await?;
     let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
     build_import_preview(
         &mut prepared,
@@ -62,7 +73,8 @@ pub async fn install_session_plugin(
 ) -> Result<SkillImportResult, String> {
     let plugin_options = plugin_options.unwrap_or_default();
     let dirs = session_dirs(&session_id)?;
-    let mut prepared = prepare_plugin_source_import(source).await?;
+    let workspace = session_workspace_dir(&session_id).await;
+    let mut prepared = prepare_plugin_source_import(source, workspace.as_deref()).await?;
     let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
     let preview = build_import_preview(
         &mut prepared,

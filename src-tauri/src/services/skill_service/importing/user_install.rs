@@ -49,7 +49,7 @@ pub async fn import_user_skills(
 }
 
 pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImportPreview, String> {
-    let mut prepared = prepare_plugin_source_import(repo_url).await?;
+    let mut prepared = prepare_plugin_source_import(repo_url, None).await?;
     build_user_import_preview(&mut prepared).await
 }
 
@@ -60,7 +60,7 @@ pub async fn install_github_skills(
     approve_hooks: Option<bool>,
     plugin_options: Option<BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
-    let mut prepared = prepare_plugin_source_import(repo_url).await?;
+    let mut prepared = prepare_plugin_source_import(repo_url, None).await?;
     let preview = build_user_import_preview(&mut prepared).await?;
     install_user_prepared_skills(
         prepared,
