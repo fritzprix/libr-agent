@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdvancedSettings, ContextStrategy } from '@/context/SettingsContext';
 import { Button, Input, Slider } from '@/components/ui';
+import {
+  KEYBOARD_TOKEN_FAST_STEP,
+  KEYBOARD_TOKEN_STEP,
+  SLIDER_MAX_POSITION,
+  TOKEN_UNIT,
+  clampAndRoundTokenValue,
+  formatTokenValue,
+  sliderPositionToValue,
+  valueToSliderPosition,
+} from './tokenSlider';
 
 const OUTPUT_TOKEN_PRESETS = [
   1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
@@ -16,23 +26,141 @@ const MAX_INPUT_CONTEXT_PRESETS = [
   4194304,
 ] as const;
 
-function findNearestPresetIndex(
-  presets: readonly number[],
-  value: number,
-): number {
-  return presets.reduce((bestIndex, preset, index) => {
-    const bestDistance = Math.abs(presets[bestIndex] - value);
-    const nextDistance = Math.abs(preset - value);
-    return nextDistance < bestDistance ? index : bestIndex;
-  }, 0);
+interface TokenSliderFieldProps {
+  id: string;
+  label: string;
+  description: string;
+  value: number;
+  presets: readonly number[];
+  onChange: (value: number) => void;
 }
 
-function formatTokenPreset(value: number): string {
-  if (value >= 1048576) {
-    // 1M, 2M, 4M; one decimal for a stored value in between, such as 1.5M.
-    return `${Math.round((value / 1048576) * 10) / 10}M`;
-  }
-  return value >= 1024 ? `${Math.round(value / 1024)}K` : `${value}`;
+function TokenSliderField({
+  id,
+  label,
+  description,
+  value,
+  presets,
+  onChange,
+}: TokenSliderFieldProps) {
+  const min = presets[0];
+  const max = presets[presets.length - 1];
+  const [draftValue, setDraftValue] = useState(() => String(value));
+
+  useEffect(() => {
+    setDraftValue(String(value));
+  }, [value]);
+
+  const sliderPosition = valueToSliderPosition(value, min, max);
+
+  // Arrow keys always move the token value itself by at least 1K. Radix's
+  // default key handling moves the logarithmic track position, which rounds
+  // back to the same value near the low end and sticks the thumb.
+  const handleSliderKeyDown = (event: React.KeyboardEvent<HTMLSpanElement>) => {
+    const isFast =
+      event.shiftKey || event.key === 'PageUp' || event.key === 'PageDown';
+    const step = isFast ? KEYBOARD_TOKEN_FAST_STEP : KEYBOARD_TOKEN_STEP;
+    let delta = 0;
+    if (
+      event.key === 'ArrowRight' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'PageUp'
+    ) {
+      delta = step;
+    } else if (
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowDown' ||
+      event.key === 'PageDown'
+    ) {
+      delta = -step;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    const nextValue = clampAndRoundTokenValue(value + delta, min, max);
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
+  const commitDraft = () => {
+    const parsed = Number(draftValue.trim());
+    if (draftValue.trim() === '' || !Number.isFinite(parsed)) {
+      setDraftValue(String(value));
+      return;
+    }
+    const nextValue = clampAndRoundTokenValue(parsed, min, max);
+    setDraftValue(String(nextValue));
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="min-w-0 rounded-xl border border-border/70 p-4"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <label htmlFor={id} className="block text-muted-foreground font-medium">
+          {label}
+        </label>
+        <span className="rounded-md bg-primary/10 px-2 py-1 text-sm font-mono text-primary">
+          {formatTokenValue(value)}
+        </span>
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Slider
+          min={0}
+          max={SLIDER_MAX_POSITION}
+          step={1}
+          value={[sliderPosition]}
+          thumbLabel={`${label} slider`}
+          onKeyDown={handleSliderKeyDown}
+          onValueChange={([position]) => {
+            const nextValue = sliderPositionToValue(position, min, max);
+            if (nextValue !== value) {
+              onChange(nextValue);
+            }
+          }}
+          className="w-full max-w-xl flex-1"
+        />
+        <Input
+          id={id}
+          type="number"
+          min={min}
+          max={max}
+          step={TOKEN_UNIT}
+          value={draftValue}
+          onChange={(e) => setDraftValue(e.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              commitDraft();
+            } else if (e.key === 'Escape') {
+              setDraftValue(String(value));
+            }
+          }}
+          className="w-32 border bg-background font-mono text-sm text-foreground"
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {presets.map((preset) => (
+          <Button
+            key={preset}
+            type="button"
+            variant={preset === value ? 'default' : 'outline'}
+            className="h-8 px-2 text-xs"
+            onClick={() => onChange(preset)}
+          >
+            {formatTokenValue(preset)}
+          </Button>
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">{description}</p>
+    </div>
+  );
 }
 
 interface ChatInterfaceTabProps {
@@ -66,14 +194,6 @@ function ChatInterfaceTabComponent({
   const { t } = useTranslation('common');
   const defaultMaxOutputTokens =
     localAdvancedSettings.defaultMaxOutputTokens ?? 8192;
-  const selectedOutputTokenIndex = findNearestPresetIndex(
-    OUTPUT_TOKEN_PRESETS,
-    defaultMaxOutputTokens,
-  );
-  const selectedMaxInputContextIndex = findNearestPresetIndex(
-    MAX_INPUT_CONTEXT_PRESETS,
-    localMaxInputContext,
-  );
 
   const updateToolCallCount = (delta: number) => {
     onToolCallGroupVisibleCountChange(
@@ -143,128 +263,63 @@ function ChatInterfaceTabComponent({
         </div>
       </div>
 
-      <div className="min-w-0 rounded-xl border border-border/70 p-4">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <label className="block text-muted-foreground font-medium">
-            {t(
-              'settings.advanced.maxOutputTokens',
-              'Max Output Tokens (Default)',
-            )}
-          </label>
-          <span className="rounded-md bg-primary/10 px-2 py-1 text-sm font-mono text-primary">
-            {formatTokenPreset(defaultMaxOutputTokens)}
-          </span>
-        </div>
-        <Slider
-          min={0}
-          max={OUTPUT_TOKEN_PRESETS.length - 1}
-          step={1}
-          value={[selectedOutputTokenIndex]}
-          onValueChange={([index]) =>
-            onAdvancedSettingsChange(
-              'defaultMaxOutputTokens',
-              OUTPUT_TOKEN_PRESETS[index] ?? 8192,
-            )
-          }
-          className="w-full max-w-xl"
-        />
-        <div className="mt-3 flex flex-wrap gap-2">
-          {OUTPUT_TOKEN_PRESETS.map((preset) => (
-            <Button
-              key={preset}
-              type="button"
-              variant={
-                preset === defaultMaxOutputTokens ? 'default' : 'outline'
-              }
-              className="h-8 px-2 text-xs"
-              onClick={() =>
-                onAdvancedSettingsChange('defaultMaxOutputTokens', preset)
-              }
-            >
-              {formatTokenPreset(preset)}
-            </Button>
-          ))}
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {t(
-            'settings.advanced.maxOutputTokensDescription',
-            'Default maximum output tokens when the assistant does not set its own. Read on every request.',
+      <TokenSliderField
+        id="settings-max-output-tokens"
+        label={t(
+          'settings.advanced.maxOutputTokens',
+          'Max Output Tokens (Default)',
+        )}
+        description={t(
+          'settings.advanced.maxOutputTokensDescription',
+          'Default maximum output tokens when the assistant does not set its own. Read on every request.',
+        )}
+        value={defaultMaxOutputTokens}
+        presets={OUTPUT_TOKEN_PRESETS}
+        onChange={(nextValue) =>
+          onAdvancedSettingsChange('defaultMaxOutputTokens', nextValue)
+        }
+      />
+
+      {localContextStrategy === 'compact' && (
+        <TokenSliderField
+          id="settings-max-input-context"
+          label={t('settings.maxInputContext', 'Max Input Context')}
+          description={t(
+            'settings.maxInputContextDescription',
+            'Maximum token limit before summarizing older messages. Higher values keep more detail but increase cost.',
           )}
-        </p>
-      </div>
+          value={localMaxInputContext}
+          presets={MAX_INPUT_CONTEXT_PRESETS}
+          onChange={onMaxInputContextChange}
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="min-w-0">
-          <label className="mb-2 block font-medium text-muted-foreground">
-            {localContextStrategy === 'window'
-              ? t('settings.messageWindowSize', 'Message Window Size')
-              : t('settings.maxInputContext', 'Max Input Context')}
-          </label>
-          {localContextStrategy === 'window' ? (
-            <>
-              <Input
-                type="number"
-                placeholder={t(
-                  'settings.messageWindowSizePlaceholder',
-                  'e.g., 50',
-                )}
-                value={localWindowSize}
-                onChange={(e) =>
-                  onWindowSizeChange(parseInt(e.target.value, 10) || 0)
-                }
-                className="w-full max-w-xs border bg-background text-foreground"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t(
-                  'settings.messageWindowSizeDescription',
-                  'Number of messages to keep in conversation history',
-                )}
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="flex max-w-xs items-center gap-4">
-                <Slider
-                  min={0}
-                  max={MAX_INPUT_CONTEXT_PRESETS.length - 1}
-                  step={1}
-                  value={[selectedMaxInputContextIndex]}
-                  onValueChange={([index]) =>
-                    onMaxInputContextChange(
-                      MAX_INPUT_CONTEXT_PRESETS[index] ??
-                        MAX_INPUT_CONTEXT_PRESETS[0],
-                    )
-                  }
-                  className="flex-1"
-                />
-                <span className="min-w-[3.5rem] text-right font-mono text-sm text-primary">
-                  {formatTokenPreset(localMaxInputContext)}
-                </span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {MAX_INPUT_CONTEXT_PRESETS.map((preset) => (
-                  <Button
-                    key={preset}
-                    type="button"
-                    variant={
-                      preset === localMaxInputContext ? 'default' : 'outline'
-                    }
-                    className="h-8 px-2 text-xs"
-                    onClick={() => onMaxInputContextChange(preset)}
-                  >
-                    {formatTokenPreset(preset)}
-                  </Button>
-                ))}
-              </div>
-              <p className="mt-4 text-xs text-muted-foreground">
-                {t(
-                  'settings.maxInputContextDescription',
-                  'Maximum token limit before summarizing older messages. Higher values keep more detail but increase cost.',
-                )}
-              </p>
-            </>
-          )}
-        </div>
+        {localContextStrategy === 'window' && (
+          <div className="min-w-0">
+            <label className="mb-2 block font-medium text-muted-foreground">
+              {t('settings.messageWindowSize', 'Message Window Size')}
+            </label>
+            <Input
+              type="number"
+              placeholder={t(
+                'settings.messageWindowSizePlaceholder',
+                'e.g., 50',
+              )}
+              value={localWindowSize}
+              onChange={(e) =>
+                onWindowSizeChange(parseInt(e.target.value, 10) || 0)
+              }
+              className="w-full max-w-xs border bg-background text-foreground"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t(
+                'settings.messageWindowSizeDescription',
+                'Number of messages to keep in conversation history',
+              )}
+            </p>
+          </div>
+        )}
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
