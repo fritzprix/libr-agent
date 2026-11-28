@@ -353,7 +353,7 @@
     "saved": "Configurações salvas com sucesso",
     "saving": "Salvando...",
     "saveFailed": "Falha ao salvar configurações",
-    "restartRequiredNotice": "Algumas das configurações salvas são aplicadas após reiniciar o aplicativo.",
+    "savedRestartRequired": "Configurações salvas. Algumas configurações são aplicadas após reiniciar o aplicativo.",
     "applyChanges": "Aplicar Alterações",
     "language": {
       "label": "Idioma",

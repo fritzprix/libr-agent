@@ -353,7 +353,7 @@
     "saved": "設定を保存しました",
     "saving": "保存中...",
     "saveFailed": "設定の保存に失敗しました",
-    "restartRequiredNotice": "保存した設定の一部は、アプリの再起動後に適用されます。",
+    "savedRestartRequired": "設定を保存しました。一部の設定はアプリの再起動後に適用されます。",
     "applyChanges": "変更を適用",
     "language": {
       "label": "言語",

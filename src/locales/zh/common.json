@@ -353,7 +353,7 @@
     "saved": "设置保存成功",
     "saving": "正在保存...",
     "saveFailed": "保存设置失败",
-    "restartRequiredNotice": "部分已保存的设置需要重启应用后才会生效。",
+    "savedRestartRequired": "设置已保存。部分设置需要重启应用后才会生效。",
     "applyChanges": "应用更改",
     "language": {
       "label": "语言",

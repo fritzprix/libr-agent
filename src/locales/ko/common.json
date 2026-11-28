@@ -353,7 +353,7 @@
     "saved": "설정이 저장되었습니다",
     "saving": "저장 중...",
     "saveFailed": "설정 저장에 실패했습니다",
-    "restartRequiredNotice": "저장한 설정 중 일부는 앱을 다시 시작한 뒤 적용됩니다.",
+    "savedRestartRequired": "설정이 저장되었습니다. 일부 설정은 앱을 다시 시작한 뒤 적용됩니다.",
     "applyChanges": "변경사항 적용",
     "language": {
       "label": "언어",

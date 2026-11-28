@@ -353,7 +353,7 @@
     "saved": "Paramètres enregistrés avec succès",
     "saving": "Enregistrement...",
     "saveFailed": "Échec de l'enregistrement des paramètres",
-    "restartRequiredNotice": "Certains des paramètres enregistrés sont appliqués après le redémarrage de l'application.",
+    "savedRestartRequired": "Paramètres enregistrés. Certains paramètres sont appliqués après le redémarrage de l'application.",
     "applyChanges": "Appliquer les modifications",
     "language": {
       "label": "Langue",

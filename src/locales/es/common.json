@@ -353,7 +353,7 @@
     "saved": "Configuración guardada correctamente",
     "saving": "Guardando...",
     "saveFailed": "Error al guardar la configuración",
-    "restartRequiredNotice": "Algunos de los ajustes guardados se aplican después de reiniciar la aplicación.",
+    "savedRestartRequired": "Configuración guardada. Algunos ajustes se aplican después de reiniciar la aplicación.",
     "applyChanges": "Aplicar cambios",
     "language": {
       "label": "Idioma",

@@ -353,7 +353,7 @@
     "saved": "Settings saved successfully",
     "saving": "Saving...",
     "saveFailed": "Failed to save settings",
-    "restartRequiredNotice": "Some of the saved settings are applied after restarting the app.",
+    "savedRestartRequired": "Settings saved. Some settings are applied after restarting the app.",
     "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",

@@ -227,10 +227,10 @@ export function useSettingsPageController() {
       await invalidateModelCaches();
 
       if (restartRequiredSettingsChanged) {
-        toast.info(
+        toast.success(
           t(
-            'settings.restartRequiredNotice',
-            'Some of the saved settings are applied after restarting the app.',
+            'settings.savedRestartRequired',
+            'Settings saved. Some settings are applied after restarting the app.',
           ),
           {
             action: {
@@ -239,8 +239,9 @@ export function useSettingsPageController() {
             },
           },
         );
+      } else {
+        toast.success(t('settings.saved', 'Settings saved successfully'));
       }
-      toast.success(t('settings.saved', 'Settings saved successfully'));
       return true;
     } catch (error) {
       logger.error('Failed to save settings', error);
