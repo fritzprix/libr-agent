@@ -290,26 +290,62 @@ pub(super) async fn run_completion(
 pub(super) async fn run_compaction(
     request: &CompactRequest,
     model: &str,
-    provider: &str,
+    provider_id: &str,
     system_prompt: Option<&str>,
     config: &ExecutorConfig,
 ) -> Result<(String, CompactStreamMeta), Box<AgentRuntimeError>> {
-    let provider = provider_for(provider, config).await?;
     let (mut options, retry, default_max_tokens) = generation_settings().await;
     // Compaction summaries must not spend a thinking budget (#2760).
     options.thinking_effort = ThinkingEffort::Off;
+
+    let mut active_messages = request.messages.clone();
+    if should_strip_for_route(provider_id, model)
+        && messages_have_multimodal_parts(&active_messages)
+    {
+        let (prepared, used_plugin) =
+            prepare_messages_for_media_assist_retry(&active_messages, &request.session_id).await;
+        active_messages = prepared;
+        log::info!(
+            "Rust LLM executor: media-assist pre-strip for remembered route {provider_id}:{model} during compaction (used_plugin={used_plugin})"
+        );
+    }
+
+    let provider = provider_for(provider_id, config).await?;
     // No tools: the summary must be plain text.
-    let chat_request = convert::chat_request(
-        model,
-        system_prompt,
-        &request.messages,
-        &[],
-        default_max_tokens,
-        options,
-    );
-    let chat = llm_client::complete(provider.as_ref(), &chat_request, retry)
-        .await
-        .map_err(runtime_error)?;
+    let build_chat_request = |messages: &[Message]| {
+        convert::chat_request(
+            model,
+            system_prompt,
+            messages,
+            &[],
+            default_max_tokens,
+            options,
+        )
+    };
+    let chat_request = build_chat_request(&active_messages);
+    let chat = match llm_client::complete(provider.as_ref(), &chat_request, retry).await {
+        Ok(chat) => chat,
+        Err(error) if should_attempt_media_assist_fallback(&error, &active_messages) => {
+            // Same recovery as completions (#3090): a history with rejected
+            // media must not fail compaction on the Rust path.
+            let (prepared, used_plugin) =
+                prepare_messages_for_media_assist_retry(&active_messages, &request.session_id)
+                    .await;
+            active_messages = prepared;
+            remember_strip_for_route(provider_id, model);
+            log::warn!(
+                "Rust LLM executor: media-assist fallback for {provider_id}:{model} during compaction (used_plugin={used_plugin}); retrying once"
+            );
+            llm_client::complete(
+                provider.as_ref(),
+                &build_chat_request(&active_messages),
+                RetryPolicy::NONE,
+            )
+            .await
+            .map_err(runtime_error)?
+        }
+        Err(error) => return Err(runtime_error(error)),
+    };
     let usage = chat.usage.as_ref();
     let meta = CompactStreamMeta {
         finish_reason: chat.finish_reason.clone(),

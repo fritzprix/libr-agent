@@ -53,16 +53,17 @@ static REMOTE_OR_DATA_URI: LazyLock<Regex> =
 static REMEMBERED_STRIP_ROUTE_KEY: LazyLock<Mutex<Option<String>>> =
     LazyLock::new(|| Mutex::new(None));
 
+/// Which media modalities were removed from an outbound payload.
+/// `MCPContent` has no video part, so video never appears here.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct StrippedModalities {
     pub image: bool,
     pub audio: bool,
-    pub video: bool,
 }
 
 impl StrippedModalities {
     pub fn any(self) -> bool {
-        self.image || self.audio || self.video
+        self.image || self.audio
     }
 }
 
@@ -93,7 +94,8 @@ pub fn should_strip_for_route(provider: &str, model: &str) -> bool {
     true
 }
 
-#[cfg(test)]
+/// Drop the remembered strip route. Also used by the integration tests to
+/// isolate each other from the process-wide route memory.
 pub fn clear_strip_route_memory() {
     if let Ok(mut guard) = REMEMBERED_STRIP_ROUTE_KEY.lock() {
         *guard = None;
@@ -129,9 +131,6 @@ pub fn build_media_assist_placeholder(stripped: StrippedModalities) -> String {
     }
     if stripped.image {
         kinds.push("image");
-    }
-    if stripped.video {
-        kinds.push("video");
     }
     let kind_list = if kinds.is_empty() {
         "media".to_string()
@@ -207,6 +206,10 @@ pub fn should_attempt_media_assist_fallback(error: &LlmError, messages: &[Messag
     match error.status {
         Some(415) => true,
         Some(400 | 422) => MULTIMODAL_ERROR_HINT.is_match(blob),
+        // Stream or transport errors carry no HTTP status but still describe a
+        // modality rejection in their message; the TypeScript port applies the
+        // multimodal hint to any error without an HTTP status, so do the same.
+        None => MULTIMODAL_ERROR_HINT.is_match(blob),
         _ => false,
     }
 }
@@ -268,15 +271,30 @@ async fn convert_part_with_plugin(base_data_dir: &Path, part: &MCPContent) -> Op
         data_base64,
         max_output_chars: None,
     };
-    let resp = media_assist::run_plugin(base_data_dir, req).await.ok()?;
+    let resp = match media_assist::run_plugin(base_data_dir, req).await {
+        Ok(resp) => resp,
+        Err(error) => {
+            log::warn!("media-assist plugin failed for {modality}: {error}");
+            return None;
+        }
+    };
+    if !resp.ok {
+        log::warn!(
+            "media-assist plugin rejected {modality}: error={} message={}",
+            resp.error.as_deref().unwrap_or("unknown"),
+            resp.message.as_deref().unwrap_or("no message"),
+        );
+        return None;
+    }
     let text = resp
         .text
         .as_deref()
         .map(str::trim)
-        .filter(|s| !s.is_empty())?;
-    if !resp.ok {
+        .filter(|s| !s.is_empty());
+    let Some(text) = text else {
+        log::warn!("media-assist plugin returned ok for {modality} but no text");
         return None;
-    }
+    };
     let note = resp
         .notes
         .as_deref()
@@ -401,6 +419,42 @@ mod tests {
         ])
     }
 
+    fn text_parts(messages: &[Message]) -> Vec<String> {
+        messages
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter_map(|part| match part {
+                MCPContent::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Install a runnable fake plugin under `{base}/harness-plugins/media-assist/v1`
+    /// so `media_assist::load_status` reports it installed and `run_plugin`
+    /// actually spawns it.
+    fn install_fake_plugin(base: &Path, script: &str) {
+        let dir = base.join(crate::media_assist::PLUGIN_RELATIVE_DIR);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            serde_json::json!({
+                "interfaceVersion": crate::media_assist::INTERFACE_VERSION,
+                "name": "fake-assist",
+                "timeoutMs": 5_000,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let run_path = dir.join("run");
+        std::fs::write(&run_path, script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&run_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
     #[test]
     fn fallback_decision_matches_multimodal_rejects_and_ignores_others() {
         let msgs = vec![image_msg()];
@@ -473,7 +527,17 @@ mod tests {
 
     #[tokio::test]
     async fn docker_isolated_session_never_runs_plugin() {
+        // An actually installed plugin: if the isolation check were removed,
+        // the plugin would run and leave its marker file behind.
         let tmp = tempfile::tempdir().unwrap();
+        let marker = tmp.path().join("plugin-ran");
+        install_fake_plugin(
+            tmp.path(),
+            &format!(
+                "#!/bin/sh\ncat >/dev/null\ntouch '{}'\necho '{{\"ok\":true,\"text\":\"converted\"}}'\n",
+                marker.display()
+            ),
+        );
         let (prepared, used_plugin) = prepare_messages_for_media_assist_retry_with_dir(
             &[image_msg()],
             Some(tmp.path()),
@@ -481,6 +545,87 @@ mod tests {
         )
         .await;
         assert!(!used_plugin);
+        assert!(
+            !marker.exists(),
+            "docker-isolated session ran the host plugin"
+        );
         assert!(!messages_have_multimodal_parts(&prepared));
+        assert!(text_parts(&prepared)
+            .iter()
+            .any(|t| t.contains("[media-assist]")));
+    }
+
+    #[cfg(unix)] // the fake plugin is a POSIX shell script
+    #[tokio::test]
+    async fn installed_plugin_converts_media_parts() {
+        let tmp = tempfile::tempdir().unwrap();
+        install_fake_plugin(
+            tmp.path(),
+            "#!/bin/sh\ncat >/dev/null\necho '{\"ok\":true,\"text\":\"a cat on a mat\"}'\n",
+        );
+        let (prepared, used_plugin) = prepare_messages_for_media_assist_retry_with_dir(
+            &[image_msg()],
+            Some(tmp.path()),
+            false,
+        )
+        .await;
+        assert!(used_plugin);
+        assert!(!messages_have_multimodal_parts(&prepared));
+        let text = text_parts(&prepared).join("\n");
+        assert!(text.contains("[media-assist:image]"), "text: {text}");
+        assert!(text.contains("a cat on a mat"), "text: {text}");
+    }
+
+    #[cfg(unix)] // the fake plugin is a POSIX shell script
+    #[tokio::test]
+    async fn failing_plugin_strips_media_with_placeholder() {
+        let tmp = tempfile::tempdir().unwrap();
+        install_fake_plugin(
+            tmp.path(),
+            "#!/bin/sh\ncat >/dev/null\necho '{\"ok\":false,\"error\":\"exec_failed\",\"message\":\"no asr\"}'\n",
+        );
+        let (prepared, used_plugin) = prepare_messages_for_media_assist_retry_with_dir(
+            &[image_msg()],
+            Some(tmp.path()),
+            false,
+        )
+        .await;
+        assert!(!used_plugin);
+        assert!(!messages_have_multimodal_parts(&prepared));
+        assert!(text_parts(&prepared)
+            .iter()
+            .any(|t| t.contains("@skill:libragent-plugin")));
+    }
+
+    #[tokio::test]
+    async fn missing_plugin_strips_media_with_placeholder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (prepared, used_plugin) = prepare_messages_for_media_assist_retry_with_dir(
+            &[image_msg()],
+            Some(tmp.path()),
+            false,
+        )
+        .await;
+        assert!(!used_plugin);
+        assert!(!messages_have_multimodal_parts(&prepared));
+        assert!(text_parts(&prepared)
+            .iter()
+            .any(|t| t.contains("[media-assist]")));
+    }
+
+    #[test]
+    fn status_less_multimodal_rejection_still_triggers_fallback() {
+        // G1.3: stream/transport errors carry no HTTP status; the TypeScript
+        // port applies the multimodal hint to them, so the Rust port must too.
+        let msgs = vec![image_msg()];
+        let stream_error = LlmError::new(
+            ErrorKind::Service,
+            "TEST",
+            "stream failed: model does not support image input",
+        );
+        assert!(should_attempt_media_assist_fallback(&stream_error, &msgs));
+
+        let unrelated = LlmError::new(ErrorKind::Network, "TEST", "connection reset by peer");
+        assert!(!should_attempt_media_assist_fallback(&unrelated, &msgs));
     }
 }
