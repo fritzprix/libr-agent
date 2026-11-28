@@ -76,7 +76,7 @@ const OLLAMA_DEFAULT_API_BASE = 'http://localhost:11434';
 
 /**
  * Providers that have a model list API in `llm-client` (#3091).
- * Providers without one (Groq, Cerebras, Fireworks) keep the static
+ * Providers without one (Groq, Cerebras) keep the static
  * catalog from the LLM config; their absence is not a failure.
  */
 function providerHasModelListApi(providerId: string): boolean {
@@ -86,6 +86,7 @@ function providerHasModelListApi(providerId: string): boolean {
     providerId === AIServiceProvider.Gemini ||
     providerId === AIServiceProvider.Ollama ||
     providerId === AIServiceProvider.OpenRouter ||
+    providerId === AIServiceProvider.Fireworks ||
     isCustomOpenAIProviderId(providerId)
   );
 }
@@ -164,12 +165,18 @@ async function modelInfoFromListedModel(
   }
 
   // OpenAI and custom OpenAI-compatible providers: the static catalog is
-  // keyed under `openai`, as the service mapped them.
+  // keyed under `openai`, as the service mapped them. Fireworks inherits
+  // `OpenAIService`, so it shares this mapping but keeps its own context
+  // rules for the capability fallback.
   const staticModel = llmConfigManager.getModel('openai', id);
+  const capabilityProvider =
+    providerId === AIServiceProvider.Fireworks
+      ? AIServiceProvider.Fireworks
+      : AIServiceProvider.OpenAI;
   return {
     id,
     name: staticModel?.name || id,
-    contextWindow: await getContextWindow(id, AIServiceProvider.OpenAI),
+    contextWindow: await getContextWindow(id, capabilityProvider),
     supportReasoning:
       staticModel?.supportReasoning ??
       (id.toLowerCase().includes('gpt-4') ||
@@ -210,22 +217,34 @@ export async function fetchDynamicProviderModels(
   }
 
   try {
-    const listed = await withTimeout(
-      listLlmModels({ providerId, timeoutMs: options.timeoutMs }),
+    // The whole discovery — native list call plus the per-model capability
+    // lookups — must finish inside `options.timeoutMs`, and the lookups run
+    // in parallel like the services' `listModels` did before #3091.
+    const modelsRecord = await withTimeout(
+      (async () => {
+        const listed = await listLlmModels({
+          providerId,
+          timeoutMs: options.timeoutMs,
+        });
+        const entries = listed.filter((entry) => Boolean(entry.id));
+        const pairs = await Promise.all(
+          entries.map(async (entry) => {
+            const info = await modelInfoFromListedModel(
+              providerId,
+              entry,
+              resolved.baseUrl || OLLAMA_DEFAULT_API_BASE,
+            );
+            return [entry.id, info] as const;
+          }),
+        );
+        const record: ProviderModelMap = {};
+        for (const [id, info] of pairs) {
+          record[id] = info;
+        }
+        return record;
+      })(),
       options.timeoutMs,
     );
-
-    const modelsRecord: ProviderModelMap = {};
-    for (const entry of listed) {
-      if (!entry.id) {
-        continue;
-      }
-      modelsRecord[entry.id] = await modelInfoFromListedModel(
-        providerId,
-        entry,
-        resolved.baseUrl || OLLAMA_DEFAULT_API_BASE,
-      );
-    }
 
     // Gemini keeps the static-catalog models the API does not list, as the
     // service did.

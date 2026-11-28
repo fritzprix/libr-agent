@@ -49,11 +49,13 @@ pub struct ModelCost {
 }
 
 /// True for the providers [`list_models`] can call. Providers without a list
-/// API (Groq, Cerebras, Fireworks) keep the static list from the LLM config.
+/// API (Groq, Cerebras) keep the static list from the LLM config. Fireworks
+/// is listed through its OpenAI-compatible `/models` endpoint, as the GUI's
+/// `FireworksService` did by inheriting `OpenAIService`.
 pub fn has_model_list_api(provider: &str) -> bool {
     matches!(
         provider,
-        "openai" | "anthropic" | "gemini" | "ollama" | "openrouter"
+        "openai" | "anthropic" | "gemini" | "ollama" | "openrouter" | "fireworks"
     ) || provider
         .strip_prefix("custom:")
         .is_some_and(|id| !id.is_empty())
@@ -70,11 +72,7 @@ pub async fn list_models(
     provider: &dyn ChatProvider,
     timeout: Duration,
 ) -> Result<Vec<ListedModel>, LlmError> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(timeout)
-        .build()
-        .map_err(|e| network_error(format!("Failed to build the HTTP client: {e}")))?;
+    let client = list_http_client(timeout)?;
     let base = provider.endpoint().base_url.trim_end_matches('/');
     let models = match provider_kind {
         "ollama" => {
@@ -88,7 +86,7 @@ pub async fn list_models(
         }
         "anthropic" => list_anthropic(&client, provider, base).await?,
         "gemini" => list_gemini(&client, provider, base).await?,
-        "openai" => list_openai_compatible(&client, provider, base).await?,
+        "openai" | "fireworks" => list_openai_compatible(&client, provider, base).await?,
         kind if kind.starts_with("custom:") => {
             list_openai_compatible(&client, provider, base).await?
         }
@@ -101,6 +99,19 @@ pub async fn list_models(
         }
     };
     Ok(models)
+}
+
+/// The HTTP client for one list call: the same system-proxy configuration as
+/// the chat client ([`crate::client`]), with a per-call total timeout.
+fn list_http_client(timeout: Duration) -> Result<reqwest::Client, LlmError> {
+    let builder = reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(timeout);
+    let builder = http_proxy::configure_client_builder(builder)
+        .map_err(|e| network_error(format!("Failed to configure the HTTP client: {e}")))?;
+    builder
+        .build()
+        .map_err(|e| network_error(format!("Failed to build the HTTP client: {e}")))
 }
 
 fn network_error(message: String) -> LlmError {
@@ -189,8 +200,10 @@ async fn list_anthropic(
             .unwrap_or(false);
         let last_id = page.last().map(|model| model.id.clone());
         models.extend(page);
+        // Stop when the server repeats the same cursor: a `has_more: true`
+        // that never advances would otherwise loop after the caller gave up.
         match (has_more, last_id) {
-            (true, Some(id)) => after_id = Some(id),
+            (true, Some(id)) if Some(&id) != after_id.as_ref() => after_id = Some(id),
             _ => break,
         }
     }
@@ -443,7 +456,7 @@ fn parse_openrouter_models(body: &Value) -> Vec<ListedModel> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{CustomOpenAi, Endpoint, Ollama, OpenAi};
+    use crate::provider::{CustomOpenAi, Endpoint, Fireworks, Ollama, OpenAi};
     use crate::{Anthropic, Gemini};
     use serde_json::json;
     use std::collections::HashMap;
@@ -502,12 +515,13 @@ mod tests {
             "gemini",
             "ollama",
             "openrouter",
+            "fireworks",
             "custom:lmstudio",
         ] {
             assert!(has_model_list_api(provider), "{provider}");
         }
-        // Groq, Cerebras, and Fireworks keep the static list (#3091).
-        for provider in ["groq", "cerebras", "fireworks", "custom:", "mistral", ""] {
+        // Groq and Cerebras keep the static list (#3091).
+        for provider in ["groq", "cerebras", "custom:", "mistral", ""] {
             assert!(!has_model_list_api(provider), "{provider}");
         }
     }
@@ -663,6 +677,148 @@ mod tests {
 
         assert_eq!(models.len(), 1);
         assert_eq!(seen.auth.lock().unwrap()[0].0, None);
+    }
+
+    #[tokio::test]
+    async fn a_fireworks_list_call_uses_the_openai_compatible_endpoint() {
+        // `FireworksService` inherited `OpenAIService.listModels`, so
+        // Fireworks had a live model list before #3091; the native command
+        // must keep it through the same OpenAI-compatible call.
+        let (base, seen) = serve_get(|_| {
+            json!({ "data": [{ "id": "accounts/fireworks/models/llama-v3p1-70b-instruct" }] })
+                .to_string()
+        })
+        .await;
+        let provider = Fireworks {
+            endpoint: endpoint(&base, Some("fw-key")),
+        };
+
+        let models = list_models("fireworks", &provider, Duration::from_secs(5))
+            .await
+            .unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(
+            models[0].id,
+            "accounts/fireworks/models/llama-v3p1-70b-instruct"
+        );
+        assert_eq!(seen.paths.lock().unwrap()[0], "models");
+        assert_eq!(
+            seen.auth.lock().unwrap()[0].0.as_deref(),
+            Some("Bearer fw-key"),
+            "Fireworks sends the bearer key, as the OpenAI-compatible services did"
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_stops_when_the_server_repeats_the_same_cursor() {
+        // `has_more: true` with a cursor that never advances must not loop
+        // after the caller has already given up.
+        let (base, seen) =
+            serve_get(|_| json!({ "data": [{ "id": "claude-a" }], "has_more": true }).to_string())
+                .await;
+        let provider = Anthropic {
+            endpoint: endpoint(&base, Some("sk-ant-key")),
+        };
+
+        let models = list_models("anthropic", &provider, Duration::from_secs(5))
+            .await
+            .unwrap();
+
+        assert_eq!(seen.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(models.len(), 2);
+    }
+
+    /// A minimal HTTP proxy listener: records every absolute-form target it
+    /// is asked for and answers `/models` with one listed model. Other
+    /// targets get `502` so a stray request cannot hang the test.
+    fn spawn_proxy_listener(recorded: Arc<Mutex<Vec<String>>>) -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let recorded = recorded.clone();
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader, Write};
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut request_line = String::new();
+                    if reader.read_line(&mut request_line).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    // A client that honours the proxy sends
+                    // `GET http://host/path HTTP/1.1`.
+                    let target = request_line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_string();
+                    recorded.lock().unwrap().push(target.clone());
+                    let response = if target.ends_with("/models") {
+                        let body = r#"{"data":[{"id":"proxied-model"}]}"#;
+                        format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                    } else {
+                        "HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                            .to_string()
+                    };
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.flush();
+                });
+            }
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn a_model_list_call_goes_through_the_system_proxy() {
+        // Environment access is process-global, so keep this the only test
+        // touching the proxy variables.
+        static PROXY_ENV_LOCK: Mutex<()> = Mutex::new(());
+        let _guard = PROXY_ENV_LOCK.lock().unwrap();
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let proxy_port = spawn_proxy_listener(recorded.clone());
+        let previous: Vec<(String, Option<String>)> =
+            ["HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"]
+                .iter()
+                .map(|key| {
+                    (
+                        key.to_string(),
+                        std::env::var_os(key).map(|v| v.to_string_lossy().into_owned()),
+                    )
+                })
+                .collect();
+        std::env::set_var("HTTP_PROXY", format!("http://127.0.0.1:{proxy_port}"));
+        // Keep loopback direct so concurrent tests are not rerouted here.
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+
+        // This origin host must not be reachable directly: only a client
+        // built with the system-proxy configuration completes the call.
+        let provider = CustomOpenAi {
+            endpoint: endpoint("http://model-list-origin.invalid/v1", None),
+        };
+        let result = list_models("custom:proxy-test", &provider, Duration::from_secs(5)).await;
+
+        for (key, value) in previous {
+            match value {
+                Some(v) => std::env::set_var(&key, v),
+                None => std::env::remove_var(&key),
+            }
+        }
+
+        let models = result.expect("the list call must succeed through the system proxy");
+        assert_eq!(models[0].id, "proxied-model");
+        assert!(
+            recorded
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|target| target == "http://model-list-origin.invalid/v1/models"),
+            "the proxy never saw the model list request"
+        );
     }
 
     #[tokio::test]

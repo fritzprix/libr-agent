@@ -35,7 +35,7 @@ mod completion;
 mod config;
 mod convert;
 mod events;
-mod settings;
+pub(crate) mod settings;
 mod tasks;
 
 #[cfg(test)]

@@ -13,6 +13,22 @@ async fn read_setting(key: &str) -> Option<Value> {
     serde_json::from_str(&row.value).ok()
 }
 
+/// The provider for `provider` from the `serviceConfigs` and `customProviders`
+/// settings values (the same data the frontend reads), resolving the stored
+/// endpoint, API key, and Base URL. Shared with the model-list command so the
+/// settings read and provider resolution live in one place.
+pub(crate) async fn provider_from_settings(
+    provider: &str,
+) -> Result<Box<dyn ChatProvider>, String> {
+    let service_configs = read_setting("serviceConfigs").await;
+    let custom_providers = read_setting("customProviders").await;
+    llm_client::resolve_provider(
+        provider,
+        service_configs.as_ref(),
+        custom_providers.as_ref(),
+    )
+}
+
 /// The provider for `provider`, from the `serviceConfigs` and `customProviders`
 /// settings values (the same data the frontend reads).
 pub(super) async fn provider_for(
@@ -22,15 +38,7 @@ pub(super) async fn provider_for(
     let resolved = match &config.endpoint_override {
         Some(endpoint) => llm_client::provider_with_endpoint(provider, endpoint.clone())
             .ok_or_else(|| format!("Provider '{provider}' is not supported")),
-        None => {
-            let service_configs = read_setting("serviceConfigs").await;
-            let custom_providers = read_setting("customProviders").await;
-            llm_client::resolve_provider(
-                provider,
-                service_configs.as_ref(),
-                custom_providers.as_ref(),
-            )
-        }
+        None => provider_from_settings(provider).await,
     };
     resolved.map_err(|message| {
         Box::new(

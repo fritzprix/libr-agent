@@ -30,12 +30,18 @@ vi.mock('@/lib/ai-service/list-models-errors', async () => {
 });
 
 // Capability detection hits the network; the tests pin the result.
+const mockedGetContextWindow = vi.hoisted(
+  () =>
+    vi.fn<(...args: [string, unknown]) => Promise<number>>(async () => 32768),
+);
+
 vi.mock('@/lib/ai-service/model-capabilities', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/lib/ai-service/model-capabilities')>();
   return {
     ...actual,
-    getContextWindow: vi.fn(async () => 32768),
+    getContextWindow: (...args: unknown[]) =>
+      mockedGetContextWindow(...(args as [string, unknown])),
   };
 });
 
@@ -218,5 +224,64 @@ describe('fetch-dynamic-provider-models', () => {
     expect(models).toEqual({});
     expect(mockedListModels).not.toHaveBeenCalled();
     expect(reportListModelsFallback).not.toHaveBeenCalled();
+  });
+
+  it('lists Fireworks through the native command (OpenAI-compatible)', async () => {
+    mockedListModels.mockResolvedValue([
+      {
+        id: 'accounts/fireworks/models/llama-v3p1-70b-instruct',
+        name: '',
+        description: '',
+      },
+    ]);
+
+    const models = await fetchDynamicProviderModels(
+      AIServiceProvider.Fireworks,
+      settingsWith({ [AIServiceProvider.Fireworks]: { apiKey: 'fw-test' } }),
+      {
+        timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+        notifyUser: false,
+      },
+    );
+
+    expect(mockedListModels).toHaveBeenCalledWith({
+      providerId: AIServiceProvider.Fireworks,
+      timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+    });
+    expect(
+      models['accounts/fireworks/models/llama-v3p1-70b-instruct'],
+    ).toMatchObject({
+      contextWindow: 32768,
+      supportStreaming: true,
+    });
+    expect(reportListModelsFallback).not.toHaveBeenCalled();
+  });
+
+  it('gives up when a per-model capability lookup never answers', async () => {
+    // The lookup runs inside the same timeout as the list call, so a hung
+    // detail request must fall back instead of stalling the model fetch.
+    mockedListModels.mockResolvedValue([
+      { id: 'qwen2.5:7b', name: 'qwen2.5:7b', description: '' },
+    ]);
+    mockedGetContextWindow.mockImplementationOnce(() => new Promise(() => {}));
+
+    const models = await fetchDynamicProviderModels(
+      AIServiceProvider.Ollama,
+      settingsWith({
+        [AIServiceProvider.Ollama]: {
+          baseUrl: 'http://127.0.0.1:11434',
+        },
+      }),
+      { timeoutMs: 50, notifyUser: false },
+    );
+
+    expect(models).toEqual({});
+    expect(reportListModelsFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: AIServiceProvider.Ollama,
+        notifyUser: false,
+        reason: 'api_error',
+      }),
+    );
   });
 });
