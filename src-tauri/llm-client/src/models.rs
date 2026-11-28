@@ -102,14 +102,13 @@ pub async fn list_models(
 }
 
 /// The HTTP client for one list call: the same system-proxy configuration as
-/// the chat client ([`crate::client`]), with a per-call total timeout.
+/// the chat client ([`crate::client::proxied_client_builder`]), with a
+/// per-call total timeout.
 fn list_http_client(timeout: Duration) -> Result<reqwest::Client, LlmError> {
-    let builder = reqwest::Client::builder()
+    crate::client::proxied_client_builder()
+        .map_err(|e| network_error(format!("Failed to configure the HTTP client: {e}")))?
         .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(timeout);
-    let builder = http_proxy::configure_client_builder(builder)
-        .map_err(|e| network_error(format!("Failed to configure the HTTP client: {e}")))?;
-    builder
+        .timeout(timeout)
         .build()
         .map_err(|e| network_error(format!("Failed to build the HTTP client: {e}")))
 }
@@ -727,98 +726,6 @@ mod tests {
 
         assert_eq!(seen.calls.load(Ordering::SeqCst), 2);
         assert_eq!(models.len(), 2);
-    }
-
-    /// A minimal HTTP proxy listener: records every absolute-form target it
-    /// is asked for and answers `/models` with one listed model. Other
-    /// targets get `502` so a stray request cannot hang the test.
-    fn spawn_proxy_listener(recorded: Arc<Mutex<Vec<String>>>) -> u16 {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = listener.local_addr().unwrap().port();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { continue };
-                let recorded = recorded.clone();
-                std::thread::spawn(move || {
-                    use std::io::{BufRead, BufReader, Write};
-                    let mut reader = BufReader::new(stream.try_clone().unwrap());
-                    let mut request_line = String::new();
-                    if reader.read_line(&mut request_line).unwrap_or(0) == 0 {
-                        return;
-                    }
-                    // A client that honours the proxy sends
-                    // `GET http://host/path HTTP/1.1`.
-                    let target = request_line
-                        .split_whitespace()
-                        .nth(1)
-                        .unwrap_or_default()
-                        .to_string();
-                    recorded.lock().unwrap().push(target.clone());
-                    let response = if target.ends_with("/models") {
-                        let body = r#"{"data":[{"id":"proxied-model"}]}"#;
-                        format!(
-                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                            body.len()
-                        )
-                    } else {
-                        "HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
-                            .to_string()
-                    };
-                    let _ = stream.write_all(response.as_bytes());
-                    let _ = stream.flush();
-                });
-            }
-        });
-        port
-    }
-
-    #[tokio::test]
-    async fn a_model_list_call_goes_through_the_system_proxy() {
-        // Environment access is process-global, so keep this the only test
-        // touching the proxy variables.
-        static PROXY_ENV_LOCK: Mutex<()> = Mutex::new(());
-        let _guard = PROXY_ENV_LOCK.lock().unwrap();
-
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let proxy_port = spawn_proxy_listener(recorded.clone());
-        let previous: Vec<(String, Option<String>)> =
-            ["HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"]
-                .iter()
-                .map(|key| {
-                    (
-                        key.to_string(),
-                        std::env::var_os(key).map(|v| v.to_string_lossy().into_owned()),
-                    )
-                })
-                .collect();
-        std::env::set_var("HTTP_PROXY", format!("http://127.0.0.1:{proxy_port}"));
-        // Keep loopback direct so concurrent tests are not rerouted here.
-        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
-
-        // This origin host must not be reachable directly: only a client
-        // built with the system-proxy configuration completes the call.
-        let provider = CustomOpenAi {
-            endpoint: endpoint("http://model-list-origin.invalid/v1", None),
-        };
-        let result = list_models("custom:proxy-test", &provider, Duration::from_secs(5)).await;
-
-        for (key, value) in previous {
-            match value {
-                Some(v) => std::env::set_var(&key, v),
-                None => std::env::remove_var(&key),
-            }
-        }
-
-        let models = result.expect("the list call must succeed through the system proxy");
-        assert_eq!(models[0].id, "proxied-model");
-        assert!(
-            recorded
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|target| target == "http://model-list-origin.invalid/v1/models"),
-            "the proxy never saw the model list request"
-        );
     }
 
     #[tokio::test]

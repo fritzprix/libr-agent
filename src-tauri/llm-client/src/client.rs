@@ -13,13 +13,20 @@ use std::time::{Duration, Instant};
 const READ_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// A `reqwest` client builder with the system-proxy configuration applied.
+/// Shared with the model-list client (`crate::models::list_http_client`) so
+/// the two can never differ in how they reach the network.
+pub(crate) fn proxied_client_builder() -> Result<reqwest::ClientBuilder, String> {
+    http_proxy::configure_client_builder(reqwest::Client::builder()).map_err(|e| e.to_string())
+}
+
 /// One client for every call, so connections to a provider are reused.
 static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
-    let builder = reqwest::Client::builder()
+    proxied_client_builder()?
         .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(READ_IDLE_TIMEOUT);
-    let builder = http_proxy::configure_client_builder(builder).map_err(|e| e.to_string())?;
-    builder.build().map_err(|e| e.to_string())
+        .read_timeout(READ_IDLE_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())
 });
 
 /// How often a failed call is tried again before the response starts.
