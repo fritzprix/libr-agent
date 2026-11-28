@@ -113,7 +113,7 @@ describe('tokenSlider helpers', () => {
     expect(Math.abs(back200k - 204800)).toBeLessThanOrEqual(TOKEN_UNIT);
   });
 
-  it('every 1K value in both ranges is reachable by keyboard steps', () => {
+  it('steps by 1K land on the next value across both ranges (keys covered by component tests)', () => {
     const ranges: Array<[number, number]> = [
       [1024, 131072], // Max Output Tokens: 128 values
       [MIN_INPUT, MAX_INPUT], // Max Input Context: 4089 values
