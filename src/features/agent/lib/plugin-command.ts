@@ -1,4 +1,4 @@
-const PLUGIN_INSTALL_RE = /^\/plugin\s+install\s+(\S+)$/i;
+const PLUGIN_INSTALL_RE = /^\/plugin\s+install\s+(?:"([^"]+)"|(\S+))$/i;
 const PLUGIN_UPDATE_RE = /^\/plugin\s+update\s+(\S+)$/i;
 
 /**
@@ -28,7 +28,9 @@ export function pluginCommandToEntry(command: PluginSlashCommand): {
 }
 
 /**
- * Extracts the source URL from a `/plugin install <git-url>` command.
+ * Extracts the install source from a `/plugin install <git-url|path>`
+ * command (#2928: github.com URL, any git URL, or a local folder; a path
+ * may be wrapped in double quotes to contain spaces).
  *
  * Install needs the hook-approval dialog, so it is handled by the desktop
  * input instead of the generic `agent_execute_command` path. Uninstall and
@@ -36,7 +38,10 @@ export function pluginCommandToEntry(command: PluginSlashCommand): {
  */
 export function parsePluginInstallCommand(commandText: string): string | null {
   const match = PLUGIN_INSTALL_RE.exec(commandText.trim());
-  return match ? match[1] : null;
+  if (!match) {
+    return null;
+  }
+  return match[1] ?? match[2] ?? null;
 }
 
 /**
