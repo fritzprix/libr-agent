@@ -1243,15 +1243,37 @@ async fn a_resample_requested_from_inside_a_running_call_settles_the_turn() {
 // ---------------------------------------------------------------------------
 
 /// A Gemini mock whose first `fail_count` requests answer with `fail_status`,
-/// and whose request at index `hold_from` (if any) is held back until the
-/// test flips `gate`, with `answered` set once its response is written.
-/// A cancel test uses the gate instead of a sleep: it can cancel while the
-/// held call is in flight, release it, and wait on `answered` — no timer can
-/// race the abort.
+/// and whose request at index `hold_from` (if any) answers with an SSE body
+/// that never yields data: it can only end when the client drops the
+/// connection, which sets `disconnected`. A cancel test waits on
+/// `disconnected` — the mock seeing the held call's connection die is the
+/// proof the abort stopped the task, and no timer can race it.
 struct GeminiMock {
     provider: MockProvider,
-    gate: tokio::sync::watch::Sender<bool>,
-    answered: Arc<AtomicBool>,
+    disconnected: Arc<AtomicBool>,
+}
+
+/// Held-open SSE body: never yields, so its `Drop` means the client closed
+/// the connection while the response was still open.
+struct HeldSseBody {
+    disconnected: Arc<AtomicBool>,
+}
+
+impl Drop for HeldSseBody {
+    fn drop(&mut self) {
+        self.disconnected.store(true, Ordering::SeqCst);
+    }
+}
+
+impl futures::stream::Stream for HeldSseBody {
+    type Item = Result<Vec<u8>, std::io::Error>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Pending
+    }
 }
 
 /// A loopback server on the Gemini `:streamGenerateContent` path that answers
@@ -1270,9 +1292,8 @@ async fn mock_gemini_with(
     let requests = Arc::new(Mutex::new(Vec::new()));
     let seen = requests.clone();
     let counter = Arc::new(AtomicUsize::new(0));
-    let (gate, gate_wait) = tokio::sync::watch::channel(false);
-    let answered = Arc::new(AtomicBool::new(false));
-    let answered_in_route = answered.clone();
+    let disconnected = Arc::new(AtomicBool::new(false));
+    let disconnected_in_route = disconnected.clone();
     let route = warp::post()
         .and(warp::path::tail())
         .and(warp::body::json())
@@ -1282,25 +1303,22 @@ async fn mock_gemini_with(
             // Failed attempts do not consume a scripted reply.
             let reply_index = index.saturating_sub(fail_count);
             let body = gemini_sse(&replies[reply_index.min(replies.len() - 1)]);
-            let answered = answered_in_route.clone();
-            let mut gate_wait = gate_wait.clone();
+            let disconnected = disconnected_in_route.clone();
             async move {
                 if index < fail_count {
                     return Ok(warp::http::Response::builder()
                         .status(fail_status)
                         .header("content-type", "text/plain")
-                        .body("provider exploded".to_string())
+                        .body(warp::hyper::Body::from("provider exploded".to_string()))
                         .unwrap());
                 }
                 if hold_from == Some(index) {
-                    while !*gate_wait.borrow_and_update() {
-                        if gate_wait.changed().await.is_err() {
-                            break;
-                        }
-                    }
-                    answered.store(true, Ordering::SeqCst);
+                    return Ok(warp::http::Response::builder()
+                        .header("content-type", "text/event-stream")
+                        .body(warp::hyper::Body::wrap_stream(HeldSseBody { disconnected }))
+                        .unwrap());
                 }
-                Ok::<_, warp::Rejection>(body)
+                Ok::<_, warp::Rejection>(body.map(warp::hyper::Body::from))
             }
         });
     let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
@@ -1313,8 +1331,7 @@ async fn mock_gemini_with(
             },
             requests,
         },
-        gate,
-        answered,
+        disconnected,
     }
 }
 
@@ -1676,14 +1693,15 @@ async fn malformed_function_call_retry_is_gemini_only() {
 }
 
 /// #3089: a cancel during the tool-less retry stops the call — nothing is
-/// delivered after the abort.
+/// delivered after the abort. The retry's response is held open forever, so
+/// the mock seeing its connection drop is proof the call task itself died:
+/// a `cancel` that failed to abort the task leaves the body (and any chance
+/// of delivery) alive until this wait times out — the test cannot pass
+/// vacuously.
 #[tokio::test]
 async fn cancel_during_the_malformed_function_call_retry_delivers_nothing() {
     let _guard = TEST_GUARD.lock().await;
     let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
-    // The tool-less retry (request 1) is held on a gate, so the cancel
-    // provably lands while it is in flight; releasing waits on the mock
-    // finishing its response, not on a timer.
     let mock = mock_gemini_with(
         vec![
             gemini_malformed_reply("First-attempt text."),
@@ -1706,17 +1724,16 @@ async fn cancel_during_the_malformed_function_call_retry_delivers_nothing() {
     )
     .await
     .unwrap());
-    // Cancel while the tool-less retry is held on the gate.
+    // The tool-less retry is in flight, its response held open by the mock.
     wait_for("the tool-less retry to start", || {
         provider.requests.lock().unwrap().len() >= 2
     })
     .await;
     cancel("s-gm-cancel");
-    mock.gate
-        .send(true)
-        .expect("the held request is still listening");
-    wait_for("the held response to be written", || {
-        mock.answered.load(Ordering::SeqCst)
+    // The abort's observable proof: the mock's held body drops only when the
+    // client's connection closes, which means the call task died with it.
+    wait_for("the cancelled call's connection to drop", || {
+        mock.disconnected.load(Ordering::SeqCst)
     })
     .await;
 

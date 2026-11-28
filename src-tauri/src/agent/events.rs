@@ -464,7 +464,8 @@ pub(crate) fn summarize_agent_event(event: &AgentEvent) -> String {
         AgentEvent::LlmFallbackNotice {
             session_id,
             status_code,
-            fallback_model,            ..
+            fallback_model,
+            ..
         } => format!(
             "LlmFallbackNotice(session={session_id}, status={}, fallback_model={fallback_model})",
             status_code
