@@ -159,76 +159,72 @@ export class GroqService extends BaseAIService<
         return;
       }
 
-      yield* this.streamChatWithTTFT(
-        (async function* (
-          service: GroqService,
-        ): AsyncGenerator<string, void, void> {
-          for await (const chunk of chatCompletion) {
-            if (abortSignal?.aborted) {
-              service.logger.info('Stream aborted during iteration');
-              break;
-            }
-
-            // Extract usage from the last chunk if available
-            const chunkObj = chunk as unknown as Record<string, unknown>;
-            const xGroq = chunkObj?.x_groq as
-              | Record<string, unknown>
-              | undefined;
-            if (xGroq?.usage) {
-              const u = xGroq.usage as unknown as {
-                prompt_tokens?: number;
-                completion_tokens?: number;
-                total_tokens?: number;
-                prompt_cache_hit_tokens?: number;
-              };
-              const usage: TokenUsage = {
-                promptTokens: u.prompt_tokens || 0,
-                completionTokens: u.completion_tokens || 0,
-                totalTokens: u.total_tokens || 0,
-                cachedPromptTokens: u.prompt_cache_hit_tokens,
-              };
-              yield JSON.stringify({ usage });
-            }
-
-            if (chunk.choices[0]?.delta?.reasoning) {
-              yield JSON.stringify({
-                thinking: chunk.choices[0].delta.reasoning,
-              });
-            } else if (chunk.choices[0]?.delta?.tool_calls) {
-              const toolCalls = chunk.choices[0].delta.tool_calls
-                .map((toolCall) => {
-                  if (typeof toolCall.index !== 'number') {
-                    return null;
-                  }
-
-                  return createSerializableToolCallArgumentDelta(
-                    toolCall.index,
-                    toolCall.function?.arguments || '',
-                    {
-                      id: toolCall.id,
-                      name: toolCall.function?.name,
-                    },
-                  );
-                })
-                .filter(
-                  (
-                    toolCall,
-                  ): toolCall is ReturnType<
-                    typeof createSerializableToolCallArgumentDelta
-                  > => toolCall !== null,
-                );
-
-              if (toolCalls.length > 0) {
-                yield serializeToolCallArgumentDeltas(toolCalls);
-              }
-            } else if (chunk.choices[0]?.delta?.content) {
-              yield JSON.stringify({
-                content: chunk.choices[0]?.delta?.content || '',
-              });
-            }
+      yield* (async function* (
+        service: GroqService,
+      ): AsyncGenerator<string, void, void> {
+        for await (const chunk of chatCompletion) {
+          if (abortSignal?.aborted) {
+            service.logger.info('Stream aborted during iteration');
+            break;
           }
-        })(this),
-      );
+
+          // Extract usage from the last chunk if available
+          const chunkObj = chunk as unknown as Record<string, unknown>;
+          const xGroq = chunkObj?.x_groq as Record<string, unknown> | undefined;
+          if (xGroq?.usage) {
+            const u = xGroq.usage as unknown as {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              total_tokens?: number;
+              prompt_cache_hit_tokens?: number;
+            };
+            const usage: TokenUsage = {
+              promptTokens: u.prompt_tokens || 0,
+              completionTokens: u.completion_tokens || 0,
+              totalTokens: u.total_tokens || 0,
+              cachedPromptTokens: u.prompt_cache_hit_tokens,
+            };
+            yield JSON.stringify({ usage });
+          }
+
+          if (chunk.choices[0]?.delta?.reasoning) {
+            yield JSON.stringify({
+              thinking: chunk.choices[0].delta.reasoning,
+            });
+          } else if (chunk.choices[0]?.delta?.tool_calls) {
+            const toolCalls = chunk.choices[0].delta.tool_calls
+              .map((toolCall) => {
+                if (typeof toolCall.index !== 'number') {
+                  return null;
+                }
+
+                return createSerializableToolCallArgumentDelta(
+                  toolCall.index,
+                  toolCall.function?.arguments || '',
+                  {
+                    id: toolCall.id,
+                    name: toolCall.function?.name,
+                  },
+                );
+              })
+              .filter(
+                (
+                  toolCall,
+                ): toolCall is ReturnType<
+                  typeof createSerializableToolCallArgumentDelta
+                > => toolCall !== null,
+              );
+
+            if (toolCalls.length > 0) {
+              yield serializeToolCallArgumentDeltas(toolCalls);
+            }
+          } else if (chunk.choices[0]?.delta?.content) {
+            yield JSON.stringify({
+              content: chunk.choices[0]?.delta?.content || '',
+            });
+          }
+        }
+      })(this);
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }

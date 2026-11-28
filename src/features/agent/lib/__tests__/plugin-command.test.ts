@@ -17,6 +17,27 @@ describe('parsePluginInstallCommand', () => {
     );
   });
 
+  it('extracts a local folder path (#2928)', () => {
+    expect(parsePluginInstallCommand('/plugin install /home/u/my-plugin')).toBe(
+      '/home/u/my-plugin',
+    );
+    expect(parsePluginInstallCommand('/plugin install ./plugins/my-plugin')).toBe(
+      './plugins/my-plugin',
+    );
+  });
+
+  it('accepts a quoted path with spaces (#2928)', () => {
+    expect(
+      parsePluginInstallCommand('/plugin install "/home/u/my plugins/x"'),
+    ).toBe('/home/u/my plugins/x');
+  });
+
+  it('extracts a non-GitHub git URL with a ref (#2928)', () => {
+    expect(
+      parsePluginInstallCommand('  /plugin install https://git.example.com/o/r.git?ref=v1'),
+    ).toBe('https://git.example.com/o/r.git?ref=v1');
+  });
+
   it.each([
     '/plugin install',
     '/plugin list',

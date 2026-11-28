@@ -55,7 +55,6 @@ export interface StreamAccumulatorState {
   currentThinkingTime?: number;
   currentThinkingText?: string;
   finalUsage?: TokenUsage;
-  firstChunkTime?: number;
   thinkingSignature?: string;
   currentStreamingText: string;
 }
@@ -103,7 +102,6 @@ export class StreamAccumulator {
   public currentThinkingTime?: number;
   public currentThinkingText?: string;
   public finalUsage?: TokenUsage;
-  public firstChunkTime?: number;
   public thinkingSignature?: string;
 
   private repeatedThinkingIssueReported = false;
@@ -126,19 +124,16 @@ export class StreamAccumulator {
   private sessionId: string;
   private responseMessageId: string;
   private settingsRef: React.MutableRefObject<Settings>;
-  private startTime: number;
 
   constructor(
     sessionId: string,
     responseMessageId: string,
     settingsRef: React.MutableRefObject<Settings>,
-    startTime: number,
     options?: StreamAccumulatorOptions,
   ) {
     this.sessionId = sessionId;
     this.responseMessageId = responseMessageId;
     this.settingsRef = settingsRef;
-    this.startTime = startTime;
     if (
       options?.reasoningBudgetMaxTokens != null &&
       Number.isFinite(options.reasoningBudgetMaxTokens) &&
@@ -249,10 +244,6 @@ export class StreamAccumulator {
     /** Caller must abort the HTTP stream immediately; do not wait for Rust cancel. */
     shouldAbortStream: boolean;
   } {
-    if (this.firstChunkTime === undefined) {
-      this.firstChunkTime = performance.now();
-    }
-
     const chunk = parseStreamChunk(rawChunk);
 
     // 1. Accumulate Text
@@ -508,13 +499,6 @@ export class StreamAccumulator {
       }
       // Provider usage often arrives on the final chunk after content/thinking.
       this.tryReportReasoningBudgetExceeded();
-    }
-
-    if (this.finalUsage) {
-      if (!this.finalUsage.details) this.finalUsage.details = {};
-      const currentTime = performance.now();
-      this.finalUsage.details.evalDuration =
-        currentTime - (this.firstChunkTime || this.startTime);
     }
 
     return {

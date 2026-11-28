@@ -927,21 +927,7 @@
       "pluginUpdatedReload": "Plugin aktualisiert. Es greift, wenn eine Sitzung neu geöffnet wird; geben Sie /reload ein, um es sofort anzuwenden."
     },
     "dev": {
-      "devOnly": "NUR ENTWICKLUNG",
-      "testerTitle": "sampleText / compact-Tester",
-      "provider": "Anbieter",
-      "noKey": " (kein Schlüssel)",
-      "promptLabel": "Prompt (für sampleText)",
-      "promptPlaceholder": "Test-Prompt eingeben...",
-      "compactUses": "compact() verwendet {{count}} Beispielnachrichten:",
-      "running": "Wird ausgeführt…",
-      "runSampleText": "sampleText() ausführen",
-      "runCompact": "compact() ausführen",
-      "error": "FEHLER",
-      "ok": "OK",
-      "model": "Modell: {{model}}",
-      "tokensInfo": "Tokens: {{promptTokens}} Eingabe + {{completionTokens}} Ausgabe = {{totalTokens}} gesamt",
-      "emptyResponse": "(leere Antwort)"
+      "devOnly": "NUR ENTWICKLUNG"
     },
     "pendingChanges": "{{count}} geänderte Bereiche",
     "discardChanges": "Verwerfen",

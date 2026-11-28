@@ -137,6 +137,13 @@ export type AgentEventPayload =
       /** Raw server error, shown in the notice's expandable detail. */
       errorMessage: string;
     }
+  | {
+      /** The executor threw away the streamed attempt and will answer again
+       * under the same `responseMessageId` (#3089). */
+      type: 'llmStreamReset';
+      sessionId: string;
+      responseMessageId: string;
+    }
   | LlmStreamDeltaPayload;
 
 /**

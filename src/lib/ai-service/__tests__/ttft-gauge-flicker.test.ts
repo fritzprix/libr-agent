@@ -1,17 +1,18 @@
 /**
- * Regression tests for the TTFT gauge-flicker bug.
+ * Regression tests for the TTFT gauge-flicker bug and the frontend-timing removal.
  *
- * Bug: OpenAI and Groq services yielded a fake usage chunk with
+ * Original bug: OpenAI and Groq services yielded a fake usage chunk with
  * `promptTokens: 0, completionTokens: 0, totalTokens: 0` as the very first
  * streaming chunk in order to carry the TTFT (Time To First Token) metric.
  * This caused the context-window gauge in the UI to momentarily drop to 0%
  * before recovering when the real usage arrived at the end of the stream.
  *
- * Fix: The TTFT chunk now only carries `{ usage: { details: { timeToFirstToken } } }`.
- * Token count fields are omitted entirely so they remain undefined (falsy) — as a
- * result the UI keeps its previous gauge value rather than resetting to 0.
+ * Current contract (#3087): the Rust backend is the single source of truth
+ * for timing (TTFT, prefill, decode speed). The frontend streams emit no
+ * synthetic timing chunk at all — only real provider usage arrives — so the
+ * gauge can never be reset by a placeholder.
  *
- * These tests ensure the fix is preserved and cannot regress silently.
+ * These tests ensure that contract is preserved and cannot regress silently.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -135,8 +136,7 @@ async function* fakeOpenAIStream(usage: {
 
 async function* fakeGroqStream() {
   yield { choices: [{ delta: { content: 'Hi' } }] };
-  // Groq streams don't carry usage in chunks with the standard SDK;
-  // the service relies on TTFT + stream end without per-chunk usage.
+  // Groq streams carry no per-chunk usage with the standard SDK fixture.
 }
 
 // ---------------------------------------------------------------------------
@@ -168,28 +168,18 @@ describe('OpenAIService – TTFT gauge-flicker regression', () => {
     service = new OpenAIService('sk-test-key', { maxTokens: 100 });
   });
 
-  it('TTFT chunk carries only details — no token count fields (service layer)', async () => {
+  it('does not emit a synthetic frontend TTFT chunk (backend is timing SSOT)', async () => {
     const messages = [makeMessage('m1', 'Hello')];
     const chunks = await collectChunks(
       service.streamChat(messages, { modelName: 'gpt-4o' }),
     );
 
-    const firstUsage = usageChunks(chunks)[0];
-    expect(firstUsage).toBeDefined();
-
-    // The TTFT chunk must carry timeToFirstToken in details.
-    const details = (firstUsage.usage as Record<string, unknown>)
-      ?.details as Record<string, unknown> | undefined;
-    expect(details?.timeToFirstToken).toBeTypeOf('number');
-
-    // The service intentionally omits token count fields from the TTFT chunk
-    // so that useLLMExecution.ts can detect a "details-only" first chunk and
-    // normalise them to 0 via `?? 0` before passing to the badge component.
-    // If these fields are present with value 0 we regress back to the flicker bug.
-    const usage = firstUsage.usage as Record<string, unknown>;
-    expect('promptTokens' in usage).toBe(false);
-    expect('completionTokens' in usage).toBe(false);
-    expect('totalTokens' in usage).toBe(false);
+    const syntheticTtftChunks = usageChunks(chunks).filter((c) => {
+      const details = (c.usage as Record<string, unknown>)
+        ?.details as Record<string, unknown> | undefined;
+      return typeof details?.timeToFirstToken === 'number';
+    });
+    expect(syntheticTtftChunks).toHaveLength(0);
   });
 
   it('real usage chunk arrives with non-zero token counts', async () => {
@@ -238,25 +228,26 @@ describe('GroqService – TTFT gauge-flicker regression', () => {
     service = new GroqService('gsk-test-key', { maxTokens: 100 });
   });
 
-  it('TTFT chunk carries only details — no token count fields (service layer)', async () => {
+  it('emits no all-zero usage chunk that could reset the gauge (service layer)', async () => {
     const messages = [makeMessage('m1', 'Hi')];
     const chunks = await collectChunks(
       service.streamChat(messages, { modelName: 'llama-3.1-8b-instant' }),
     );
 
-    const firstUsage = usageChunks(chunks)[0];
-    // Groq may not always yield a TTFT chunk if the stream is empty.
-    if (!firstUsage) return;
-
-    // The TTFT chunk must NOT include token count fields at the service layer.
-    // The useLLMExecution hook normalises them to 0 via `?? 0` before the badge.
-    const usage = firstUsage.usage as Record<string, unknown>;
-    expect('promptTokens' in usage).toBe(false);
-    expect('completionTokens' in usage).toBe(false);
-    expect('totalTokens' in usage).toBe(false);
+    // The original bug: a first usage chunk with all-zero token counts made
+    // the context-window gauge drop to 0%. No chunk may carry that shape.
+    const zeroTokenUsage = usageChunks(chunks).filter((c) => {
+      const u = c.usage as Record<string, unknown>;
+      return (
+        u.promptTokens === 0 &&
+        u.completionTokens === 0 &&
+        u.totalTokens === 0
+      );
+    });
+    expect(zeroTokenUsage).toHaveLength(0);
   });
 
-  it('TTFT chunk must carry timeToFirstToken in details', async () => {
+  it('does not emit a synthetic frontend TTFT chunk (backend is timing SSOT)', async () => {
     const messages = [makeMessage('m1', 'Hi')];
     const chunks = await collectChunks(
       service.streamChat(messages, { modelName: 'llama-3.1-8b-instant' }),
@@ -268,6 +259,6 @@ describe('GroqService – TTFT gauge-flicker regression', () => {
       return typeof details?.timeToFirstToken === 'number';
     });
 
-    expect(usageWithTTFT).toBeDefined();
+    expect(usageWithTTFT).toBeUndefined();
   });
 });

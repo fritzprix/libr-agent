@@ -82,22 +82,22 @@ export async function importUserSkills(
 }
 
 export async function previewGitHubSkillInstall(
-  repoUrl: string,
+  source: string,
 ): Promise<SkillImportPreview> {
   return safeInvoke<SkillImportPreview>('preview_github_skill_install', {
-    repoUrl,
+    source,
   });
 }
 
 export async function installGitHubSkills(
-  repoUrl: string,
+  source: string,
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
   approveHooks?: boolean,
   pluginOptions?: Record<string, string>,
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_github_skills', {
-    repoUrl,
+    source,
     overwriteExisting,
     excludedSkillNames,
     approveHooks,
@@ -148,21 +148,21 @@ export async function resolvePluginTarget(
   });
 }
 
-/** Previews a GitHub plugin install scoped to a single session. */
+/** Previews a plugin install scoped to a single session (#2928: any git URL or local path). */
 export async function previewSessionPluginInstall(
   sessionId: string,
-  repoUrl: string,
+  source: string,
 ): Promise<SkillImportPreview> {
   return safeInvoke<SkillImportPreview>('preview_session_plugin_install', {
     sessionId,
-    repoUrl,
+    source,
   });
 }
 
-/** Installs a GitHub plugin for one session only (survives resume). */
+/** Installs a plugin for one session only (survives resume). */
 export async function installSessionPlugin(
   sessionId: string,
-  repoUrl: string,
+  source: string,
   overwriteExisting: boolean,
   excludedSkillNames?: string[],
   approveHooks?: boolean,
@@ -170,7 +170,7 @@ export async function installSessionPlugin(
 ): Promise<SkillImportResult> {
   return safeInvoke<SkillImportResult>('install_session_plugin', {
     sessionId,
-    repoUrl,
+    source,
     overwriteExisting,
     excludedSkillNames,
     approveHooks,

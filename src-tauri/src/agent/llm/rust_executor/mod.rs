@@ -27,14 +27,17 @@
 //! [`crate::agent::events::AgentEvent::LlmStreamDelta`] (#2786), so the GUI
 //! shows the turn live. Mid-stream loop and reasoning-budget detection is not
 //! done here: the GUI feeds those events into its `StreamAccumulator`, which
-//! reports an issue back and cancels the call. Not covered here (the frontend
-//! has them): retry with a fallback model, and Gemini's retry without tools
-//! after a malformed function call.
+//! reports an issue back and cancels the call. Covered here too, like the
+//! frontend: Gemini's one-time retry without tools after a malformed function
+//! call (#3089), in `completion.rs`.
 
 mod completion;
 mod config;
 mod convert;
 mod events;
+// Public so the integration tests can reset and inspect the process-wide
+// strip-route memory while driving the real executor path.
+pub mod media_assist_fallback;
 pub(crate) mod settings;
 mod tasks;
 

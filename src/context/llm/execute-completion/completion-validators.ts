@@ -37,9 +37,6 @@ export interface FinalizeCompletionParams {
   thinkingSignature?: string;
   thinkingStartTime?: number;
   finalUsage?: TokenUsage;
-  startTime: number;
-  endTime: number;
-  firstChunkTime?: number;
 }
 
 export function validateAndFinalizeMessage({
@@ -51,29 +48,7 @@ export function validateAndFinalizeMessage({
   thinkingSignature,
   thinkingStartTime,
   finalUsage,
-  startTime,
-  endTime,
-  firstChunkTime,
 }: FinalizeCompletionParams): Message {
-  const totalDurationMs = endTime - startTime;
-
-  if (finalUsage && finalUsage.completionTokens > 0) {
-    if (!finalUsage.details) {
-      finalUsage.details = {};
-    }
-    if (!finalUsage.details.evalDuration) {
-      if (firstChunkTime) {
-        finalUsage.details.promptEvalDuration = firstChunkTime - startTime;
-        finalUsage.details.evalDuration = endTime - firstChunkTime;
-      } else {
-        finalUsage.details.evalDuration = totalDurationMs;
-      }
-    }
-    if (!finalUsage.details.timeToFirstToken && firstChunkTime) {
-      finalUsage.details.timeToFirstToken = firstChunkTime - startTime;
-    }
-  }
-
   const finalToolCalls: ToolCall[] =
     streamingToolCalls.length > 0
       ? streamingToolCalls

@@ -304,7 +304,7 @@ export function SkillsManagementPanelContent({
             <p className="text-sm font-medium">
               {t(
                 'settings.skills.githubInstallTitle',
-                'Install from GitHub repository',
+                'Install from a git repository',
               )}
             </p>
           </div>
@@ -314,7 +314,7 @@ export function SkillsManagementPanelContent({
               onChange={(event) => onRepoUrlChange(event.target.value)}
               placeholder={t(
                 'settings.skills.githubInstallPlaceholder',
-                'https://github.com/owner/repo or tree URL',
+                'GitHub URL, any git URL, or a local folder path',
               )}
             />
             <Button
@@ -335,7 +335,7 @@ export function SkillsManagementPanelContent({
           <p className="text-xs text-muted-foreground">
             {t(
               'settings.skills.githubInstallDescription',
-              'Public GitHub repositories are downloaded, scanned for SKILL.md packages, and then installed into managed user storage.',
+              'Public repositories are downloaded, scanned for SKILL.md packages, and then installed into managed user storage.',
             )}
           </p>
         </div>

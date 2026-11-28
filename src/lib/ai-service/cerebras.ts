@@ -205,42 +205,40 @@ export class CerebrasService extends BaseAIService<
         return;
       }
 
-      yield* this.streamChatWithTTFT(
-        (async function* (
-          service: CerebrasService,
-        ): AsyncGenerator<string, void, void> {
-          for await (const chunk of stream) {
-            if (abortSignal?.aborted) {
-              service.logger.info('Stream aborted during iteration');
-              break;
-            }
-
-            // Handle usage metrics usually found in the final chunk
-            const chunkObj = chunk as unknown as Record<string, unknown>;
-            if (chunkObj?.usage) {
-              const u = chunkObj.usage as unknown as {
-                prompt_tokens?: number;
-                completion_tokens?: number;
-                total_tokens?: number;
-                prompt_tokens_details?: { cached_tokens?: number };
-              };
-              yield JSON.stringify({
-                usage: {
-                  promptTokens: u.prompt_tokens || 0,
-                  completionTokens: u.completion_tokens || 0,
-                  totalTokens: u.total_tokens || 0,
-                  cachedPromptTokens: u.prompt_tokens_details?.cached_tokens,
-                },
-              });
-            }
-
-            const processedChunk = service.processChunk(chunk);
-            if (processedChunk) {
-              yield processedChunk;
-            }
+      yield* (async function* (
+        service: CerebrasService,
+      ): AsyncGenerator<string, void, void> {
+        for await (const chunk of stream) {
+          if (abortSignal?.aborted) {
+            service.logger.info('Stream aborted during iteration');
+            break;
           }
-        })(this),
-      );
+
+          // Handle usage metrics usually found in the final chunk
+          const chunkObj = chunk as unknown as Record<string, unknown>;
+          if (chunkObj?.usage) {
+            const u = chunkObj.usage as unknown as {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              total_tokens?: number;
+              prompt_tokens_details?: { cached_tokens?: number };
+            };
+            yield JSON.stringify({
+              usage: {
+                promptTokens: u.prompt_tokens || 0,
+                completionTokens: u.completion_tokens || 0,
+                totalTokens: u.total_tokens || 0,
+                cachedPromptTokens: u.prompt_tokens_details?.cached_tokens,
+              },
+            });
+          }
+
+          const processedChunk = service.processChunk(chunk);
+          if (processedChunk) {
+            yield processedChunk;
+          }
+        }
+      })(this);
     } catch (error: unknown) {
       this.handleStreamingError(error, { messages, options, config });
     }

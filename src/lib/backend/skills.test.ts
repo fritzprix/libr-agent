@@ -118,7 +118,7 @@ describe('skills backend wrapper', () => {
     );
 
     expect(safeInvoke).toHaveBeenCalledWith('preview_github_skill_install', {
-      repoUrl: 'https://github.com/example/skills',
+      source: 'https://github.com/example/skills',
     });
     expect(result).toEqual(mockResponse);
   });
@@ -138,7 +138,7 @@ describe('skills backend wrapper', () => {
     );
 
     expect(safeInvoke).toHaveBeenCalledWith('install_github_skills', {
-      repoUrl: 'https://github.com/example/skills',
+      source: 'https://github.com/example/skills',
       overwriteExisting: false,
       excludedSkillNames: ['skip-me'],
       approveHooks: undefined,

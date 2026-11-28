@@ -200,6 +200,30 @@ describe('Rust stream handler', () => {
     expect(current()?.id).toBe('r-2');
   });
 
+  it('restarts the live message when the backend resets the turn (#3089)', () => {
+    const { handler, current, hasEntry } = setup();
+
+    handler.handleDelta(delta({ content: 'discarded' }));
+    expect(current()).toBeDefined();
+
+    handler.handleReset(SESSION, RESPONSE);
+    expect(hasEntry()).toBe(false);
+
+    // The retry answers under the same id; its text replaces the discarded
+    // attempt instead of continuing it.
+    handler.handleDelta(delta({ content: 'retried' }));
+    expect(textOf(current())).toBe('retried');
+  });
+
+  it('keeps a newer turn when an old turn is reset', () => {
+    const { handler, current } = setup();
+
+    handler.handleDelta(delta({ content: 'new' }, { responseMessageId: 'r-2' }));
+    handler.handleReset(SESSION, RESPONSE);
+
+    expect(current()?.id).toBe('r-2');
+  });
+
   it('clears the live message when the final message is saved', () => {
     const { handler, hasEntry } = setup();
 
@@ -246,7 +270,7 @@ describe('Rust stream handler', () => {
     expect(current()?.usage?.promptTokens).toBe(120);
     expect(current()?.usage?.completionTokens).toBe(30);
     expect(current()?.usage?.totalTokens).toBe(150);
-    expect(current()?.usage?.details?.evalDuration).toBeTypeOf('number');
+    expect(current()?.usage?.details?.evalDuration).toBeUndefined();
   });
 });
 
