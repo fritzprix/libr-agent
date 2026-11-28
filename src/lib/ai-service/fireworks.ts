@@ -3,6 +3,10 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { OpenAIService } from './openai';
 import { Message } from '@/models/chat';
 import { createLlmFetch } from './desktop-fetch';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 
 /**
  * An AI service implementation for the Fireworks AI provider.
@@ -47,15 +51,14 @@ export class FireworksService extends OpenAIService {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    void modelName;
-    return true;
+    return supportsToolsForModel(AIServiceProvider.Fireworks, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('llama-3.1-405b')) return 128000;
-    if (lowerName.includes('qwen')) return 32768;
-    return 128000;
+    return estimateContextWindowForModel(
+      AIServiceProvider.Fireworks,
+      modelName,
+    );
   }
 
   /**

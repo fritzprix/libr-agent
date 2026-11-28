@@ -36,6 +36,10 @@ import type {
   OpenAIStreamingRequest,
 } from './openai/types';
 import { isOpenAIStreamUsage } from './openai/types';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 
 const logger = getLogger('OpenAIService');
 
@@ -133,21 +137,11 @@ export class OpenAIService extends BaseAIService<
   }
 
   static supportsToolsForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    const isReasoningModel = /^o(?:1|3|4)(?:$|[-.])/.test(lowerName);
-    return (
-      lowerName.includes('gpt-4') ||
-      lowerName.includes('gpt-3.5-turbo') ||
-      isReasoningModel
-    );
+    return supportsToolsForModel(AIServiceProvider.OpenAI, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('gpt-4.1')) return 1000000;
-    if (lowerName.includes('gpt-4o')) return 128000;
-    if (/^o(?:3|4)(?:$|[-.])/.test(lowerName)) return 200000;
-    return 8192;
+    return estimateContextWindowForModel(AIServiceProvider.OpenAI, modelName);
   }
 
   /**

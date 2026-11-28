@@ -14,6 +14,10 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { getContextWindow } from './model-capabilities';
 import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
+import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
   createOllamaCoreLogger,
@@ -125,17 +129,11 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
   }
 
   static supportsToolsForModel(modelName: string): boolean {
-    return getModelToolSupport(modelName);
+    return supportsToolsForModel(AIServiceProvider.Ollama, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('llama-3.1-405b')) return 128000;
-    if (lowerName.includes('llama-3.1')) return 128000;
-    if (lowerName.includes('llama-3.2')) return 128000;
-    if (lowerName.includes('mistral-nemo')) return 128000;
-    if (lowerName.includes('command-r')) return 128000;
-    return 32768;
+    return estimateContextWindowForModel(AIServiceProvider.Ollama, modelName);
   }
 
   /**

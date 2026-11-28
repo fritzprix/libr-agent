@@ -17,6 +17,10 @@ import {
 } from './stream-events';
 import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
 import { createLlmFetch } from './desktop-fetch';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 
 const logger = getLogger('GroqService');
 
@@ -259,20 +263,11 @@ export class GroqService extends BaseAIService<
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    return (
-      lowerName.includes('llama3') ||
-      lowerName.includes('llama-3') ||
-      lowerName.includes('mixtral')
-    );
+    return supportsToolsForModel(AIServiceProvider.Groq, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('llama-3.1-405b')) return 128000;
-    if (lowerName.includes('llama-3.1-70b')) return 128000;
-    if (lowerName.includes('llama-3.1-8b')) return 128000;
-    return 32768;
+    return estimateContextWindowForModel(AIServiceProvider.Groq, modelName);
   }
 
   /**

@@ -10,6 +10,10 @@ import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { getContextWindow } from './model-capabilities';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 import { mapThinkingEffort } from './thinking-effort-mapping';
 import {
   applyAnthropicMessageDeltaUsage,
@@ -552,14 +556,14 @@ export class AnthropicService extends BaseAIService<
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    return lowerName.includes('claude-3') || lowerName.includes('claude-opus');
+    return supportsToolsForModel(AIServiceProvider.Anthropic, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('claude-3')) return 200000;
-    return 100000;
+    return estimateContextWindowForModel(
+      AIServiceProvider.Anthropic,
+      modelName,
+    );
   }
 
   /**
