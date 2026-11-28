@@ -18,6 +18,7 @@ mod anthropic;
 mod client;
 mod error;
 mod gemini;
+mod models;
 mod openai;
 mod provider;
 mod stream;
@@ -27,6 +28,7 @@ pub use anthropic::{Anthropic, AnthropicStream};
 pub use client::{complete, complete_with_deltas, RetryPolicy};
 pub use error::{ErrorKind, LlmError};
 pub use gemini::{Gemini, GeminiStream};
+pub use models::{has_model_list_api, list_models, ListedModel, ModelCost};
 pub use provider::{
     is_openai_compatible, is_supported, provider_with_endpoint, resolve_provider, ChatProvider,
     CustomOpenAi, Endpoint, Fireworks, OpenAi, OpenRouter,

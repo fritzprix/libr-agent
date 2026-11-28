@@ -6,6 +6,7 @@ pub mod dataset_commands;
 pub mod download_commands;
 pub mod file_commands;
 pub mod knowledge_commands;
+pub mod llm_commands;
 pub mod log_commands;
 pub mod markdown_pdf;
 pub mod mcp_commands;

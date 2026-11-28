@@ -79,6 +79,7 @@ use commands::knowledge_commands::{
     delete_global_knowledge, get_global_knowledge_detail, get_global_knowledge_graph,
     list_global_knowledge,
 };
+use commands::llm_commands::list_llm_models;
 use commands::log_commands::{
     backup_current_log, clear_current_log, get_launch_log_level, list_log_files, log_batch,
     log_debug, log_error_from_frontend, log_info, log_trace, log_warn,
@@ -392,6 +393,7 @@ pub(crate) fn configure_tauri_builder(
             get_display_settings,
             get_experimental_settings,
             get_system_settings,
+            list_llm_models,
             get_pending_session_api_pairing,
             approve_session_api_pairing,
             reject_session_api_pairing,
