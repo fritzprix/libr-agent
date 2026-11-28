@@ -81,8 +81,6 @@ export type AICompletionExecutionService = AIStreamingService &
   AIMessageSanitizationService &
   AIServiceLifecycle;
 
-export type AIModelLookupService = AIModelDiscoveryService;
-
 export type AIContextCompactionService = AICompactionService;
 
 export interface IAIService

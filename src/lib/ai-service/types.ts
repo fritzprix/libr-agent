@@ -178,7 +178,6 @@ export type {
   AIContextCompactionService,
   AICompactionService,
   AIMessageSanitizationService,
-  AIModelLookupService,
   AIModelDiscoveryService,
   AISampleTextOptions,
   AISamplingService,
