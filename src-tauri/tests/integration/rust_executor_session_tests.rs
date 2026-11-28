@@ -1870,18 +1870,17 @@ async fn a_multimodal_reject_with_media_retries_once_without_media() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request(
             session_id,
             "resp-1",
             PROVIDER,
-            vec![message_with_image(session_id, "u1")]
+            vec![message_with_image(session_id, "u1")],
         ),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the retried answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1917,18 +1916,17 @@ async fn a_media_fallback_never_retries_after_a_delta_was_sent() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request(
             session_id,
             "resp-1",
             PROVIDER,
-            vec![message_with_image(session_id, "u1")]
+            vec![message_with_image(session_id, "u1")],
         ),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the stream error", || {
         !sink.llm_errors.lock().unwrap().is_empty()
     })
@@ -1960,18 +1958,17 @@ async fn a_remembered_media_strip_route_pre_strips_the_next_turn() {
     {
         let sink = Arc::new(RecordingSink::default());
         let _config = configure(config(first.endpoint.clone()));
-        assert!(dispatch_completion(
-            app(),
+        dispatch_completion(
             &request(
                 session_id,
                 "resp-1",
                 PROVIDER,
-                vec![message_with_image(session_id, "u1")]
+                vec![message_with_image(session_id, "u1")],
             ),
             deliver_to(&sink),
         )
         .await
-        .unwrap());
+        .unwrap();
         wait_for("turn one", || !sink.responses.lock().unwrap().is_empty()).await;
     }
     assert_eq!(first.requests.lock().unwrap().len(), 2);
@@ -1981,18 +1978,17 @@ async fn a_remembered_media_strip_route_pre_strips_the_next_turn() {
     let second = mock_provider(vec![text_reply("two")]).await;
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(second.endpoint.clone()));
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request(
             session_id,
             "resp-2",
             PROVIDER,
-            vec![message_with_image(session_id, "u2")]
+            vec![message_with_image(session_id, "u2")],
         ),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("turn two", || !sink.responses.lock().unwrap().is_empty()).await;
 
     let requests = second.requests.lock().unwrap();
@@ -2030,18 +2026,17 @@ async fn media_fallback_ignores_context_limit_rate_limit_and_opaque_5xx() {
         let sink = Arc::new(RecordingSink::default());
         let _config = configure(config(endpoint));
 
-        assert!(dispatch_completion(
-            app(),
+        dispatch_completion(
             &request(
                 &session_id,
                 "resp-1",
                 PROVIDER,
-                vec![message_with_image(&session_id, "u1")]
+                vec![message_with_image(&session_id, "u1")],
             ),
             deliver_to(&sink),
         )
         .await
-        .unwrap());
+        .unwrap();
         wait_for(&format!("the {name} error"), || {
             !sink.llm_errors.lock().unwrap().is_empty()
         })
@@ -2080,9 +2075,9 @@ async fn a_compaction_with_rejected_media_retries_once_stripped() {
         .messages
         .push(message_with_image(session_id, "u-media"));
 
-    assert!(dispatch_compaction(app(), &compact, deliver_to(&sink))
+    dispatch_compaction(&compact, deliver_to(&sink))
         .await
-        .unwrap());
+        .unwrap();
     wait_for("the compaction summary", || {
         !sink.compactions.lock().unwrap().is_empty()
     })
