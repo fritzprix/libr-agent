@@ -953,21 +953,7 @@
       "pluginUpdatedReload": "플러그인이 업데이트되었습니다. 세션을 다시 열 때 적용되며, 지금 적용하려면 /reload를 입력하세요."
     },
     "dev": {
-      "devOnly": "DEV ONLY",
-      "testerTitle": "sampleText / compact tester",
-      "provider": "Provider",
-      "noKey": " (no key)",
-      "promptLabel": "Prompt (for sampleText)",
-      "promptPlaceholder": "Enter a test prompt...",
-      "compactUses": "compact() uses {{count}} sample messages:",
-      "running": "Running…",
-      "runSampleText": "Run sampleText()",
-      "runCompact": "Run compact()",
-      "error": "ERROR",
-      "ok": "OK",
-      "model": "model: {{model}}",
-      "tokensInfo": "tokens: {{promptTokens}} prompt + {{completionTokens}} completion = {{totalTokens}} total",
-      "emptyResponse": "(empty response)"
+      "devOnly": "DEV ONLY"
     },
     "pendingChanges": "{{count}}개 섹션 변경됨",
     "discardChanges": "변경사항 취소",
