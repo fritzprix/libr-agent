@@ -68,7 +68,13 @@ export function calculateTokensPerSecond(
   usage: TokenUsage,
   durationMs: number,
 ): number {
-  if (usage.completionTokens === 0 || durationMs === 0) return 0;
+  if (
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0 ||
+    usage.completionTokens <= 0
+  ) {
+    return 0;
+  }
   return (usage.completionTokens / durationMs) * 1000;
 }
 
@@ -86,14 +92,21 @@ export function formatUsageMetrics(usage: TokenUsage): {
       ? Math.min((cached / usage.promptTokens) * 100, 100).toFixed(0)
       : undefined;
 
+  const evalDuration = usage.details?.evalDuration;
+  const speed =
+    evalDuration !== undefined &&
+    Number.isFinite(evalDuration) &&
+    evalDuration > 0 &&
+    usage.completionTokens > 0
+      ? `${((usage.completionTokens / evalDuration) * 1000).toFixed(1)} t/s`
+      : undefined;
+
   return {
     input: formatNumber(usage.promptTokens),
     output: formatNumber(usage.completionTokens),
     total: formatNumber(usage.totalTokens),
     cacheHit: cacheHitPercent ? `${cacheHitPercent}%` : undefined,
-    speed: usage.details?.evalDuration
-      ? `${((usage.completionTokens / usage.details.evalDuration) * 1000).toFixed(1)} t/s`
-      : undefined,
+    speed,
   };
 }
 

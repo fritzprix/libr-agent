@@ -35,10 +35,14 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
   const compact = compactProp ?? displaySettings.compactMetrics;
   const showInlineSpeed = compact ? showSpeedProp === true : showSpeed;
 
-  // Calculate speed if duration is available (either from provider or context-estimated)
+  // Calculate speed only from positive backend/provider evalDuration
+  const evalDuration = usage.details?.evalDuration;
   const tokensPerSec =
-    usage.details?.evalDuration && usage.completionTokens > 0
-      ? calculateTokensPerSecond(usage, usage.details.evalDuration)
+    evalDuration !== undefined &&
+    Number.isFinite(evalDuration) &&
+    evalDuration > 0 &&
+    usage.completionTokens > 0
+      ? calculateTokensPerSecond(usage, evalDuration)
       : null;
 
   const tpsFormatted = tokensPerSec ? tokensPerSec.toFixed(1) : null;
@@ -73,12 +77,15 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
       ? `${cacheHitPercent}% · ${formatNumber(cachedTokens)}`
       : 'cache';
 
-  // Calculate prefill tokens per second if both TTFT and prompt tokens are available
+  // Calculate prefill tokens per second only from positive backend/provider TTFT
+  const ttft = usage.details?.timeToFirstToken;
+  const promptEvalDuration = usage.details?.promptEvalDuration;
   const prefillTPS =
-    usage.details?.timeToFirstToken && usage.promptTokens > 0
-      ? (usage.promptTokens / (usage.details.timeToFirstToken / 1000)).toFixed(
-          1,
-        )
+    ttft !== undefined &&
+    Number.isFinite(ttft) &&
+    ttft > 0 &&
+    usage.promptTokens > 0
+      ? (usage.promptTokens / (ttft / 1000)).toFixed(1)
       : null;
 
   // Build prefill timing info based on user preference
@@ -88,10 +95,14 @@ export const TokenMetricsBadge = memo(function TokenMetricsBadge({
     prefillTPS
   ) {
     prefillInfo = ` • Prefill: ${prefillTPS} tok/s`;
-  } else if (usage.details?.promptEvalDuration) {
-    prefillInfo = ` • Prefill: ${usage.details.promptEvalDuration.toFixed(0)}ms`;
-  } else if (usage.details?.timeToFirstToken) {
-    prefillInfo = ` • TTFT: ${usage.details.timeToFirstToken.toFixed(0)}ms`;
+  } else if (
+    promptEvalDuration !== undefined &&
+    Number.isFinite(promptEvalDuration) &&
+    promptEvalDuration > 0
+  ) {
+    prefillInfo = ` • Prefill: ${promptEvalDuration.toFixed(0)}ms`;
+  } else if (ttft !== undefined && Number.isFinite(ttft) && ttft > 0) {
+    prefillInfo = ` • TTFT: ${ttft.toFixed(0)}ms`;
   }
 
   return (
