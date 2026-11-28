@@ -927,21 +927,7 @@
       "pluginUpdatedReload": "Plugin atualizado. Ele entra em vigor quando uma sessão for aberta novamente; digite /reload para aplicar agora."
     },
     "dev": {
-      "devOnly": "SOMENTE DEV",
-      "testerTitle": "Testador de sampleText / compact",
-      "provider": "Provedor",
-      "noKey": " (sem chave)",
-      "promptLabel": "Prompt (para sampleText)",
-      "promptPlaceholder": "Digite um prompt de teste...",
-      "compactUses": "compact() usa {{count}} mensagens de exemplo:",
-      "running": "Executando…",
-      "runSampleText": "Executar sampleText()",
-      "runCompact": "Executar compact()",
-      "error": "ERRO",
-      "ok": "OK",
-      "model": "modelo: {{model}}",
-      "tokensInfo": "tokens: {{promptTokens}} entrada + {{completionTokens}} saída = {{totalTokens}} total",
-      "emptyResponse": "(resposta vazia)"
+      "devOnly": "SOMENTE DEV"
     },
     "pendingChanges": "{{count}} seções alteradas",
     "discardChanges": "Descartar",

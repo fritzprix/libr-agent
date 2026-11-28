@@ -927,21 +927,7 @@
       "pluginUpdatedReload": "插件已更新。将在下次打开会话时生效；输入 /reload 立即应用。"
     },
     "dev": {
-      "devOnly": "仅限开发",
-      "testerTitle": "sampleText / compact 测试器",
-      "provider": "提供商",
-      "noKey": "（无密钥）",
-      "promptLabel": "提示词（用于 sampleText）",
-      "promptPlaceholder": "输入测试提示词...",
-      "compactUses": "compact() 使用 {{count}} 条示例消息：",
-      "running": "运行中…",
-      "runSampleText": "运行 sampleText()",
-      "runCompact": "运行 compact()",
-      "error": "错误",
-      "ok": "正常",
-      "model": "模型：{{model}}",
-      "tokensInfo": "token：{{promptTokens}} 提示 + {{completionTokens}} 补全 = {{totalTokens}} 总计",
-      "emptyResponse": "（空响应）"
+      "devOnly": "仅限开发"
     },
     "pendingChanges": "已更改 {{count}} 个部分",
     "discardChanges": "放弃",
