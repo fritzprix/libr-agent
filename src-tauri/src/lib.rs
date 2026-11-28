@@ -145,11 +145,12 @@ use commands::workspace_commands::{
 
 // Re-export state management functions
 pub use state::{
-    get_assistant_repository, get_attachments_repository, get_compact_context_repository,
-    get_database_connection, get_knowledge_repository, get_mcp_server_repository,
-    get_mcp_service_proxy_manager, get_message_repository, get_planning_repository,
-    get_playbook_repository, get_scheduled_task_repository, get_session_repository,
-    get_sqlite_db_url, init_active_sessions, init_concurrency_gate, init_session_bus, reset_state,
+    get_active_sessions, get_assistant_repository, get_attachments_repository,
+    get_compact_context_repository, get_concurrency_gate, get_database_connection,
+    get_knowledge_repository, get_mcp_server_repository, get_mcp_service_proxy_manager,
+    get_message_repository, get_planning_repository, get_playbook_repository,
+    get_scheduled_task_repository, get_session_bus, get_session_repository, get_sqlite_db_url,
+    init_active_sessions, init_concurrency_gate, init_session_bus, reset_state,
     set_assistant_repository, set_attachments_repository, set_compact_context_repository,
     set_database_connection, set_knowledge_repository, set_mcp_server_repository,
     set_mcp_service_proxy_manager, set_message_repository, set_pending_queue_repository,

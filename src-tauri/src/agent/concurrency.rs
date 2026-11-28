@@ -15,8 +15,11 @@
 /// This prevents the classic deadlock where every active slot is occupied by a
 /// parent waiting on children that can never start because all active slots are
 /// taken.
+use crate::agent::state::AgentSession;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 /// Default concurrency limits applied when settings are not yet loaded.
 pub const DEFAULT_MAX_ACTIVE_AGENTS: u32 = 4;
@@ -70,6 +73,30 @@ impl<'a> SuspendedAgentGuard<'a> {
         drop(_suspended_permit);
         Ok(active_permit)
     }
+
+    pub async fn resume_cancellable(
+        self,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<ActiveAgentPermit, String> {
+        let Self {
+            gate,
+            _suspended_permit,
+        } = self;
+        let active_permit = gate.acquire_active_agent_cancellable(cancel).await?;
+        drop(_suspended_permit);
+        Ok(active_permit)
+    }
+
+    /// Try to re-acquire an active slot without blocking. Releases the suspended slot either way.
+    pub fn try_resume(self) -> Option<ActiveAgentPermit> {
+        let Self {
+            gate,
+            _suspended_permit,
+        } = self;
+        let active_permit = gate.try_acquire_active_agent();
+        drop(_suspended_permit);
+        active_permit
+    }
 }
 
 #[derive(Debug)]
@@ -108,6 +135,33 @@ impl ConcurrencyGate {
             .await
             .map_err(|_| "ConcurrencyGate: active agent semaphore closed".to_string())?;
         Ok(ActiveAgentPermit::new(permit))
+    }
+
+    /// Try to acquire an active agent slot without blocking.
+    pub fn try_acquire_active_agent(&self) -> Option<ActiveAgentPermit> {
+        Arc::clone(&self.active_agent)
+            .try_acquire_owned()
+            .ok()
+            .map(ActiveAgentPermit::new)
+    }
+
+    /// Acquire an active agent slot, aborting immediately if `cancel` is triggered.
+    pub async fn acquire_active_agent_cancellable(
+        &self,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<ActiveAgentPermit, String> {
+        if cancel.is_cancelled() {
+            return Err(
+                "Session cancelled while waiting for an active concurrency slot".to_string(),
+            );
+        }
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                Err("Session cancelled while waiting for an active concurrency slot".to_string())
+            }
+            permit = self.acquire_active_agent() => permit,
+        }
     }
 
     /// Active → Suspended transition (entry to `awaitAgent`).
@@ -158,6 +212,54 @@ impl ConcurrencyGate {
             .forget();
         self.suspended_process.add_permits(1);
         Ok(())
+    }
+}
+
+/// Look up a session's cancellation token. `None` when the session is not
+/// active — callers must handle that explicitly instead of silently waiting on
+/// a fresh token that can never fire (#3086 G1.4).
+pub async fn session_cancel_token(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Option<CancellationToken> {
+    active_sessions
+        .read()
+        .await
+        .get(session_id)
+        .map(|session| session.cancellation_token.clone())
+}
+
+/// Why a session-attached queued active-slot acquire did not yield a permit.
+#[derive(Debug)]
+pub enum QueuedPermitError {
+    /// The session's own cancellation token fired while it was queued.
+    Cancelled,
+    /// The session was already gone: there is no token to cancel the wait with.
+    MissingSession,
+    /// The gate itself failed (closed semaphore).
+    Gate(String),
+}
+
+/// Acquire the active slot for a queued session, aborting when the session is
+/// cancelled while queued. One implementation shared by background start /
+/// resume / injection and the LLM-turn permit guard, so the token lookup and
+/// the cancelled arm cannot drift apart (#3086 G1.4).
+///
+/// `gate` is passed explicitly (callers use `crate::state::get_concurrency_gate()`)
+/// so the queue/cancel semantics stay testable without global state.
+pub async fn acquire_queued_permit(
+    gate: &ConcurrencyGate,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<ActiveAgentPermit, QueuedPermitError> {
+    let cancel = match session_cancel_token(active_sessions, session_id).await {
+        Some(token) => token,
+        None => return Err(QueuedPermitError::MissingSession),
+    };
+    match gate.acquire_active_agent_cancellable(&cancel).await {
+        Ok(permit) => Ok(permit),
+        Err(_) if cancel.is_cancelled() => Err(QueuedPermitError::Cancelled),
+        Err(error) => Err(QueuedPermitError::Gate(error)),
     }
 }
 
@@ -273,6 +375,68 @@ mod tests {
         assert!(
             after_release.is_ok(),
             "Released process slot should be acquirable"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_acquire_active_agent_cancellable_aborts_queued_waiter_immediately() {
+        let g = Arc::new(gate(1, 2));
+        let _held = g.acquire_active_agent().await.unwrap();
+
+        let token = tokio_util::sync::CancellationToken::new();
+        let token_clone = token.clone();
+        let g_clone = Arc::clone(&g);
+
+        let waiter =
+            tokio::spawn(
+                async move { g_clone.acquire_active_agent_cancellable(&token_clone).await },
+            );
+
+        tokio::task::yield_now().await;
+        token.cancel();
+
+        let res = waiter.await.unwrap();
+        assert!(
+            res.is_err(),
+            "Cancelled queued waiter must abort without waiting for a slot"
+        );
+
+        // Dropping the held permit leaves the slot immediately available to a new waiter
+        // (proving the cancelled waiter left the semaphore queue).
+        drop(_held);
+        let next = g.try_acquire_active_agent();
+        assert!(
+            next.is_some(),
+            "Slot must be free after cancelled waiter leaves the queue"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resume_cancellable_aborts_and_releases_suspended_slot() {
+        let g = Arc::new(gate(1, 1));
+        let mut parent_permit = Some(g.acquire_active_agent().await.unwrap());
+        let suspended = g.suspend_agent(&mut parent_permit).await.unwrap();
+
+        // Fill the only active slot so resume cannot proceed.
+        let _other = g.acquire_active_agent().await.unwrap();
+
+        let token = tokio_util::sync::CancellationToken::new();
+        let token_clone = token.clone();
+        let resume_fut = suspended.resume_cancellable(&token_clone);
+        token.cancel();
+
+        let res = resume_fut.await;
+        assert!(
+            res.is_err(),
+            "Cancelled resume must abort without waiting for an active slot"
+        );
+
+        // Suspended slot must have been released on abort.
+        let mut another_active = Some(_other);
+        let suspended_again = g.suspend_agent(&mut another_active).await;
+        assert!(
+            suspended_again.is_ok(),
+            "Suspended slot must be released when resume_cancellable aborts"
         );
     }
 }
