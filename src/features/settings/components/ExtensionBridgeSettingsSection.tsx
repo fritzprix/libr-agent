@@ -50,11 +50,18 @@ export function ExtensionBridgeSettingsSection() {
     } finally {
       setLoading(false);
     }
+  }, [t]);
 
+  // #3109: the folder lookup is not part of the 5-second status poll. It
+  // runs when Advanced opens (or when the user copies the path), so an
+  // expected miss in a packaged build never turns into a red error line or
+  // ERROR log spam.
+  const refreshPath = useCallback(async (): Promise<string | null> => {
     try {
       const path = await getExtensionUnpackedPath();
       setUnpackedPath(path);
       setPathError(null);
+      return path;
     } catch (error) {
       setUnpackedPath(null);
       setPathError(
@@ -65,6 +72,7 @@ export function ExtensionBridgeSettingsSection() {
               'Could not find the local install folder.',
             ),
       );
+      return null;
     }
   }, [t]);
 
@@ -77,11 +85,12 @@ export function ExtensionBridgeSettingsSection() {
   }, [refresh]);
 
   const copyPath = async () => {
-    if (!unpackedPath) {
+    const path = unpackedPath ?? (await refreshPath());
+    if (!path) {
       return;
     }
     try {
-      await navigator.clipboard.writeText(unpackedPath);
+      await navigator.clipboard.writeText(path);
       toast.success(
         t(
           'settings.system.extensionBridge.pathCopied',
@@ -240,11 +249,15 @@ export function ExtensionBridgeSettingsSection() {
         </ol>
       ) : null}
 
-      {pathError ? (
-        <p className="text-xs text-destructive">{pathError}</p>
-      ) : null}
-
-      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+      <Collapsible
+        open={advancedOpen}
+        onOpenChange={(open) => {
+          setAdvancedOpen(open);
+          if (open) {
+            void refreshPath();
+          }
+        }}
+      >
         <CollapsibleTrigger asChild>
           <Button type="button" variant="ghost" className="h-8 px-2 text-xs">
             {advancedOpen
@@ -278,7 +291,6 @@ export function ExtensionBridgeSettingsSection() {
             type="button"
             variant="outline"
             className="h-8"
-            disabled={!unpackedPath}
             onClick={() => void copyPath()}
           >
             {t(
@@ -286,6 +298,11 @@ export function ExtensionBridgeSettingsSection() {
               'Copy local folder path',
             )}
           </Button>
+          {pathError ? (
+            <p className="text-xs text-destructive leading-relaxed">
+              {pathError}
+            </p>
+          ) : null}
           {status ? (
             <>
               <p>

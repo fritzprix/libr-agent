@@ -52,7 +52,8 @@
     "targets": "all",
     "resources": [
       "bundled_skills/**/*",
-      "bundled_assistants/**/*"
+      "bundled_assistants/**/*",
+      "../chrome-extension/**/*"
     ],
     "icon": [
       "icons/32x32.png",
