@@ -672,15 +672,20 @@ mod tests {
         // exist by a fixed deadline.
         let (dir, env_marker, pid_marker) = fake_hanging_git();
         let git_program = dir.path().join("git");
+        // Bound before the call: the clone future borrows this path until
+        // the join below, so a temporary here would be dropped while borrowed.
+        let dest = dir.path().join("dest");
         let clone = clone_git_repo(
             git_program.as_os_str(),
             "https://git.example.com/o/r",
             None,
-            &dir.path().join("dest"),
+            &dest,
             Duration::from_millis(1500),
         );
+        // Poll longer than the clone timeout so a slow-to-start fake git is
+        // still observed writing its markers (S3.1).
         let markers = async {
-            for _ in 0..50 {
+            for _ in 0..100 {
                 if env_marker.exists() && pid_marker.exists() {
                     return true;
                 }
