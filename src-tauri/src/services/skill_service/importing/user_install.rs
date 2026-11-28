@@ -10,12 +10,13 @@ use super::super::scanning::{
     copy_dir_recursive, discover_existing_skill_roots, find_skill_root_by_name,
     plugin_owner_marker_of_dir, remove_skill_name_from_directory, skill_storage_directory_name,
 };
-use super::archive::{prepare_github_skill_import, prepare_local_skill_import};
+use super::archive::prepare_local_skill_import;
 use super::plugin_install::{
     install_plugin_source, plugin_source_id, sync_installed_plugin_agents,
     sync_installed_plugin_mcp_servers,
 };
 use super::preview::{blocked_system_conflict_names, build_user_import_preview};
+use super::source::prepare_plugin_source_import;
 use crate::services::hooks::registry::get_user_plugins_directory;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -48,7 +49,7 @@ pub async fn import_user_skills(
 }
 
 pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImportPreview, String> {
-    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let mut prepared = prepare_plugin_source_import(repo_url, None).await?;
     build_user_import_preview(&mut prepared).await
 }
 
@@ -59,7 +60,7 @@ pub async fn install_github_skills(
     approve_hooks: Option<bool>,
     plugin_options: Option<BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
-    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let mut prepared = prepare_plugin_source_import(repo_url, None).await?;
     let preview = build_user_import_preview(&mut prepared).await?;
     install_user_prepared_skills(
         prepared,

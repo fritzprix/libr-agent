@@ -113,10 +113,7 @@ export function useSessionPluginInstall(sessionId: string | undefined) {
       }
       setIsInstalling(true);
       const toastId = toast.loading(
-        t(
-          'settings.skills.githubInspecting',
-          'Inspecting GitHub repository...',
-        ),
+        t('settings.skills.githubInspecting', 'Inspecting plugin source...'),
       );
       try {
         const preview = await previewSessionPluginInstall(sessionId, repoUrl);

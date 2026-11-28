@@ -251,7 +251,7 @@ export function useSkillsManagementPanel() {
 
     setIsInstallingGithub(true);
     const toastId = toast.loading(
-      t('settings.skills.githubInspecting', 'Inspecting GitHub repository...'),
+      t('settings.skills.githubInspecting', 'Inspecting plugin source...'),
     );
 
     try {

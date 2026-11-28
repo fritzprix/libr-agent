@@ -244,7 +244,7 @@ const SettingsPage: FC = function SettingsPage() {
 
             {import.meta.env.DEV && (
               <TabsContent value="dev">
-                <DevTab serviceConfigs={formState.serviceConfigs} />
+                <DevTab />
               </TabsContent>
             )}
           </Tabs>

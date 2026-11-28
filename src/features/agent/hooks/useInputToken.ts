@@ -258,7 +258,7 @@ export function useInputToken(
         id: '/plugin install',
         label: '/plugin install',
         description:
-          'Install a plugin from a git URL for this session only (/plugin install <git-url>)',
+          'Install a plugin for this session from a git URL or a local folder (/plugin install <git-url|path>)',
       },
       {
         id: '/plugin update',

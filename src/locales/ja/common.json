@@ -927,21 +927,7 @@
       "pluginUpdatedReload": "プラグインを更新しました。セッションを再度開いたときに適用されます。今すぐ適用するには /reload を入力してください。"
     },
     "dev": {
-      "devOnly": "開発専用",
-      "testerTitle": "sampleText / compact テスター",
-      "provider": "プロバイダー",
-      "noKey": " （キーなし）",
-      "promptLabel": "プロンプト（sampleText 用）",
-      "promptPlaceholder": "テスト用プロンプトを入力...",
-      "compactUses": "compact() は {{count}} 件のサンプルメッセージを使用します:",
-      "running": "実行中…",
-      "runSampleText": "sampleText() を実行",
-      "runCompact": "compact() を実行",
-      "error": "エラー",
-      "ok": "OK",
-      "model": "モデル: {{model}}",
-      "tokensInfo": "トークン: プロンプト {{promptTokens}} + 補完 {{completionTokens}} = 合計 {{totalTokens}}",
-      "emptyResponse": "（空の応答）"
+      "devOnly": "開発専用"
     },
     "pendingChanges": "{{count}} セクションが変更されました",
     "discardChanges": "破棄",
