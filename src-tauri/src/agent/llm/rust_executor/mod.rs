@@ -35,6 +35,7 @@ mod completion;
 mod config;
 mod convert;
 mod events;
+mod media_assist_fallback;
 mod settings;
 mod tasks;
 

@@ -1,6 +1,10 @@
 use super::config::ExecutorConfig;
 use super::convert::{self, GenerationOptions};
 use super::events::{fallback_notice_event, stream_delta_event, stream_reset_event, ResponseSink};
+use super::media_assist_fallback::{
+    messages_have_multimodal_parts, prepare_messages_for_media_assist_retry,
+    remember_strip_for_route, should_attempt_media_assist_fallback, should_strip_for_route,
+};
 use super::settings::{
     chat_is_empty, generation_settings, provider_for, read_fallback_model, runtime_error,
 };
@@ -11,6 +15,7 @@ use crate::agent::session_manager::CompactStreamMeta;
 use crate::mcp::types::{MCPContent, MCPTool};
 use crate::models::chat::Message;
 use llm_client::{CompletedChat, RetryPolicy, ThinkingEffort};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The assistant message the agent loop expects back for `request`.
 pub(super) fn assistant_message(request: &CompletionRequest, chat: CompletedChat) -> Message {
@@ -92,19 +97,70 @@ async fn complete_once(
     tools: &[MCPTool],
 ) -> Result<CompletedChat, Box<AgentRuntimeError>> {
     let provider = provider_for(provider_id, config).await?;
-    let chat_request = convert::chat_request(
-        model,
-        request.system_prompt.as_deref(),
-        &request.messages,
-        tools,
-        max_tokens,
-        options,
-    );
+    let mut active_messages = request.messages.clone();
+    if should_strip_for_route(provider_id, model) && messages_have_multimodal_parts(&active_messages)
+    {
+        let (prepared, used_plugin) =
+            prepare_messages_for_media_assist_retry(&active_messages, &request.session_id).await;
+        active_messages = prepared;
+        log::info!(
+            "Rust LLM executor: media-assist pre-strip for remembered route {provider_id}:{model} (used_plugin={used_plugin})"
+        );
+    }
+
+    let build_chat_request = |messages: &[Message]| {
+        convert::chat_request(
+            model,
+            request.system_prompt.as_deref(),
+            messages,
+            tools,
+            max_tokens,
+            options,
+        )
+    };
+    let mut chat_request = build_chat_request(&active_messages);
+    let has_yielded = AtomicBool::new(false);
     // Each delta goes out as it is read, so a listener shows the turn live.
-    let emit = |delta| sink.llm_stream_delta(stream_delta_event(request, delta));
-    let mut chat = llm_client::complete_with_deltas(provider.as_ref(), &chat_request, retry, &emit)
-        .await
-        .map_err(runtime_error)?;
+    // `has_yielded` gates the media-assist retry (#3090): once deltas are on
+    // screen a retry would duplicate the turn, so only a clean failure may
+    // retry with a text-only transcript.
+    let emit = |delta| {
+        has_yielded.store(true, Ordering::Relaxed);
+        sink.llm_stream_delta(stream_delta_event(request, delta));
+    };
+    let mut chat = match llm_client::complete_with_deltas(
+        provider.as_ref(),
+        &chat_request,
+        retry,
+        &emit,
+    )
+    .await
+    {
+        Ok(chat) => chat,
+        Err(error)
+            if !has_yielded.load(Ordering::Relaxed)
+                && should_attempt_media_assist_fallback(&error, &active_messages) =>
+        {
+            let (prepared, used_plugin) =
+                prepare_messages_for_media_assist_retry(&active_messages, &request.session_id)
+                    .await;
+            active_messages = prepared;
+            remember_strip_for_route(provider_id, model);
+            log::warn!(
+                "Rust LLM executor: media-assist fallback for {provider_id}:{model} (used_plugin={used_plugin}); retrying once"
+            );
+            chat_request = build_chat_request(&active_messages);
+            llm_client::complete_with_deltas(
+                provider.as_ref(),
+                &chat_request,
+                RetryPolicy::NONE,
+                &emit,
+            )
+            .await
+            .map_err(runtime_error)?
+        }
+        Err(error) => return Err(runtime_error(error)),
+    };
 
     // The finish reason is checked before the empty-response guard: a
     // malformed turn often carries no content at all (#3089).
@@ -123,7 +179,7 @@ async fn complete_once(
         let request = convert::chat_request(
             model,
             request.system_prompt.as_deref(),
-            &request.messages,
+            &active_messages,
             &[],
             max_tokens,
             options,
@@ -138,7 +194,6 @@ async fn complete_once(
         }
         no_tools_request = Some(request);
     }
-
     if chat_is_empty(&chat) {
         // One more try: empty completions are often transient.
         let active_request = no_tools_request.as_ref().unwrap_or(&chat_request);
