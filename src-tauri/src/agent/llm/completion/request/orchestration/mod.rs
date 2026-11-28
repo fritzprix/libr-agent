@@ -9,7 +9,7 @@ use crate::repositories::SessionStatus;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use crate::agent::llm::completion::context::{
@@ -246,26 +246,12 @@ pub async fn request_llm_completion(
         }
     }
 
-    // Supported providers are answered in this process by default (#2760);
-    // unsupported ones (and ignored Base URLs) still go to the WebView.
-    if crate::agent::llm::rust_executor::try_dispatch_completion(app_handle, &request)
+    // Every LLM request is answered in this process (#3094): a provider the
+    // executor does not support fails with a clear error instead of going to
+    // the WebView.
+    crate::agent::llm::rust_executor::try_dispatch_completion(app_handle, &request)
         .await
-        .map_err(|e| *e)?
-    {
-        return Ok(());
-    }
-
-    app_handle
-        .emit("llm:completion-request", request)
-        .map_err(|e| {
-            AgentRuntimeError::new(
-                AgentRuntimeErrorType::AiServiceError,
-                format!("Failed to emit LLM completion request: {}", e),
-            )
-            .with_code("EMIT_COMPLETION_REQUEST_FAILED")
-        })?;
-
-    log::info!("Emitted LLM completion request for session: {}", session_id);
+        .map_err(|e| *e)?;
     Ok(())
 }
 

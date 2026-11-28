@@ -172,8 +172,9 @@ pub struct CompactionParentRequest {
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
 }
 
-/// Event payload emitted as `llm:compact-request`.
-/// The frontend listener calls the LLM for a summary and returns via `agent_handle_compact_response`.
+/// Compaction request, answered by the Rust LLM executor in this process
+/// (#3094). The old `llm:compact-request` WebView emit is gone; the frontend
+/// listener is removed separately (#2788).
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactRequest {

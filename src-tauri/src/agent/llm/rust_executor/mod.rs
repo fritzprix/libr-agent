@@ -1,27 +1,24 @@
 //! LLM execution in Rust for the providers `llm-client` implements (#2704,
-//! #2755, #2760).
+//! #2755, #2760, #3094).
 //!
-//! By default, a session whose provider (and Base URL) `llm-client` supports
-//! is answered here. Providers the client does not support yet (mistral, for
-//! example) still go to the WebView via `llm:completion-request` /
-//! `llm:compact-request`. Set `LIBRAGENT_LLM_EXECUTOR=webview` to force every
-//! call onto the frontend. [`configure`] replaces the variable, the endpoint
-//! lookup, the WebView check and the delivery target for the life of its
-//! guard, so a test can run a whole turn without touching the process
-//! environment or needing a window.
-//!
-//! A request that Rust cannot answer still goes to the WebView when there is
-//! one, and fails fast when there is none, because nothing would ever answer it.
+//! Every LLM request is answered here: a session whose provider (and Base
+//! URL) `llm-client` supports runs in this executor, and a provider it does
+//! not support fails with a clear error. There is no WebView fallback and no
+//! env override — every GUI provider is supported, so a request that went to
+//! the WebView could never be answered anyway. [`configure`] replaces the
+//! endpoint lookup and the delivery target for the life of its guard, so a
+//! test can run a whole turn without touching the process environment or
+//! needing a window.
 //!
 //! The HTTP calls go through the Tauri-free `llm-client` crate, which the GUI,
 //! `libragent --tui`, and `liblet` share. This module decides who answers a
 //! request, reads the provider and generation settings, and delivers results.
 //!
 //! Covered: the OpenAI-compatible providers (`openai`, `fireworks`,
-//! `openrouter`, and `custom:<id>`, for example vLLM or LM Studio),
-//! `anthropic`, and `gemini`; streaming text, reasoning and its signature,
-//! tool calls, images and audio in the request, compaction, and the GUI's
-//! temperature, thinking-effort, retry, and prompt-cache behaviour.
+//! `openrouter`, `groq`, `cerebras`, `ollama`, and `custom:<id>`, for example
+//! vLLM or LM Studio), `anthropic`, and `gemini`; streaming text, reasoning and
+//! its signature, tool calls, images and audio in the request, compaction, and
+//! the GUI's temperature, thinking-effort, retry, and prompt-cache behaviour.
 //!
 //! While a call runs, each streamed piece goes out as an
 //! [`crate::agent::events::AgentEvent::LlmStreamDelta`] (#2786), so the GUI
@@ -43,44 +40,38 @@ mod tests;
 
 use crate::agent::llm::types::{AgentRuntimeError, CompactRequest, CompletionRequest};
 use completion::{run_compaction, run_completion};
-use config::{no_session_manager, route_for, unavailable, Route};
+use config::{no_compaction_parent, no_session_manager, route_for, unavailable, Route};
 use events::manager_sink;
 use std::sync::Arc;
 use tasks::spawn_tracked;
 use tauri::AppHandle;
 
-pub use config::{
-    configure, is_enabled, runs_without_webview, ConfigGuard, ExecutorConfig, EXECUTOR_ENV,
-};
+pub use config::{configure, ConfigGuard, ExecutorConfig};
 pub use events::ResponseSink;
 pub use llm_client::Endpoint;
 pub use tasks::cancel;
 
-/// Answer `request` in Rust when the executor is enabled and the provider is
-/// one `llm-client` supports. `Ok(false)` means the frontend must handle it; an error
-/// means nothing can.
+/// Answer `request` in Rust. An unsupported provider (or `empty`) returns an
+/// error that names it; nothing waits for a WebView.
 pub async fn try_dispatch_completion(
     app_handle: &AppHandle,
     request: &CompletionRequest,
-) -> Result<bool, Box<AgentRuntimeError>> {
-    dispatch_completion(app_handle, request, || manager_sink(app_handle)).await
+) -> Result<(), Box<AgentRuntimeError>> {
+    dispatch_completion(request, || manager_sink(app_handle)).await
 }
 
 /// [`try_dispatch_completion`] with the session-manager lookup passed in, for
-/// a caller (a test) that cannot reach app state through its handle.
+/// a caller (a test) that cannot reach app state.
 pub async fn dispatch_completion(
-    app_handle: &AppHandle,
     request: &CompletionRequest,
     manager: impl FnOnce() -> Option<Arc<dyn ResponseSink>>,
-) -> Result<bool, Box<AgentRuntimeError>> {
-    let (route, config) = route_for(app_handle, &request.provider).await;
-    match route {
-        Route::Frontend => return Ok(false),
-        Route::Unavailable => return Err(Box::new(unavailable(&request.provider))),
-        Route::Rust => {}
+) -> Result<(), Box<AgentRuntimeError>> {
+    let (route, config) = route_for(&request.provider);
+    if route == Route::Unavailable {
+        return Err(Box::new(unavailable(&request.provider)));
     }
-    // The route said Rust can answer, so falling back to the WebView now would
-    // silently lose the request when there is none: fail instead.
+    // The request was routed to Rust, so dropping it here would silently lose
+    // the turn: fail instead.
     let Some(sink) = manager() else {
         return Err(Box::new(no_session_manager()));
     };
@@ -106,41 +97,34 @@ pub async fn dispatch_completion(
         }
     });
     log::info!("Rust LLM executor: running completion for session {session_id}");
-    Ok(true)
+    Ok(())
 }
 
 /// Compaction counterpart of [`try_dispatch_completion`].
 pub async fn try_dispatch_compaction(
     app_handle: &AppHandle,
     request: &CompactRequest,
-) -> Result<bool, Box<AgentRuntimeError>> {
-    dispatch_compaction(app_handle, request, || manager_sink(app_handle)).await
+) -> Result<(), Box<AgentRuntimeError>> {
+    dispatch_compaction(request, || manager_sink(app_handle)).await
 }
 
 /// [`try_dispatch_compaction`] with the session-manager lookup passed in.
 pub async fn dispatch_compaction(
-    app_handle: &AppHandle,
     request: &CompactRequest,
     manager: impl FnOnce() -> Option<Arc<dyn ResponseSink>>,
-) -> Result<bool, Box<AgentRuntimeError>> {
+) -> Result<(), Box<AgentRuntimeError>> {
     // Without the parent request there is no model to call, so no provider to
-    // route by: the frontend gets it, as before.
-    let provider = request
-        .parent_request
-        .as_ref()
-        .map(|parent| parent.provider.as_str())
-        .unwrap_or_default();
-    let (route, config) = route_for(app_handle, provider).await;
-    match route {
-        Route::Frontend => return Ok(false),
-        Route::Unavailable => return Err(Box::new(unavailable(provider))),
-        Route::Rust => {}
-    }
+    // route by: fail with a clear error instead of going to the WebView
+    // (#3094).
     let Some(parent) = request.parent_request.as_ref() else {
-        return Ok(false);
+        return Err(Box::new(no_compaction_parent()));
     };
-    // The route said Rust can answer, so falling back to the WebView now would
-    // silently lose the request when there is none: fail instead.
+    let (route, config) = route_for(&parent.provider);
+    if route == Route::Unavailable {
+        return Err(Box::new(unavailable(&parent.provider)));
+    }
+    // The request was routed to Rust, so dropping it here would silently lose
+    // the summary: fail instead.
     let Some(sink) = manager() else {
         return Err(Box::new(no_session_manager()));
     };
@@ -180,5 +164,5 @@ pub async fn dispatch_compaction(
         }
     });
     log::info!("Rust LLM executor: running compaction for session {session_id}");
-    Ok(true)
+    Ok(())
 }

@@ -1285,21 +1285,6 @@ async fn stop_turn_from_hook_closes_remaining_calls_and_settles_without_new_comp
     assert_eq!(harness.in_memory_status().await, SessionStatus::Idle);
 }
 
-/// The Rust LLM executor answers completions in-process by default, which would
-/// issue a real HTTP call for the queued turn. Force the WebView route so the
-/// request is emitted on the mock handle and resolves. Process-wide setting: hold
-/// the returned guard for the whole test; no other test in this binary requests
-/// completions.
-fn disable_rust_executor() -> tauri_mcp_agent_lib::agent::llm::rust_executor::ConfigGuard {
-    tauri_mcp_agent_lib::agent::llm::rust_executor::configure(
-        tauri_mcp_agent_lib::agent::llm::rust_executor::ExecutorConfig {
-            enabled: false,
-            endpoint_override: None,
-            assume_no_webview: false,
-        },
-    )
-}
-
 /// #3004 G4.1: when a user prompt is queued while a hook stops the current turn,
 /// `stop_turn_from_hook` must reset the cancelled execution state before settling so
 /// the queued turn starts cleanly instead of failing into `SessionStatus::Error`,
@@ -1506,7 +1491,6 @@ async fn settle_session_with_queued_prompt_surfaces_stop_reason_via_hook_stopped
 /// would fail into `SessionStatus::Error`.
 #[tokio::test]
 async fn stop_turn_from_hook_with_user_cancel_and_queued_prompt_settles_paused_without_error() {
-    let _executor = disable_rust_executor();
     let harness =
         SettlementHarness::new("sess-hook-stop-user-cancel-queued", SessionStatus::Busy).await;
 
@@ -1573,7 +1557,6 @@ async fn stop_turn_from_hook_with_user_cancel_and_queued_prompt_settles_paused_w
 /// of resetting state and failing into `SessionStatus::Error`.
 #[tokio::test]
 async fn stop_turn_from_hook_after_cancel_consumed_by_batch_completion_stays_paused() {
-    let _executor = disable_rust_executor();
     let harness = SettlementHarness::new(
         "sess-hook-stop-cancel-already-consumed",
         SessionStatus::Paused,

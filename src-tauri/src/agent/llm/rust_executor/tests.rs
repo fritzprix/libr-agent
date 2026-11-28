@@ -1,5 +1,5 @@
 use super::completion::assistant_message;
-use super::config::{env_enables_rust, no_session_manager, route, unavailable, Route};
+use super::config::{no_compaction_parent, no_session_manager, route, unavailable, Route};
 use super::convert;
 use super::events::{fallback_notice_event, stream_delta_event};
 use super::settings::{runtime_error, FallbackModel};
@@ -10,13 +10,13 @@ use serde_json::json;
 use tokio::sync::oneshot;
 
 #[test]
-fn webview_is_the_only_env_value_that_disables_rust() {
-    assert!(env_enables_rust(None));
-    assert!(env_enables_rust(Some("")));
-    assert!(env_enables_rust(Some("rust")));
-    assert!(env_enables_rust(Some(" Rust ")));
-    assert!(!env_enables_rust(Some("webview")));
-    assert!(!env_enables_rust(Some(" WebView ")));
+fn the_removed_executor_env_var_changes_nothing() {
+    // #3094 removed LIBRAGENT_LLM_EXECUTOR. A stale value left in a user's
+    // environment must not resurrect the WebView route.
+    std::env::set_var("LIBRAGENT_LLM_EXECUTOR", "webview");
+    assert_eq!(route("openai"), Route::Rust);
+    assert_eq!(route("mistral"), Route::Unavailable);
+    std::env::remove_var("LIBRAGENT_LLM_EXECUTOR");
 }
 
 #[test]
@@ -196,29 +196,26 @@ fn a_stream_delta_event_names_its_turn_and_serializes_for_the_frontend() {
 }
 
 #[test]
-fn routing_keeps_the_frontend_unless_rust_can_answer() {
-    // Off: everything goes to the WebView, with or without one.
-    assert_eq!(route(false, true, "openai"), Route::Frontend);
-    assert_eq!(route(false, false, "anthropic"), Route::Frontend);
-    // On: supported providers are answered in Rust either way. A
-    // configured Base URL is honored by llm-client for every built-in
-    // provider (#2797), so it never changes the route; see
+fn every_supported_provider_routes_to_rust_and_nothing_else() {
+    // There is no WebView route anymore (#3094): llm-client-supported
+    // providers run here, and a configured Base URL is honored for every
+    // built-in provider (#2797), so it never changes the route; see
     // `every_built_in_provider_honors_its_configured_base_url` in
     // llm-client and `configured_anthropic_base_url_routes_to_rust` in
     // the integration tests.
-    assert_eq!(route(true, true, "openai"), Route::Rust);
-    assert_eq!(route(true, false, "custom:lmstudio"), Route::Rust);
-    assert_eq!(route(true, false, "fireworks"), Route::Rust);
-    assert_eq!(route(true, false, "openrouter"), Route::Rust);
-    assert_eq!(route(true, false, "anthropic"), Route::Rust);
-    assert_eq!(route(true, true, "gemini"), Route::Rust);
-    assert_eq!(route(true, false, "groq"), Route::Rust);
-    assert_eq!(route(true, false, "cerebras"), Route::Rust);
-    assert_eq!(route(true, true, "ollama"), Route::Rust);
-    // On: any other provider needs the WebView, and fails fast without it.
-    assert_eq!(route(true, true, "mistral"), Route::Frontend);
-    assert_eq!(route(true, false, "mistral"), Route::Unavailable);
-    assert_eq!(route(true, false, ""), Route::Unavailable);
+    assert_eq!(route("openai"), Route::Rust);
+    assert_eq!(route("custom:lmstudio"), Route::Rust);
+    assert_eq!(route("fireworks"), Route::Rust);
+    assert_eq!(route("openrouter"), Route::Rust);
+    assert_eq!(route("anthropic"), Route::Rust);
+    assert_eq!(route("gemini"), Route::Rust);
+    assert_eq!(route("groq"), Route::Rust);
+    assert_eq!(route("cerebras"), Route::Rust);
+    assert_eq!(route("ollama"), Route::Rust);
+    // Anything else fails with a clear error instead of waiting for a
+    // frontend that could not answer it.
+    assert_eq!(route("mistral"), Route::Unavailable);
+    assert_eq!(route(""), Route::Unavailable);
 }
 
 #[test]
@@ -228,8 +225,19 @@ fn an_unavailable_route_says_which_provider_cannot_run() {
         .details
         .as_ref()
         .and_then(|details| details.error_code.as_deref());
-    assert_eq!(code, Some("RUST_EXECUTOR_NO_WEBVIEW"));
+    assert_eq!(code, Some("RUST_EXECUTOR_UNSUPPORTED_PROVIDER"));
     assert!(error.display_message.contains("mistral"));
+}
+
+#[test]
+fn a_compaction_without_a_parent_says_there_is_no_model_to_call() {
+    let error = no_compaction_parent();
+    let code = error
+        .details
+        .as_ref()
+        .and_then(|details| details.error_code.as_deref());
+    assert_eq!(code, Some("RUST_EXECUTOR_NO_COMPACTION_PARENT"));
+    assert!(error.display_message.contains("parent"));
 }
 
 #[test]

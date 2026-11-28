@@ -49,20 +49,6 @@ pub fn wait_until_ready_blocking(timeout: Duration) -> bool {
     true
 }
 
-/// Wait until something can answer LLM requests.
-///
-/// Rust-routed sessions need no frontend: when this process answers LLM calls
-/// without a WebView (#2760 default routing), return immediately. When a
-/// WebView is present, keep the `frontend-ready` wait — unsupported providers
-/// and ignored Base URLs still go there, and a request would be lost if the
-/// frontend had not announced itself.
-pub async fn wait_until_llm_executor_ready(app_handle: &tauri::AppHandle) {
-    if crate::agent::llm::rust_executor::runs_without_webview(app_handle) {
-        return;
-    }
-    wait_until_ready().await;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

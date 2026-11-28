@@ -1,9 +1,8 @@
-//! The Rust LLM executor (#2704) answering requests with no WebView, against a
+//! The Rust LLM executor (#2704, #3094) answering requests against a
 //! loopback OpenAI-compatible server.
 //!
-//! `configure` pins the switch, the endpoint, the "no WebView" fact and the
-//! delivery target for each test, so nothing reads or sets the process
-//! environment.
+//! `configure` pins the endpoint and the delivery target for each test, so
+//! nothing reads or sets the process environment.
 //!
 //! Limit: the session handlers (`handle_llm_response`, tool execution,
 //! settlement) clone the app handle, and a mock-runtime handle reinterpreted as
@@ -20,7 +19,6 @@ use std::time::{Duration, Instant};
 use warp::Filter;
 
 use indexmap::IndexMap;
-use tauri::test::MockRuntime;
 use tauri_mcp_agent_lib::agent::events::AgentEvent;
 use tauri_mcp_agent_lib::agent::llm::rust_executor::{
     cancel, configure, dispatch_compaction, dispatch_completion, Endpoint, ExecutorConfig,
@@ -325,20 +323,8 @@ fn request(
     }
 }
 
-fn app() -> &'static tauri::AppHandle {
-    let mock_app: &'static tauri::App<MockRuntime> = Box::leak(Box::new(tauri::test::mock_app()));
-    // Only borrowed, never cloned or used for state: see the module docs.
-    unsafe {
-        &*(mock_app.handle() as *const tauri::AppHandle<MockRuntime> as *const tauri::AppHandle)
-    }
-}
-
 fn config(endpoint: Endpoint) -> ExecutorConfig {
-    ExecutorConfig {
-        enabled: true,
-        endpoint_override: Some(endpoint),
-        assume_no_webview: true,
-    }
+    ExecutorConfig::new(Some(endpoint))
 }
 
 /// The delivery target a test hands to `dispatch_*` in place of the session
@@ -361,16 +347,14 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
     .await;
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
-    let handle = app();
     let user = message(session_id, "u1", "user", "list the playbooks", 1_000);
 
-    assert!(dispatch_completion(
-        handle,
+    dispatch_completion(
         &request(session_id, "resp-1", PROVIDER, vec![user.clone()]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the tool-call turn", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -385,9 +369,9 @@ async fn a_tool_call_turn_is_delivered_and_its_result_is_sent_back_paired() {
     let mut result = message(session_id, "t1", "tool", "[]", 2_000);
     result.tool_call_id = Some(calls[0].id.clone());
     let follow_up = request(session_id, "resp-2", PROVIDER, vec![user, turn, result]);
-    assert!(dispatch_completion(handle, &follow_up, deliver_to(&sink))
+    dispatch_completion(&follow_up, deliver_to(&sink))
         .await
-        .unwrap());
+        .unwrap();
     wait_for("the final answer", || {
         sink.responses.lock().unwrap().len() == 2
     })
@@ -421,13 +405,12 @@ async fn a_turn_streams_ordered_deltas_before_its_final_message() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message(session_id, "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request(session_id, "resp-stream", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the streamed turn", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -468,7 +451,7 @@ async fn a_turn_streams_ordered_deltas_before_its_final_message() {
 }
 
 #[tokio::test]
-async fn a_provider_the_executor_cannot_run_fails_fast_without_a_webview() {
+async fn a_provider_the_executor_cannot_run_fails_with_a_named_error() {
     let _guard = TEST_GUARD.lock().await;
     let provider = mock_provider(vec![text_reply("unused")]).await;
     let sink = Arc::new(RecordingSink::default());
@@ -476,16 +459,40 @@ async fn a_provider_the_executor_cannot_run_fails_fast_without_a_webview() {
     let user = message("s", "u1", "user", "hello", 1_000);
 
     let error = dispatch_completion(
-        app(),
         &request("s", "resp-1", "mistral", vec![user]),
         deliver_to(&sink),
     )
     .await
-    .expect_err("nothing can answer a Mistral request without a WebView");
+    .expect_err("nothing can answer a Mistral request anymore");
 
+    assert_eq!(
+        error_code(&error),
+        Some("RUST_EXECUTOR_UNSUPPORTED_PROVIDER")
+    );
     assert!(error.display_message.contains("mistral"));
     assert!(provider.requests.lock().unwrap().is_empty());
     assert!(sink.responses.lock().unwrap().is_empty());
+}
+
+/// #3094: a compaction with no parent request has no model to call, so it
+/// fails with a named error instead of going anywhere.
+#[tokio::test]
+async fn a_compaction_without_a_parent_fails_with_a_named_error() {
+    let _guard = TEST_GUARD.lock().await;
+    let provider = mock_provider(vec![text_reply("unused")]).await;
+    let _config = configure(config(provider.endpoint.clone()));
+    let mut request = compact_request("s-no-parent");
+    request.parent_request = None;
+
+    let error = dispatch_compaction(&request, || None)
+        .await
+        .expect_err("no parent request means there is no model to call");
+
+    assert_eq!(
+        error_code(&error),
+        Some("RUST_EXECUTOR_NO_COMPACTION_PARENT")
+    );
+    assert!(provider.requests.lock().unwrap().is_empty());
 }
 
 fn compact_request(session_id: &str) -> CompactRequest {
@@ -519,11 +526,9 @@ async fn a_compaction_round_trip_delivers_the_summary_and_its_usage() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(
-        dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink))
-            .await
-            .unwrap()
-    );
+    dispatch_compaction(&compact_request(session_id), deliver_to(&sink))
+        .await
+        .unwrap();
     wait_for("the compaction summary", || {
         !sink.compactions.lock().unwrap().is_empty()
     })
@@ -558,11 +563,9 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(endpoint));
 
-    assert!(
-        dispatch_compaction(app(), &compact_request(session_id), deliver_to(&sink))
-            .await
-            .unwrap()
-    );
+    dispatch_compaction(&compact_request(session_id), deliver_to(&sink))
+        .await
+        .unwrap();
     wait_for("the compaction error", || {
         !sink.compact_errors.lock().unwrap().is_empty()
     })
@@ -574,9 +577,8 @@ async fn a_failing_compaction_call_is_reported_through_compact_error() {
 }
 
 /// The executor took the request but the app has no session manager: the
-/// request fails with a named error instead of falling through to a WebView
-/// listener that may not exist. The lookup is passed in because a mock handle
-/// cannot reach app state (see the module docs).
+/// request fails with a named error instead of being dropped. The lookup is
+/// passed in because a mock handle cannot reach app state (see the module docs).
 fn error_code(error: &AgentRuntimeError) -> Option<&str> {
     error
         .details
@@ -591,11 +593,9 @@ async fn a_completion_without_a_session_manager_fails_with_a_named_error() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s", "u1", "user", "hello", 1_000);
 
-    let error = dispatch_completion(app(), &request("s", "resp-1", PROVIDER, vec![user]), || {
-        None
-    })
-    .await
-    .expect_err("no session manager means nothing can receive the result");
+    let error = dispatch_completion(&request("s", "resp-1", PROVIDER, vec![user]), || None)
+        .await
+        .expect_err("no session manager means nothing can receive the result");
 
     assert_eq!(error_code(&error), Some("RUST_EXECUTOR_NO_SESSION_MANAGER"));
     assert!(
@@ -610,7 +610,7 @@ async fn a_compaction_without_a_session_manager_fails_with_a_named_error() {
     let provider = mock_provider(vec![text_reply("unused")]).await;
     let _config = configure(config(provider.endpoint.clone()));
 
-    let error = dispatch_compaction(app(), &compact_request("s"), || None)
+    let error = dispatch_compaction(&compact_request("s"), || None)
         .await
         .expect_err("no session manager means nothing can receive the summary");
 
@@ -627,13 +627,12 @@ async fn empty_completion_is_retried_once_then_delivers_text() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-empty-ok", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-empty-ok", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the recovered answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -652,13 +651,12 @@ async fn empty_completion_twice_fails_with_empty_response_code() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-empty-err", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-empty-err", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the empty-response error", || {
         !sink.llm_errors.lock().unwrap().is_empty()
     })
@@ -692,13 +690,12 @@ async fn fallback_model_answers_when_primary_fails() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-ok", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-ok", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the fallback answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -730,13 +727,12 @@ async fn a_rejected_primary_emits_one_fallback_notice_before_the_fallback_answer
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-notice", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-notice", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the fallback answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -792,13 +788,12 @@ async fn a_succeeded_primary_emits_no_fallback_notice() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-none", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-none", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the primary answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -822,13 +817,12 @@ async fn no_fallback_configured_emits_no_fallback_notice() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-nocfg", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-nocfg", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the primary failure", || {
         !sink.llm_errors.lock().unwrap().is_empty()
     })
@@ -858,13 +852,12 @@ async fn fallback_skipped_when_same_provider_and_model() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-same", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-same", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the primary failure", || {
         provider.requests.lock().unwrap().len() >= 1
     })
@@ -895,13 +888,12 @@ async fn fallback_skipped_when_unsupported() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-fb-unsup", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-unsup", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the primary failure", || {
         provider.requests.lock().unwrap().len() >= 1
     })
@@ -923,15 +915,10 @@ async fn configured_anthropic_base_url_routes_to_rust() {
     )])
     .await;
     // No endpoint_override: the Rust path must reach the Settings Base URL.
-    let _config = configure(ExecutorConfig {
-        enabled: true,
-        endpoint_override: None,
-        assume_no_webview: true,
-    });
+    let _config = configure(ExecutorConfig::default());
     let sink = Arc::new(RecordingSink::default());
     let user = message("s-abase", "u1", "user", "hi", 1_000);
     let _ = dispatch_completion(
-        app(),
         &request("s-abase", "resp-1", "anthropic", vec![user]),
         deliver_to(&sink),
     )
@@ -968,13 +955,12 @@ async fn fallback_returns_primary_error_when_fallback_also_fails() {
     let _config = configure(config(endpoint));
     let user = message("s-fb-both", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-fb-both", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("primary and fallback attempts", || {
         requests.lock().unwrap().len() >= 2
     })
@@ -998,13 +984,12 @@ async fn default_max_output_tokens_is_sent_when_request_omits_max_tokens() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-max", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request("s-max", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the answer", || !sink.responses.lock().unwrap().is_empty()).await;
 
     let body = &provider.requests.lock().unwrap()[0];
@@ -1023,13 +1008,9 @@ async fn compaction_request_carries_no_thinking_parameter() {
     let sink = Arc::new(RecordingSink::default());
     let _config = configure(config(provider.endpoint.clone()));
 
-    assert!(dispatch_compaction(
-        app(),
-        &compact_request("s-compact-think"),
-        deliver_to(&sink),
-    )
-    .await
-    .unwrap());
+    dispatch_compaction(&compact_request("s-compact-think"), deliver_to(&sink))
+        .await
+        .unwrap();
     wait_for("the compaction summary", || {
         !sink.compactions.lock().unwrap().is_empty()
     })
@@ -1050,13 +1031,12 @@ async fn streamed_completion_records_usage_timing_details_on_saved_message() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message(session_id, "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request(session_id, "resp-timing-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the timed answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1147,16 +1127,12 @@ impl ResponseSink for ResamplingSink {
         };
         let sink: Arc<dyn ResponseSink> = this;
         let user = message(session_id.as_str(), "u1", "user", "run it", 1_000);
-        let dispatched = dispatch_completion(
-            app(),
+        dispatch_completion(
             &request(&session_id, "resp-2", PROVIDER, vec![user]),
             move || Some(sink),
         )
         .await
         .map_err(|error| error.display_message.clone())?;
-        if !dispatched {
-            return Err("the mock provider must answer in Rust".to_string());
-        }
         self.resample_requested.store(true, Ordering::SeqCst);
         // The call that requested the replacement must survive this await and
         // finish its own delivery; aborting it here is what left #2967
@@ -1205,13 +1181,12 @@ async fn a_resample_requested_from_inside_a_running_call_settles_the_turn() {
     let user = message(session_id, "u1", "user", "run it", 1_000);
 
     let sink_for_dispatch: Arc<dyn ResponseSink> = sink.clone();
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request(session_id, "resp-1", PROVIDER, vec![user]),
-        move || { Some(sink_for_dispatch) }
+        move || Some(sink_for_dispatch),
     )
     .await
-    .unwrap());
+    .unwrap();
 
     // The issue's acceptance window: the turn settles within 10 s.
     let settle = Instant::now();
@@ -1422,13 +1397,12 @@ async fn gemini_malformed_function_call_retries_once_without_tools() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-gm-retry", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-gm-retry", "resp-1", "gemini", vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the retried answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1482,13 +1456,12 @@ async fn gemini_turn_with_tools_streams_live_deltas() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-gm-stream", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-gm-stream", "resp-1", "gemini", vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the delivered answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1539,13 +1512,12 @@ async fn gemini_malformed_function_call_without_content_retries_once() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-gm-empty", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-gm-empty", "resp-1", "gemini", vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the retried answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1593,13 +1565,12 @@ async fn gemini_fallback_model_behind_another_provider_retries_its_malformed_cal
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-gm-fb", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-gm-fb", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the retried fallback answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1633,13 +1604,12 @@ async fn gemini_malformed_function_call_is_not_retried_twice() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-gm-twice", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-gm-twice", "resp-1", "gemini", vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the settled error", || {
         !sink.llm_errors.lock().unwrap().is_empty()
     })
@@ -1672,13 +1642,12 @@ async fn malformed_function_call_retry_is_gemini_only() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-non-gemini", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-non-gemini", "resp-1", PROVIDER, vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     wait_for("the delivered answer", || {
         !sink.responses.lock().unwrap().is_empty()
     })
@@ -1717,13 +1686,12 @@ async fn cancel_during_the_malformed_function_call_retry_delivers_nothing() {
     let _config = configure(config(provider.endpoint.clone()));
     let user = message("s-gm-cancel", "u1", "user", "hi", 1_000);
 
-    assert!(dispatch_completion(
-        app(),
+    dispatch_completion(
         &request_with_tools("s-gm-cancel", "resp-1", "gemini", vec![user]),
         deliver_to(&sink),
     )
     .await
-    .unwrap());
+    .unwrap();
     // The tool-less retry is in flight, its response held open by the mock.
     wait_for("the tool-less retry to start", || {
         provider.requests.lock().unwrap().len() >= 2
