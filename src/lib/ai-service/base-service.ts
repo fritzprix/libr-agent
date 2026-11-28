@@ -458,17 +458,6 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   }
 
   /**
-   * Passthrough wrapper retained for provider subclasses; timing metrics
-   * (TTFT, prefill, decode speed) are owned solely by the Rust backend (#3087).
-   * @protected
-   */
-  protected async *streamChatWithTTFT(
-    generator: AsyncGenerator<string, void, void>,
-  ): AsyncGenerator<string, void, void> {
-    yield* generator;
-  }
-
-  /**
    * Abstract method that performs the actual provider-specific streaming.
    * Must be implemented by subclasses.
    * @param messages An array of messages representing the conversation history.

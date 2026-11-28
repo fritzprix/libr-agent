@@ -1,17 +1,21 @@
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TokenUsage } from '@/lib/ai-service/types';
 import type { PreflightTokenMetrics } from '@/models/agent-ipc';
 
 import { TokenMetricsBadge } from '../TokenMetricsBadge';
 
+const settingsMock = vi.hoisted(() => ({
+  prefillDisplayFormat: 'time' as 'time' | 'tokensPerSecond',
+}));
+
 vi.mock('@/context/SettingsContext', () => ({
   useSettings: () => ({
     value: {
       display: {
-        prefillDisplayFormat: 'time',
+        prefillDisplayFormat: settingsMock.prefillDisplayFormat,
         showTokenSpeed: true,
         compactMetrics: false,
       },
@@ -20,6 +24,9 @@ vi.mock('@/context/SettingsContext', () => ({
 }));
 
 describe('TokenMetricsBadge', () => {
+  beforeEach(() => {
+    settingsMock.prefillDisplayFormat = 'time';
+  });
   it('shows cache hit percent and cached token count when cache is used', () => {
     const usage: TokenUsage = {
       promptTokens: 1200,
@@ -122,5 +129,80 @@ describe('TokenMetricsBadge', () => {
     expect(screen.getByTitle('Tokens per second')).toHaveTextContent('50.0');
     const promptEl = screen.getByText('1,000').closest('span');
     expect(promptEl?.getAttribute('title')).toContain('Prefill: 250ms');
+  });
+
+  it('computes prefill tok/s from provider promptEvalDuration, not timeToFirstToken', () => {
+    settingsMock.prefillDisplayFormat = 'tokensPerSecond';
+    render(
+      <TokenMetricsBadge
+        usage={{
+          promptTokens: 1000,
+          completionTokens: 100,
+          totalTokens: 1100,
+          details: {
+            evalDuration: 2000,
+            promptEvalDuration: 250,
+            timeToFirstToken: 900,
+          },
+        }}
+      />,
+    );
+
+    // Provider duration wins: 1000 / 0.250 s = 4000.0 tok/s
+    // (a TTFT-based computation would show 1111.1).
+    const promptEl = screen.getByText('1,000').closest('span');
+    expect(promptEl?.getAttribute('title')).toContain('Prefill: 4000.0 tok/s');
+  });
+
+  it('falls back to timeToFirstToken for tok/s when provider duration is invalid', () => {
+    settingsMock.prefillDisplayFormat = 'tokensPerSecond';
+    render(
+      <TokenMetricsBadge
+        usage={{
+          promptTokens: 1000,
+          completionTokens: 100,
+          totalTokens: 1100,
+          details: {
+            evalDuration: 2000,
+            promptEvalDuration: 0,
+            timeToFirstToken: 500,
+          },
+        }}
+      />,
+    );
+
+    // Zero provider duration is rejected; TTFT 500 ms gives 1000 / 0.5 s.
+    const promptEl = screen.getByText('1,000').closest('span');
+    expect(promptEl?.getAttribute('title')).toContain('Prefill: 2000.0 tok/s');
+  });
+
+  it('shows no prefill section when both prefill durations are missing, zero, or non-finite', () => {
+    const cases: Array<Record<string, number> | Record<string, never>> = [
+      {},
+      { promptEvalDuration: 0, timeToFirstToken: 0 },
+      { promptEvalDuration: -50, timeToFirstToken: -900 },
+      { promptEvalDuration: Number.NaN, timeToFirstToken: Number.NaN },
+      {
+        promptEvalDuration: Number.POSITIVE_INFINITY,
+        timeToFirstToken: Number.POSITIVE_INFINITY,
+      },
+    ];
+    for (const details of cases) {
+      const { unmount } = render(
+        <TokenMetricsBadge
+          usage={{
+            promptTokens: 1000,
+            completionTokens: 100,
+            totalTokens: 1100,
+            details,
+          }}
+        />,
+      );
+      const promptEl = screen.getByText('1,000').closest('span');
+      const title = promptEl?.getAttribute('title') ?? '';
+      expect(title).not.toContain('Prefill');
+      expect(title).not.toContain('TTFT');
+      unmount();
+    }
   });
 });
