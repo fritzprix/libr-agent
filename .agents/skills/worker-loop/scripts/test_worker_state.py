@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,10 @@ import worker_claims
 import worker_slots
 import worker_state
 from worker_state import Owner
+
+# The reader in test_write_succeeds_while_a_reader_holds_the_file_open waits for a
+# blocked rename; a rename that is never blocked is a failure, not a slow test.
+READER_HOLD_TIMEOUT_SECONDS = 10.0
 
 
 class WorkerStateTest(unittest.TestCase):
@@ -61,6 +66,83 @@ class WorkerStateTest(unittest.TestCase):
         worker_state.atomic_write_json(self.claims, {"a": 1})
         self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 1})
         self.assertEqual([p.name for p in self.root.iterdir()], ["claims.json"])
+
+    def test_write_waits_for_a_reader_that_holds_the_file(self):
+        # #3079: a reader holding the target open makes `os.replace` fail with
+        # PermissionError on Windows until it closes. The write waits it out.
+        real_replace = os.replace
+        blocked = []
+
+        def replace_once_blocked(src, dst):
+            if not blocked:
+                blocked.append(dst)
+                raise PermissionError(13, "Access is denied")
+            return real_replace(src, dst)
+
+        with patch.object(worker_state.os, "replace", replace_once_blocked):
+            worker_state.atomic_write_json(self.claims, {"a": 2})
+
+        self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 2})
+        self.assertEqual([p.name for p in self.root.iterdir()], ["claims.json"])
+
+    def test_write_fails_when_the_file_never_closes(self):
+        # The retry is bounded: a handle that never closes is still an error, and
+        # it leaves neither a half-written target nor a temp file behind.
+        with (
+            patch.object(worker_state, "REPLACE_RETRY_ATTEMPTS", 3),
+            patch.object(worker_state, "REPLACE_RETRY_SECONDS", 0),
+            patch.object(worker_state.os, "replace", side_effect=PermissionError(13, "Access is denied")),
+        ):
+            with self.assertRaises(PermissionError):
+                worker_state.atomic_write_json(self.claims, {"a": 1})
+
+        self.assertFalse(self.claims.exists())
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    @unittest.skipUnless(sys.platform == "win32", "only Windows holds a rename back")
+    def test_write_succeeds_while_a_reader_holds_the_file_open(self):
+        # The real shape of #3079: a reader opens the file, reads it and closes it.
+        # On Windows that handle blocks the rename, so the write waits it out.
+        # The reader closes only after a rename has been blocked, so the test cannot
+        # pass without exercising the retry. A handle held for the whole call is a
+        # different case and still raises (test_write_fails_when_the_file_never_closes).
+        worker_state.atomic_write_json(self.claims, {"a": 1})
+        blocked = threading.Event()
+        reading = threading.Event()
+        reader_problems: list[str] = []
+        real_replace = os.replace
+
+        def replace_reporting_the_block(src, dst):
+            try:
+                real_replace(src, dst)
+            except PermissionError:
+                blocked.set()
+                raise
+
+        def read_once():
+            try:
+                with self.claims.open("rb") as handle:
+                    reading.set()
+                    json.load(handle)  # a partial file would raise here
+                    # Close only after a rename has been blocked, so a passing write
+                    # proves the retry waited for this reader.
+                    if not blocked.wait(READER_HOLD_TIMEOUT_SECONDS):
+                        reader_problems.append("no rename was blocked while the file was open")
+            except BaseException as e:  # reported by the assertions below
+                reader_problems.append(repr(e))
+
+        reader = threading.Thread(target=read_once)
+        reader.start()
+        try:
+            self.assertTrue(reading.wait(5), "the reader never opened the file")
+            with patch.object(worker_state.os, "replace", replace_reporting_the_block):
+                worker_state.atomic_write_json(self.claims, {"a": 2})
+        finally:
+            reader.join()
+
+        self.assertEqual(reader_problems, [])
+        self.assertTrue(blocked.is_set(), "the write never had to wait for the reader")
+        self.assertEqual(json.loads(self.claims.read_text(encoding="utf-8")), {"a": 2})
 
     def test_read_json_tolerates_utf8_bom(self):
         payload = {"scheduler": {"kind": "scheduled_task", "id": "abc"}, "skipped": {"2390": "blocked"}}
