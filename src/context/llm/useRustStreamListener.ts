@@ -192,6 +192,18 @@ export function createRustStreamHandler(
         clearStreaming(sessionId, responseMessageId);
       }
     },
+
+    /**
+     * The backend threw away this attempt and will answer again under the
+     * same id (#3089). Forget the turn so a later delta starts a fresh one.
+     */
+    handleReset(sessionId: string, responseMessageId: string) {
+      const turn = turns.get(sessionId);
+      if (turn && turn.responseMessageId === responseMessageId) {
+        turns.delete(sessionId);
+        clearStreaming(sessionId, responseMessageId);
+      }
+    },
   };
 }
 
@@ -218,6 +230,12 @@ export function useRustStreamListener({
           const payload = event.payload;
           if (payload.type === 'llmStreamDelta') {
             handler.handleDelta(payload);
+          } else if (
+            payload.type === 'llmStreamReset' &&
+            payload.sessionId &&
+            payload.responseMessageId
+          ) {
+            handler.handleReset(payload.sessionId, payload.responseMessageId);
           } else if (
             payload.type === 'messageAdded' &&
             payload.message.role === 'assistant'

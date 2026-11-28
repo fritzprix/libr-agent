@@ -1,6 +1,6 @@
 use super::config::ExecutorConfig;
 use super::convert::{self, GenerationOptions};
-use super::events::{fallback_notice_event, stream_delta_event, ResponseSink};
+use super::events::{fallback_notice_event, stream_delta_event, stream_reset_event, ResponseSink};
 use super::settings::{
     chat_is_empty, generation_settings, provider_for, read_fallback_model, runtime_error,
 };
@@ -50,64 +50,6 @@ pub(super) fn assistant_message(request: &CompletionRequest, chat: CompletedChat
     }
 }
 
-#[allow(clippy::too_many_arguments)] // 7-arg shape from #2804 plus the #2796 streaming sink
-async fn complete_once(
-    provider_id: &str,
-    model: &str,
-    request: &CompletionRequest,
-    config: &ExecutorConfig,
-    sink: &dyn ResponseSink,
-    options: GenerationOptions,
-    retry: RetryPolicy,
-    max_tokens: Option<u32>,
-    tools: &[MCPTool],
-    stream: bool,
-) -> Result<CompletedChat, Box<AgentRuntimeError>> {
-    let provider = provider_for(provider_id, config).await?;
-    let chat_request = convert::chat_request(
-        model,
-        request.system_prompt.as_deref(),
-        &request.messages,
-        tools,
-        max_tokens,
-        options,
-    );
-    // Each delta goes out as it is read, so a listener shows the turn live.
-    // `stream == false` holds the deltas back: the caller may throw this
-    // attempt away (the #3089 retry), and its text must not reach the chat.
-    let emit = |delta| {
-        if stream {
-            sink.llm_stream_delta(stream_delta_event(request, delta));
-        }
-    };
-    let chat = llm_client::complete_with_deltas(provider.as_ref(), &chat_request, retry, emit)
-        .await
-        .map_err(runtime_error)?;
-    if chat_is_empty(&chat) {
-        // One more try: empty completions are often transient.
-        let chat = llm_client::complete_with_deltas(
-            provider.as_ref(),
-            &chat_request,
-            RetryPolicy::NONE,
-            emit,
-        )
-        .await
-        .map_err(runtime_error)?;
-        if chat_is_empty(&chat) {
-            return Err(Box::new(
-                AgentRuntimeError::new(
-                    AgentRuntimeErrorType::AiServiceError,
-                    "The AI model returned an empty response with no content, tool calls, or thinking."
-                        .to_string(),
-                )
-                .with_code("RUST_EXECUTOR_EMPTY_RESPONSE"),
-            ));
-        }
-        return Ok(chat);
-    }
-    Ok(chat)
-}
-
 /// The provider this retry policy applies to (#3089).
 fn is_gemini(provider: &str) -> bool {
     provider == "gemini"
@@ -132,8 +74,15 @@ fn malformed_function_call_error() -> Box<AgentRuntimeError> {
     )
 }
 
-#[allow(clippy::too_many_arguments)] // Same shape as `complete_once`: settings, tools, stream flag.
-async fn run_completion_with_fallback(
+/// One provider call for `request`: stream it live, and settle it.
+///
+/// `provider_id` is the provider actually answering, so the #3089 retry
+/// applies to the individual call — a Gemini fallback behind another
+/// provider gets its own retry, and a non-Gemini answer is never retried.
+#[allow(clippy::too_many_arguments)] // 7-arg shape from #2804 plus the #2796 streaming sink
+async fn complete_once(
+    provider_id: &str,
+    model: &str,
     request: &CompletionRequest,
     config: &ExecutorConfig,
     sink: &dyn ResponseSink,
@@ -141,8 +90,88 @@ async fn run_completion_with_fallback(
     retry: RetryPolicy,
     max_tokens: Option<u32>,
     tools: &[MCPTool],
-    stream: bool,
 ) -> Result<CompletedChat, Box<AgentRuntimeError>> {
+    let provider = provider_for(provider_id, config).await?;
+    let chat_request = convert::chat_request(
+        model,
+        request.system_prompt.as_deref(),
+        &request.messages,
+        tools,
+        max_tokens,
+        options,
+    );
+    // Each delta goes out as it is read, so a listener shows the turn live.
+    let emit = |delta| sink.llm_stream_delta(stream_delta_event(request, delta));
+    let mut chat = llm_client::complete_with_deltas(provider.as_ref(), &chat_request, retry, &emit)
+        .await
+        .map_err(runtime_error)?;
+
+    // The finish reason is checked before the empty-response guard: a
+    // malformed turn often carries no content at all (#3089).
+    let mut no_tools_request: Option<llm_client::ChatRequest> = None;
+    if is_gemini(provider_id) && is_malformed_function_call(chat.finish_reason.as_deref()) {
+        if tools.is_empty() {
+            // No tools offered: nothing can recover here.
+            return Err(malformed_function_call_error());
+        }
+        log::warn!(
+            "Rust LLM executor: {model} ended with MALFORMED_FUNCTION_CALL; retrying once without tools"
+        );
+        // The attempt streamed live deltas; withdraw its message before the
+        // retry so the discarded text does not linger in the chat (#3089).
+        sink.llm_stream_reset(stream_reset_event(request));
+        let request = convert::chat_request(
+            model,
+            request.system_prompt.as_deref(),
+            &request.messages,
+            &[],
+            max_tokens,
+            options,
+        );
+        chat =
+            llm_client::complete_with_deltas(provider.as_ref(), &request, RetryPolicy::NONE, &emit)
+                .await
+                .map_err(runtime_error)?;
+        if is_malformed_function_call(chat.finish_reason.as_deref()) {
+            // Never a second retry: the session settles with the error instead.
+            return Err(malformed_function_call_error());
+        }
+        no_tools_request = Some(request);
+    }
+
+    if chat_is_empty(&chat) {
+        // One more try: empty completions are often transient.
+        let active_request = no_tools_request.as_ref().unwrap_or(&chat_request);
+        chat = llm_client::complete_with_deltas(
+            provider.as_ref(),
+            active_request,
+            RetryPolicy::NONE,
+            &emit,
+        )
+        .await
+        .map_err(runtime_error)?;
+        if chat_is_empty(&chat) {
+            return Err(Box::new(
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::AiServiceError,
+                    "The AI model returned an empty response with no content, tool calls, or thinking."
+                        .to_string(),
+                )
+                .with_code("RUST_EXECUTOR_EMPTY_RESPONSE"),
+            ));
+        }
+    }
+    Ok(chat)
+}
+
+pub(super) async fn run_completion(
+    request: &CompletionRequest,
+    config: &ExecutorConfig,
+    sink: &dyn ResponseSink,
+) -> Result<Message, Box<AgentRuntimeError>> {
+    let (options, retry, default_max_tokens) = generation_settings().await;
+    let max_tokens = request.max_tokens.or(default_max_tokens);
+    let request_tools = request.available_tools.as_deref().unwrap_or(&[]);
     let primary = complete_once(
         &request.provider,
         &request.model,
@@ -152,12 +181,11 @@ async fn run_completion_with_fallback(
         options,
         retry,
         max_tokens,
-        tools,
-        stream,
+        request_tools,
     )
     .await;
-    match primary {
-        Ok(chat) => Ok(chat),
+    let chat = match primary {
+        Ok(chat) => chat,
         Err(primary_error) => {
             let Some(fallback) = read_fallback_model().await else {
                 return Err(primary_error);
@@ -187,8 +215,7 @@ async fn run_completion_with_fallback(
                 options,
                 RetryPolicy::NONE,
                 max_tokens,
-                tools,
-                stream,
+                request_tools,
             )
             .await
             .map_err(|fallback_error| {
@@ -199,67 +226,8 @@ async fn run_completion_with_fallback(
                     fallback_error.display_message
                 );
                 primary_error
-            })
+            })?
         }
-    }
-}
-
-pub(super) async fn run_completion(
-    request: &CompletionRequest,
-    config: &ExecutorConfig,
-    sink: &dyn ResponseSink,
-) -> Result<Message, Box<AgentRuntimeError>> {
-    let (options, retry, default_max_tokens) = generation_settings().await;
-    let max_tokens = request.max_tokens.or(default_max_tokens);
-    let request_tools = request.available_tools.as_deref().unwrap_or(&[]);
-    // Gemini can end a turn with `MALFORMED_FUNCTION_CALL` when it was offered
-    // tools. The GUI retries that one time with no tools (#3089); the Rust
-    // path must do the same, or a Gemini turn fails with no recovery.
-    let malformed_retry = is_gemini(&request.provider) && !request_tools.is_empty();
-    // A discarded attempt must leave nothing in the live view, so the first
-    // try streams only when a retry cannot happen.
-    let chat = run_completion_with_fallback(
-        request,
-        config,
-        sink,
-        options,
-        retry,
-        max_tokens,
-        request_tools,
-        !malformed_retry,
-    )
-    .await?;
-    let chat = if is_malformed_function_call(chat.finish_reason.as_deref()) {
-        if !is_gemini(&request.provider) {
-            // No other provider reports this finish reason; pass it through.
-            chat
-        } else if !malformed_retry {
-            // Gemini with no tools offered: nothing can recover here.
-            return Err(malformed_function_call_error());
-        } else {
-            log::warn!(
-                "Rust LLM executor: {} ended with MALFORMED_FUNCTION_CALL; retrying once without tools",
-                request.model
-            );
-            let retry_chat = run_completion_with_fallback(
-                request,
-                config,
-                sink,
-                options,
-                RetryPolicy::NONE,
-                max_tokens,
-                &[],
-                true,
-            )
-            .await?;
-            if is_malformed_function_call(retry_chat.finish_reason.as_deref()) {
-                // Never a second retry: the session settles with the error instead.
-                return Err(malformed_function_call_error());
-            }
-            retry_chat
-        }
-    } else {
-        chat
     };
     Ok(assistant_message(request, chat))
 }
