@@ -3,10 +3,7 @@ import useSWR from 'swr';
 
 import { useDebouncedValue } from '@/features/knowledge/hooks/useDebouncedValue';
 import { useSettings } from '@/hooks/use-settings';
-import {
-  AIServiceFactory,
-  resolveProviderRuntimeConfig,
-} from '@/lib/ai-service';
+import { resolveProviderRuntimeConfig } from '@/lib/ai-service';
 import {
   buildSettingsSnapshot,
   listConfiguredProviderGroups,
@@ -226,16 +223,6 @@ export const useGroupedAgentModels = ({
     if (!currentProvider || !currentProviderPolicy.canFetch) {
       return;
     }
-
-    const resolved = resolveProviderRuntimeConfig(
-      currentProvider,
-      displaySettings,
-    );
-    AIServiceFactory.invalidateService(
-      currentProvider,
-      resolved.apiKey,
-      resolved.serviceConfig,
-    );
 
     await mutateGroupedModels(
       async (current) => {

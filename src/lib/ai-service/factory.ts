@@ -10,7 +10,6 @@ import { OllamaService } from './ollama';
 import { OpenRouterService } from './openrouter';
 import { EmptyAIService } from './empty';
 import { LLMConfigManager } from '../llm-config-manager';
-import { registerAIServiceFactory } from './model-capabilities';
 import { isCustomOpenAIProviderId } from './custom-providers';
 
 const logger = getLogger('AIService');
@@ -24,11 +23,6 @@ interface ServiceInstance {
   service: IAIService;
   apiKey: string;
   created: number;
-}
-
-interface CapabilityDelegate {
-  supportsTools(modelName: string): boolean;
-  estimateContextWindow(modelName: string): number;
 }
 
 function buildConfigCacheKey(config?: AIServiceConfig): string {
@@ -101,61 +95,6 @@ export class AIServiceFactory {
     const effectiveApiKey = this.computeEffectiveApiKey(provider, apiKey);
     // Keep custom provider ids in the cache key so distinct endpoints do not collide.
     return `${provider}:${effectiveApiKey}:${buildConfigCacheKey(config)}`;
-  }
-
-  static getCapabilityDelegate(
-    provider: AIServiceProvider | string,
-  ): CapabilityDelegate {
-    const factoryProvider = this.resolveFactoryProvider(provider);
-    switch (factoryProvider) {
-      case AIServiceProvider.Groq:
-        return {
-          supportsTools: GroqService.supportsToolsForModel,
-          estimateContextWindow: GroqService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.OpenAI:
-        return {
-          supportsTools: OpenAIService.supportsToolsForModel,
-          estimateContextWindow: OpenAIService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.Anthropic:
-        return {
-          supportsTools: AnthropicService.supportsToolsForModel,
-          estimateContextWindow: AnthropicService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.Gemini:
-        return {
-          supportsTools: GeminiService.supportsToolsForModel,
-          estimateContextWindow: GeminiService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.Fireworks:
-        return {
-          supportsTools: FireworksService.supportsToolsForModel,
-          estimateContextWindow: FireworksService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.Cerebras:
-        return {
-          supportsTools: CerebrasService.supportsToolsForModel,
-          estimateContextWindow: CerebrasService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.Ollama:
-        return {
-          supportsTools: OllamaService.supportsToolsForModel,
-          estimateContextWindow: OllamaService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.OpenRouter:
-        return {
-          supportsTools: OpenRouterService.supportsToolsForModel,
-          estimateContextWindow:
-            OpenRouterService.estimateContextWindowForModel,
-        };
-      case AIServiceProvider.Empty:
-      default:
-        return {
-          supportsTools: EmptyAIService.supportsToolsForModel,
-          estimateContextWindow: EmptyAIService.estimateContextWindowForModel,
-        };
-    }
   }
 
   /**
@@ -301,6 +240,3 @@ export class AIServiceFactory {
     }
   }
 }
-
-// Register factory for capability delegation
-registerAIServiceFactory(AIServiceFactory);

@@ -1,35 +1,15 @@
 import { AIServiceProvider } from './types';
 import { getLogger } from '../logger';
 import {
+  providerSupportsTools,
+  providerEstimateContextWindow,
+} from './provider-capabilities';
+import {
   supportsReasoningViaOpenRouter,
   getContextLengthViaOpenRouter,
 } from './openrouter-metadata';
 
 const logger = getLogger('ModelCapabilities');
-
-/**
- * Interface matching the static part of AIServiceFactory that we need.
- * This avoids a direct import and thus prevents circular dependencies.
- */
-interface FactoryInterface {
-  getCapabilityDelegate(provider: AIServiceProvider | string): ServiceInterface;
-}
-
-interface ServiceInterface {
-  supportsTools(modelName: string): boolean;
-  estimateContextWindow(modelName: string): number;
-}
-
-let registeredFactory: FactoryInterface | null = null;
-
-/**
- * Registers the AIServiceFactory to be used for late-bound capability delegation.
- * This pattern avoids circular dependencies: Services -> Capabilities -> Factory -> Services.
- * @param factory The AIServiceFactory implementation.
- */
-export function registerAIServiceFactory(factory: FactoryInterface): void {
-  registeredFactory = factory;
-}
 
 /**
  * Cache for model capabilities to avoid repeated API calls.
@@ -248,64 +228,24 @@ export async function getContextWindow(
 
 /**
  * Checks if a model supports tool use based on its name.
- * This is now delegated to the respective service class via late-bound factory access.
+ * Answered from the static per-provider data in `provider-capabilities`.
  */
 export function supportsTools(
   modelName: string,
   provider: AIServiceProvider | string,
 ): boolean {
-  try {
-    if (registeredFactory) {
-      const service = registeredFactory.getCapabilityDelegate(provider);
-      return service.supportsTools(modelName);
-    }
-    throw new Error('AIServiceFactory not registered');
-  } catch {
-    // Fallback if factory or service logic fails
-    const lowerName = modelName.toLowerCase();
-    if (typeof provider === 'string' && provider.startsWith('custom:')) {
-      // Custom OpenAI-compatible endpoints: assume tool support unless proven otherwise.
-      return true;
-    }
-    if (provider === AIServiceProvider.OpenAI) {
-      return (
-        lowerName.includes('gpt-4') ||
-        lowerName.includes('gpt-3.5-turbo') ||
-        /^o(?:1|3|4)(?:$|[-.])/.test(lowerName)
-      );
-    }
-    if (provider === AIServiceProvider.Anthropic)
-      return lowerName.includes('claude-3');
-    if (provider === AIServiceProvider.Gemini) return true;
-    return false;
-  }
+  return providerSupportsTools(provider, modelName);
 }
 
 /**
  * Estimates context window size based on model name.
- * This is now delegated to the respective service class via late-bound factory access.
+ * Answered from the static per-provider data in `provider-capabilities`.
  */
 export function estimateContextWindow(
   modelName: string,
   provider: AIServiceProvider | string,
 ): number {
-  try {
-    if (registeredFactory) {
-      const service = registeredFactory.getCapabilityDelegate(provider);
-      return service.estimateContextWindow(modelName);
-    }
-    throw new Error('AIServiceFactory not registered');
-  } catch {
-    // Basic heuristics if delegation fails
-    if (provider === AIServiceProvider.Anthropic) return 200000;
-    if (
-      provider === AIServiceProvider.OpenAI ||
-      (typeof provider === 'string' && provider.startsWith('custom:'))
-    ) {
-      return 128000;
-    }
-    return 4096;
-  }
+  return providerEstimateContextWindow(provider, modelName);
 }
 
 /**

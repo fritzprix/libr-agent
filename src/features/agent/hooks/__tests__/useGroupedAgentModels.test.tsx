@@ -216,7 +216,9 @@ describe('useGroupedAgentModels', () => {
       await result.current.refreshModels();
     });
 
-    expect(mockedFactory.invalidateService).toHaveBeenCalled();
+    // #3092: refreshModels no longer invalidates the (to-be-deleted)
+    // AIServiceFactory service cache.
+    expect(mockedFactory.invalidateService).not.toHaveBeenCalled();
     expect(mockState.mutate).toHaveBeenCalledWith(expect.any(Function), {
       revalidate: false,
     });

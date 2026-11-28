@@ -9,7 +9,6 @@ import {
 import useSWR from 'swr';
 import {
   AIServiceProvider,
-  AIServiceFactory,
   isCustomOpenAIProviderId,
   listCustomProviderPickerOptions,
   resolveDefaultModelForProviderChange,
@@ -181,11 +180,6 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
   }, [provider, dynamicModels, resolvedProvider.manualModels]);
 
   const refreshModels = useCallback(async () => {
-    AIServiceFactory.invalidateService(
-      provider,
-      resolvedProvider.apiKey || '',
-      resolvedProvider.serviceConfig,
-    );
     const nextModels = await fetchDynamicProviderModels(
       provider,
       settingsSlice,
