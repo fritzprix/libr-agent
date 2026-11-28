@@ -144,15 +144,38 @@ async fn resolve_parent_request(
         return explicit_parent_request;
     }
 
-    let request_handle = {
+    let (request_handle, runtime_config) = {
         let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.last_completion_request.clone())
-    }?;
+        let session = active.get(session_id)?;
+        (
+            session.last_completion_request.clone(),
+            (
+                session.metadata.provider.clone(),
+                session.metadata.model.clone(),
+            ),
+        )
+    };
 
     let request = request_handle.read().await.clone();
-    request
+    if request.is_some() {
+        return request;
+    }
+
+    // Manual and preflight compaction pass no explicit parent, and a session
+    // loaded without a completion since startup has no `last_completion_request`
+    // either. The frontend used to fall back to its preferred model here; the
+    // backend answers with the session's current provider and model instead.
+    let (provider, model) = runtime_config;
+    if provider.trim().is_empty() || model.trim().is_empty() {
+        return None;
+    }
+    Some(CompactionParentRequest {
+        model,
+        provider,
+        system_prompt: None,
+        session_context: None,
+        available_tools: None,
+    })
 }
 
 async fn prepare_compaction_request(
@@ -443,10 +466,70 @@ pub(super) async fn prepare_compaction_request_with_recovery_ladder(
 #[cfg(test)]
 mod tests {
     use super::{
-        should_abort_empty_delta_as_noop, should_noop_empty_compaction_delta,
-        MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS,
+        resolve_parent_request, should_abort_empty_delta_as_noop,
+        should_noop_empty_compaction_delta, MAX_COMPACTION_BUDGET_RETRY_ATTEMPTS,
     };
-    use crate::agent::state::CompactionRecoveryPhase;
+    use crate::agent::llm::types::CompactionParentRequest;
+    use crate::agent::state::{build_test_session, AgentSession, CompactionRecoveryPhase};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    fn active_with(session: AgentSession) -> Arc<RwLock<HashMap<String, AgentSession>>> {
+        let mut map = HashMap::new();
+        map.insert(session.metadata.id.clone(), session);
+        Arc::new(RwLock::new(map))
+    }
+
+    #[tokio::test]
+    async fn manual_compaction_resolves_a_parent_in_a_freshly_loaded_session() {
+        // Manual compaction passes no explicit parent, and a session loaded
+        // without a completion since startup has no `last_completion_request`
+        // yet; the session's provider and model must fill the parent instead
+        // of failing with RUST_EXECUTOR_NO_COMPACTION_PARENT.
+        let active = active_with(build_test_session("fresh-session"));
+
+        let parent = resolve_parent_request(&active, "fresh-session", None).await;
+
+        let parent =
+            parent.expect("the session's provider and model should fill the parent request");
+        assert_eq!(parent.provider, "openai");
+        assert_eq!(parent.model, "gpt-5.4");
+    }
+
+    #[tokio::test]
+    async fn a_last_completion_request_still_wins_over_the_session_model() {
+        let session = build_test_session("used-session");
+        *session.last_completion_request.write().await = Some(CompactionParentRequest {
+            model: "claude-sonnet-4-5".to_string(),
+            provider: "anthropic".to_string(),
+            system_prompt: None,
+            session_context: None,
+            available_tools: None,
+        });
+        let active = active_with(session);
+
+        let parent = resolve_parent_request(&active, "used-session", None)
+            .await
+            .unwrap();
+
+        assert_eq!(parent.provider, "anthropic");
+        assert_eq!(parent.model, "claude-sonnet-4-5");
+    }
+
+    #[tokio::test]
+    async fn a_session_without_provider_or_model_keeps_the_no_parent_error() {
+        let mut session = build_test_session("unconfigured-session");
+        session.metadata.provider = String::new();
+        session.metadata.model = String::new();
+        let active = active_with(session);
+
+        assert!(
+            resolve_parent_request(&active, "unconfigured-session", None)
+                .await
+                .is_none()
+        );
+    }
 
     #[test]
     fn empty_delta_count_is_noop() {

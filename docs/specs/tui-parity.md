@@ -1825,8 +1825,8 @@ The Rust LLM client (`src-tauri/llm-client`, #2754 and #2755) is compared with t
   - OpenAI receives the same prompt cache key for the same session. Anthropic marks the system prompt, the last tool, and the message breakpoints for caching.
   - On a second turn, cached prompt tokens are reported for OpenAI, Anthropic, and Gemini.
 - [ ] **L-07 Routing** — All · `[auto]`
-  - With the Rust executor on, the six providers above are answered in Rust: no `llm:completion-request` event is sent to the WebView. Other providers go to the WebView.
-  - When no WebView is available, other providers fail at once with `RUST_EXECUTOR_NO_WEBVIEW`.
+  - The providers above are answered in the Rust executor: no `llm:completion-request` event is sent to the WebView. There is no WebView route anymore.
+  - A provider the executor does not support fails at once with `RUST_EXECUTOR_UNSUPPORTED_PROVIDER`, naming the provider.
 
 Not covered in this checklist:
 

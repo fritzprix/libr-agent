@@ -1,5 +1,7 @@
 use super::completion::assistant_message;
-use super::config::{no_compaction_parent, no_session_manager, route, unavailable, Route};
+use super::config::{
+    no_compaction_parent, no_session_manager, route, route_for, unavailable, Route,
+};
 use super::convert;
 use super::events::{fallback_notice_event, stream_delta_event};
 use super::settings::{runtime_error, FallbackModel};
@@ -13,10 +15,42 @@ use tokio::sync::oneshot;
 fn the_removed_executor_env_var_changes_nothing() {
     // #3094 removed LIBRAGENT_LLM_EXECUTOR. A stale value left in a user's
     // environment must not resurrect the WebView route.
-    std::env::set_var("LIBRAGENT_LLM_EXECUTOR", "webview");
-    assert_eq!(route("openai"), Route::Rust);
-    assert_eq!(route("mistral"), Route::Unavailable);
-    std::env::remove_var("LIBRAGENT_LLM_EXECUTOR");
+    //
+    // The check asserts through `route_for`, the function every dispatched
+    // completion actually calls (`dispatch_completion`), so reading the
+    // variable again in `current_config` or `route_for` fails this test.
+    // It runs in a child process because it changes the environment, which
+    // would otherwise leak into tests running concurrently in this binary.
+    const CHILD_MARKER: &str = "LIBRAGENT_TEST_ENV_CHILD";
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        // Child: LIBRAGENT_LLM_EXECUTOR=webview is set in our environment.
+        // Routing and config must be exactly what they are without it.
+        let (child_route, child_config) = route_for("openai");
+        assert_eq!(child_route, Route::Rust);
+        assert!(
+            child_config.endpoint_override.is_none(),
+            "a stale LIBRAGENT_LLM_EXECUTOR changed the executor config"
+        );
+        return;
+    }
+
+    let output = std::process::Command::new(
+        std::env::current_exe().expect("the test binary should know its own path"),
+    )
+    .args([
+        "--exact",
+        "agent::llm::rust_executor::tests::the_removed_executor_env_var_changes_nothing",
+        "--nocapture",
+    ])
+    .env(CHILD_MARKER, "1")
+    .env("LIBRAGENT_LLM_EXECUTOR", "webview")
+    .output()
+    .expect("re-running this test as a child process should work");
+    assert!(
+        output.status.success(),
+        "routing changed with a stale LIBRAGENT_LLM_EXECUTOR in the environment:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
