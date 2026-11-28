@@ -25,8 +25,9 @@ pub(super) const MAX_GITHUB_ARCHIVE_BYTES: u64 = 100 * 1024 * 1024;
 /// Wall-clock limit for one `git clone` of a non-GitHub plugin source (#2928).
 pub(super) const GIT_CLONE_TIMEOUT_SECS: u64 = 120;
 /// The size cap for a `git clone` install source (#2928 gatekeeper G1.4),
-/// checked on the fetched tree without its `.git` directory, so a clone is
-/// bounded like the GitHub archive path.
+/// checked on the total size of the fetched tree including the repository's
+/// `.git` metadata, so a clone is bounded like the GitHub archive path
+/// (G2.1).
 pub(super) const MAX_CLONE_TREE_BYTES: u64 = 100 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
