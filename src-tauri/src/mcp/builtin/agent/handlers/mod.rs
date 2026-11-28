@@ -16,6 +16,7 @@ mod shared;
 
 pub use check_session::check_session;
 pub use check_session_results::{
+    build_cancelled_wait_check_session_result_from_messages,
     build_paused_check_session_result_from_messages,
     build_terminal_check_session_result_from_messages,
 };

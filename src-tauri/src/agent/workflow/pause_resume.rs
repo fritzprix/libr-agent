@@ -1,3 +1,4 @@
+use crate::agent::concurrency::{acquire_queued_permit, QueuedPermitError};
 use crate::agent::events::AgentEventDispatcher;
 use crate::agent::state::AgentSession;
 use crate::agent::tauri_events::TauriEventDispatcher;
@@ -119,30 +120,33 @@ pub async fn resume_workflow(
     let proxy_manager = Arc::clone(proxy_manager);
     let app_handle = app_handle.clone();
     let session_id_clone = session_id.clone();
-    let cancellation_token = {
-        let active = active_sessions.read().await;
-        active
-            .get(&session_id)
-            .map(|s| s.cancellation_token.clone())
-            .unwrap_or_default()
-    };
 
     tokio::spawn(async move {
-        // 1. Acquire active agent permit first (blocks safely outside transition lock)
-        let gate = crate::state::get_concurrency_gate();
-        let permit = match gate
-            .acquire_active_agent_cancellable(&cancellation_token)
-            .await
+        // 1. Acquire active agent permit first (blocks safely outside transition
+        //    lock). One shared queued-acquire helper (#3086 G1.4).
+        let permit = match acquire_queued_permit(
+            crate::state::get_concurrency_gate(),
+            &active_sessions,
+            &session_id_clone,
+        )
+        .await
         {
             Ok(p) => p,
-            Err(_) if cancellation_token.is_cancelled() => {
+            Err(QueuedPermitError::Cancelled) => {
                 log::info!(
                     "Session {} cancelled while waiting in concurrency queue. Aborting background resume.",
                     session_id_clone
                 );
                 return;
             }
-            Err(e) => {
+            Err(QueuedPermitError::MissingSession) => {
+                log::warn!(
+                    "Session {} disappeared while waiting in concurrency queue. Aborting background resume.",
+                    session_id_clone
+                );
+                return;
+            }
+            Err(QueuedPermitError::Gate(e)) => {
                 log::error!(
                     "Failed to acquire active agent permit for session {}: {}",
                     session_id_clone,

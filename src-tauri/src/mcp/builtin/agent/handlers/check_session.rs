@@ -5,6 +5,7 @@ use super::super::utils::{
     extract_session_status, handle_wait_timeout_result, is_terminal_status, read_required_string,
     wait_until_session_terminal,
 };
+use crate::agent::concurrency::session_cancel_token;
 use crate::agent::poll_tracker::{poll_tracker_key, PollTrackerVerdict};
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
@@ -73,6 +74,18 @@ async fn check_session_inner(
     let current_turn_count = count_session_turns(&session_id).await;
 
     if current_status == "paused" {
+        if wait {
+            // #3086 G1.3: with wait=true a paused child is the same abnormal
+            // end the post-wait path reports. `messageToSession(wait=true)`
+            // sends the message and then checks; a child cancelled between
+            // those steps must not be reported as a successful paused result.
+            return build_cancelled_wait_check_session_result(
+                &storage_session_id,
+                current_turn_count,
+                &enrichment,
+            )
+            .await;
+        }
         // Must pass storage session id — builders fetch messages by opaque key.
         // display_id is only for agent-facing copy inside those builders.
         return build_paused_check_session_result(
@@ -108,15 +121,22 @@ async fn check_session_inner(
                     return Err(error);
                 }
             };
+            // #3086 G1.4: explicit token lookup. The caller's permit was just
+            // taken from this same map, so a vanished caller session means the
+            // wait cannot be attributed to anyone — report it instead of
+            // waiting on a fresh token that can never fire. Dropping
+            // `suspended` releases the suspended slot; `suspend_agent` already
+            // returned the active slot to the gate.
             let caller_cancel_token =
-                if let Some(sessions) = crate::state::try_get_active_sessions() {
-                    let active = sessions.read().await;
-                    active
-                        .get(caller_session_id)
-                        .map(|s| s.cancellation_token.clone())
-                        .unwrap_or_default()
-                } else {
-                    tokio_util::sync::CancellationToken::new()
+                match session_cancel_token(&manager.active_sessions_arc(), caller_session_id).await
+                {
+                    Some(token) => token,
+                    None => {
+                        return Err(format!(
+                            "Caller session {} disappeared after suspending its concurrency permit",
+                            caller_session_id
+                        ));
+                    }
                 };
             let res = wait_until_session_terminal(
                 manager,
@@ -125,18 +145,37 @@ async fn check_session_inner(
                 Some(caller_session_id),
             )
             .await;
-            let skip_blocking_resume = res.is_err()
+            // #3086 G1.1: restore the caller's active permit. On a normal
+            // completion keep waiting (cancellably) until a slot frees, so a
+            // Busy caller never runs LLM turns without a permit. When the wait
+            // ended abnormally (child cancelled/paused, timeout) or the caller
+            // itself was cancelled, deliver the tool result now: try the slot
+            // without blocking, and let the loop re-acquire (cancellable)
+            // before its next LLM request via `ensure_active_permit_for_llm`.
+            let wait_ended_abnormally = res.is_err()
                 || caller_cancel_token.is_cancelled()
                 || matches!(
                     &res,
                     Ok((session_data, _))
                         if extract_session_status(session_data).eq_ignore_ascii_case("paused")
                 );
-            if skip_blocking_resume {
+            if wait_ended_abnormally {
                 if let Some(resumed) = suspended.try_resume() {
-                    let _ = manager
+                    if let Err(error) = manager
                         .restore_active_session_permit(caller_session_id, resumed)
-                        .await;
+                        .await
+                    {
+                        log::warn!(
+                            "Could not restore the active concurrency permit of caller session {}: {}",
+                            caller_session_id,
+                            error
+                        );
+                    }
+                } else {
+                    log::info!(
+                        "Gate full when caller session {} finished its wait; it re-acquires its active permit before the next LLM turn (#3086).",
+                        caller_session_id
+                    );
                 }
             } else {
                 let resumed = suspended.resume_cancellable(&caller_cancel_token).await?;

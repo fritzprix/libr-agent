@@ -15,8 +15,11 @@
 /// This prevents the classic deadlock where every active slot is occupied by a
 /// parent waiting on children that can never start because all active slots are
 /// taken.
+use crate::agent::state::AgentSession;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 /// Default concurrency limits applied when settings are not yet loaded.
 pub const DEFAULT_MAX_ACTIVE_AGENTS: u32 = 4;
@@ -209,6 +212,54 @@ impl ConcurrencyGate {
             .forget();
         self.suspended_process.add_permits(1);
         Ok(())
+    }
+}
+
+/// Look up a session's cancellation token. `None` when the session is not
+/// active — callers must handle that explicitly instead of silently waiting on
+/// a fresh token that can never fire (#3086 G1.4).
+pub async fn session_cancel_token(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Option<CancellationToken> {
+    active_sessions
+        .read()
+        .await
+        .get(session_id)
+        .map(|session| session.cancellation_token.clone())
+}
+
+/// Why a session-attached queued active-slot acquire did not yield a permit.
+#[derive(Debug)]
+pub enum QueuedPermitError {
+    /// The session's own cancellation token fired while it was queued.
+    Cancelled,
+    /// The session was already gone: there is no token to cancel the wait with.
+    MissingSession,
+    /// The gate itself failed (closed semaphore).
+    Gate(String),
+}
+
+/// Acquire the active slot for a queued session, aborting when the session is
+/// cancelled while queued. One implementation shared by background start /
+/// resume / injection and the LLM-turn permit guard, so the token lookup and
+/// the cancelled arm cannot drift apart (#3086 G1.4).
+///
+/// `gate` is passed explicitly (callers use `crate::state::get_concurrency_gate()`)
+/// so the queue/cancel semantics stay testable without global state.
+pub async fn acquire_queued_permit(
+    gate: &ConcurrencyGate,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<ActiveAgentPermit, QueuedPermitError> {
+    let cancel = match session_cancel_token(active_sessions, session_id).await {
+        Some(token) => token,
+        None => return Err(QueuedPermitError::MissingSession),
+    };
+    match gate.acquire_active_agent_cancellable(&cancel).await {
+        Ok(permit) => Ok(permit),
+        Err(_) if cancel.is_cancelled() => Err(QueuedPermitError::Cancelled),
+        Err(error) => Err(QueuedPermitError::Gate(error)),
     }
 }
 

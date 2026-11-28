@@ -235,17 +235,59 @@ pub fn build_cancelled_wait_check_session_result_from_messages(
     messages_value: &[Value],
     enrichment: Option<&CheckSessionEnrichment>,
 ) -> MCPResult {
-    let mut result = build_paused_check_session_result_from_messages(
-        session_id,
-        turn_count,
-        messages_value,
-        enrichment,
+    // #3086 S1.1: say plainly that the run was cancelled — the paused builder's
+    // "will not make progress" copy and recovery fields would misreport it.
+    let display_id = crate::utils::session_id::display_session_id(session_id);
+    let latest_output = latest_session_output(messages_value);
+    let mut message = format!(
+        "Session {} was cancelled before finishing the delegated task.\n\nLast known output:\n{}\n\nRecovery: the child will not continue on its own. Use agent__messageToSession(...) to send it a fresh instruction.",
+        display_id, latest_output
     );
-    result.is_error = Some(true);
-    if let Some(Value::Object(ref mut data)) = result.structured_content {
-        data.insert("status".to_string(), Value::String("cancelled".to_string()));
-        data.insert("abnormalTermination".to_string(), Value::Bool(true));
+    if let Some(enrichment) = enrichment {
+        message = append_check_session_context_to_message(&message, enrichment);
     }
+    let next_actions = vec![
+        recovery_action_for_session(
+            session_id,
+            "terminated",
+            "Send the cancelled child a fresh instruction so it can restart the delegated work.",
+        ),
+        json!({
+            "toolName": "agent__checkSession",
+            "reason": "Check again after sending a recovery message.",
+            "args": {
+                "sessionId": display_id,
+                "wait": true
+            }
+        }),
+    ];
+    let hint = SuccessHint::new(message.clone(), vec![]);
+    let mut response_data = build_agent_session_tool_data(
+        "agent__checkSession",
+        session_id,
+        &message,
+        "cancelled",
+        "error",
+        turn_count,
+        next_actions,
+    );
+    response_data.insert("result".to_string(), Value::String(latest_output));
+    response_data.insert("abnormalTermination".to_string(), Value::Bool(true));
+    response_data.insert("recoverable".to_string(), Value::Bool(true));
+    response_data.insert(
+        "recoveryStrategy".to_string(),
+        Value::String("agent__messageToSession".to_string()),
+    );
+    response_data.insert(
+        "recoveryMessage".to_string(),
+        Value::String(default_session_recovery_message("terminated")),
+    );
+    if let Some(enrichment) = enrichment {
+        apply_check_session_enrichment(&mut response_data, enrichment);
+    }
+
+    let mut result = hint.to_mcp_result_with_data(Some(Value::Object(response_data)));
+    result.is_error = Some(true);
     result
 }
 
