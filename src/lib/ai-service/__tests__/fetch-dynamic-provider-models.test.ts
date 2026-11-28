@@ -12,6 +12,7 @@ import {
 
 const mockedFactory = vi.hoisted(() => ({
   getService: vi.fn(),
+  invalidateService: vi.fn(),
 }));
 
 const reportListModelsFallback = vi.hoisted(() => vi.fn());
@@ -25,6 +26,7 @@ vi.mock('@/lib/ai-service/factory', async () => {
     AIServiceFactory: {
       ...actual.AIServiceFactory,
       getService: mockedFactory.getService,
+      invalidateService: mockedFactory.invalidateService,
     },
   };
 });
@@ -53,6 +55,7 @@ describe('fetch-dynamic-provider-models', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedFactory.getService.mockReset();
+    mockedFactory.invalidateService.mockReset();
     reportListModelsFallback.mockReset();
   });
 
@@ -146,5 +149,105 @@ describe('fetch-dynamic-provider-models', () => {
         reason: 'api_error',
       }),
     );
+  });
+
+  it('a second refresh returns the changed list (#3092 G1.1)', async () => {
+    // Mimics the real cache chain: the factory hands out one service instance
+    // until it is invalidated, and the instance keeps the list it fetched.
+    let currentList: unknown[] = [
+      {
+        id: 'alpha',
+        name: 'Alpha',
+        contextWindow: 1000,
+        supportTools: true,
+        supportStreaming: true,
+        supportReasoning: false,
+        cost: { input: 0, output: 0 },
+        description: '',
+      },
+    ];
+    let cachedService: { listModels: () => Promise<unknown[]> } | null = null;
+    mockedFactory.getService.mockImplementation(() => {
+      if (!cachedService) {
+        const snapshot = currentList;
+        cachedService = { listModels: async () => snapshot };
+      }
+      return cachedService;
+    });
+    mockedFactory.invalidateService.mockImplementation(() => {
+      cachedService = null;
+    });
+
+    const settings = {
+      serviceConfigs: {
+        ...DEFAULT_SETTING.serviceConfigs,
+        [AIServiceProvider.Ollama]: {
+          baseUrl: 'http://127.0.0.1:11434',
+        },
+      },
+      customProviders: [],
+    };
+
+    const first = await fetchDynamicProviderModels(
+      AIServiceProvider.Ollama,
+      settings,
+      {
+        timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+        notifyUser: true,
+        refresh: true,
+      },
+    );
+    expect(Object.keys(first)).toEqual(['alpha']);
+
+    // The provider adds a model between the two refreshes.
+    currentList = [
+      ...currentList,
+      {
+        id: 'beta',
+        name: 'Beta',
+        contextWindow: 2000,
+        supportTools: true,
+        supportStreaming: true,
+        supportReasoning: false,
+        cost: { input: 0, output: 0 },
+        description: '',
+      },
+    ];
+
+    const second = await fetchDynamicProviderModels(
+      AIServiceProvider.Ollama,
+      settings,
+      {
+        timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+        notifyUser: true,
+        refresh: true,
+      },
+    );
+    expect(Object.keys(second).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  it('a background fetch does not invalidate the cached service', async () => {
+    mockedFactory.getService.mockReturnValue({
+      listModels: vi.fn().mockResolvedValue([]),
+    });
+
+    await fetchDynamicProviderModels(
+      AIServiceProvider.Ollama,
+      {
+        serviceConfigs: {
+          ...DEFAULT_SETTING.serviceConfigs,
+          [AIServiceProvider.Ollama]: {
+            baseUrl: 'http://127.0.0.1:11434',
+          },
+        },
+        customProviders: [],
+      },
+      {
+        timeoutMs: BACKGROUND_LIST_MODELS_TIMEOUT_MS,
+        notifyUser: false,
+      },
+    );
+
+    expect(mockedFactory.invalidateService).not.toHaveBeenCalled();
   });
 });

@@ -25,6 +25,7 @@ const mockState = vi.hoisted(() => ({
 
 const mockedFactory = vi.hoisted(() => ({
   getService: vi.fn(),
+  invalidateService: vi.fn(),
 }));
 
 const reportListModelsFallback = vi.hoisted(() => vi.fn());
@@ -56,6 +57,7 @@ vi.mock('@/lib/ai-service', async () => {
     AIServiceFactory: {
       ...actual.AIServiceFactory,
       getService: mockedFactory.getService,
+      invalidateService: mockedFactory.invalidateService,
     },
   };
 });
@@ -70,6 +72,7 @@ vi.mock('@/lib/ai-service/factory', async () => {
     AIServiceFactory: {
       ...actual.AIServiceFactory,
       getService: mockedFactory.getService,
+      invalidateService: mockedFactory.invalidateService,
     },
   };
 });
@@ -125,6 +128,7 @@ describe('useGroupedAgentModels', () => {
     };
     mockState.customProviders = [];
     mockedFactory.getService.mockReset();
+    mockedFactory.invalidateService.mockReset();
     reportListModelsFallback.mockReset();
     mockState.mutate.mockReset();
     mockState.mutate.mockResolvedValue({});

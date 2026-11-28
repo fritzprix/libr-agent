@@ -130,10 +130,6 @@ function summarizeGeminiContents(contents: Content[]): {
   };
 }
 
-function supportsGeminiToolsForModel(modelName: string): boolean {
-  return supportsToolsForModel(AIServiceProvider.Gemini, modelName);
-}
-
 /**
  * An AI service implementation for interacting with Google's Gemini models.
  */
@@ -457,7 +453,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    return supportsGeminiToolsForModel(modelName);
+    return supportsToolsForModel(AIServiceProvider.Gemini, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {

@@ -232,6 +232,7 @@ export const useGroupedAgentModels = ({
           {
             timeoutMs: REFRESH_LIST_MODELS_TIMEOUT_MS,
             notifyUser: true,
+            refresh: true,
           },
         );
         return {

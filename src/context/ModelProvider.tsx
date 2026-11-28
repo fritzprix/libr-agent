@@ -186,6 +186,7 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
       {
         timeoutMs: REFRESH_LIST_MODELS_TIMEOUT_MS,
         notifyUser: true,
+        refresh: true,
       },
     );
     await mutateModels(nextModels, { revalidate: false });
