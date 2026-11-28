@@ -1740,3 +1740,396 @@ async fn cancel_during_the_malformed_function_call_retry_delivers_nothing() {
     assert!(sink.responses.lock().unwrap().is_empty());
     assert!(sink.llm_errors.lock().unwrap().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// MediaAssist multimodal fallback on the Rust path (#3090)
+// ---------------------------------------------------------------------------
+
+fn message_with_image(session_id: &str, id: &str) -> Message {
+    Message {
+        id: id.to_string(),
+        session_id: session_id.to_string(),
+        role: "user".to_string(),
+        content: vec![
+            MCPContent::Text {
+                text: "look at this".to_string(),
+            },
+            MCPContent::Image {
+                data: Some("AAAA".to_string()),
+                uri: None,
+                mime_type: "image/png".to_string(),
+            },
+        ],
+        tool_calls: None,
+        tool_call_id: None,
+        is_streaming: Some(false),
+        thinking: None,
+        thinking_signature: None,
+        assistant_id: None,
+        attachments: None,
+        tool_use: None,
+        usage: None,
+        prompt_tokens: None,
+        created_at: 1_000,
+        updated_at: 1_000,
+        source: None,
+        error: None,
+        metadata: None,
+    }
+}
+
+fn body_has_media(body: &Value) -> bool {
+    let text = body.to_string();
+    text.contains("image_url") || text.contains("input_audio")
+}
+
+/// First `fail_count` POSTs get `status` with body `fail_body`; later ones get
+/// `reply` as SSE. Unlike `fail_then_sse`, the failure text is under test
+/// control so the multimodal-hint decision can be exercised end to end.
+async fn fail_body_then_sse(
+    fail_count: usize,
+    status: u16,
+    fail_body: &str,
+    reply: Vec<Value>,
+) -> MockProvider {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let fail_body = fail_body.to_string();
+    let route = warp::post()
+        .and(warp::path!("v1" / "chat" / "completions"))
+        .and(warp::body::json())
+        .map(move |body: Value| {
+            seen.lock().unwrap().push(body);
+            let index = counter.fetch_add(1, Ordering::SeqCst);
+            if index < fail_count {
+                return warp::http::Response::builder()
+                    .status(status)
+                    .header("content-type", "text/plain")
+                    .body(fail_body.clone())
+                    .unwrap();
+            }
+            sse(&reply)
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    MockProvider {
+        endpoint: Endpoint {
+            base_url: format!("http://{addr}/v1"),
+            api_key: None,
+        },
+        requests,
+    }
+}
+
+/// A stream that emits one real delta, then an in-stream error chunk. This is
+/// the exact shape the fallback must NOT retry on: a delta already reached the
+/// listener.
+async fn delta_then_stream_error(hint: &str) -> MockProvider {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let hint = hint.to_string();
+    let route = warp::post()
+        .and(warp::path!("v1" / "chat" / "completions"))
+        .and(warp::body::json())
+        .map(move |body: Value| {
+            seen.lock().unwrap().push(body);
+            let body = format!(
+                "data: {}\n\ndata: {}\n\n",
+                json!({"choices":[{"delta":{"content":"partial"}}]}),
+                json!({"error": {"message": hint}}),
+            );
+            warp::http::Response::builder()
+                .header("content-type", "text/event-stream")
+                .body(body)
+                .unwrap()
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    MockProvider {
+        endpoint: Endpoint {
+            base_url: format!("http://{addr}/v1"),
+            api_key: None,
+        },
+        requests,
+    }
+}
+
+async fn failing_provider_with_body(
+    status: u16,
+    fail_body: &str,
+) -> (Endpoint, Arc<Mutex<Vec<Value>>>) {
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = requests.clone();
+    let fail_body = fail_body.to_string();
+    let route = warp::post()
+        .and(warp::path!("v1" / "chat" / "completions"))
+        .and(warp::body::json())
+        .map(move |body: Value| {
+            seen.lock().unwrap().push(body);
+            warp::reply::with_status(
+                fail_body.clone(),
+                warp::http::StatusCode::from_u16(status).unwrap(),
+            )
+        });
+    let (addr, server): (SocketAddr, _) = warp::serve(route).bind_ephemeral(([127, 0, 0, 1], 0));
+    tokio::spawn(server);
+    (
+        Endpoint {
+            base_url: format!("http://{addr}/v1"),
+            api_key: None,
+        },
+        requests,
+    )
+}
+
+/// The full executor wiring (#3090): a multimodal capability reject with media
+/// in the request retries exactly once, and the retry carries no media.
+#[tokio::test]
+async fn a_multimodal_reject_with_media_retries_once_without_media() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+    let session_id = "rust-executor-media-fallback";
+    let provider = fail_body_then_sse(
+        1,
+        400,
+        "model does not support image input",
+        text_reply("recovered"),
+    )
+    .await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+
+    assert!(dispatch_completion(
+        app(),
+        &request(
+            session_id,
+            "resp-1",
+            PROVIDER,
+            vec![message_with_image(session_id, "u1")]
+        ),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the retried answer", || {
+        !sink.responses.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2, "the fallback must retry exactly once");
+    assert!(
+        body_has_media(&requests[0]),
+        "the first attempt must carry the image"
+    );
+    assert!(
+        !body_has_media(&requests[1]),
+        "the retry must be stripped of media"
+    );
+    drop(requests);
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "recovered");
+    assert!(sink.llm_errors.lock().unwrap().is_empty());
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+}
+
+/// A stream that yields a delta and then fails must not trigger the fallback:
+/// retrying after output started would double-answer the user.
+#[tokio::test]
+async fn a_media_fallback_never_retries_after_a_delta_was_sent() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+    let session_id = "rust-executor-media-no-retry-after-delta";
+    let provider = delta_then_stream_error("image input is not supported").await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+
+    assert!(dispatch_completion(
+        app(),
+        &request(
+            session_id,
+            "resp-1",
+            PROVIDER,
+            vec![message_with_image(session_id, "u1")]
+        ),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("the stream error", || {
+        !sink.llm_errors.lock().unwrap().is_empty()
+    })
+    .await;
+
+    assert_eq!(
+        provider.requests.lock().unwrap().len(),
+        1,
+        "no fallback retry once a delta has streamed"
+    );
+    assert!(sink.responses.lock().unwrap().is_empty());
+    assert!(!sink.stream_events.lock().unwrap().is_empty());
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+}
+
+/// After one fallback, the route is remembered: the next turn strips media
+/// before the first call instead of burning a doomed request.
+#[tokio::test]
+async fn a_remembered_media_strip_route_pre_strips_the_next_turn() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+    let session_id = "rust-executor-media-remembered-route";
+
+    // Turn 1: reject-then-recover remembers custom:mock + mock-model.
+    let first = fail_body_then_sse(1, 400, "does not support image input", text_reply("one")).await;
+    {
+        let sink = Arc::new(RecordingSink::default());
+        let _config = configure(config(first.endpoint.clone()));
+        assert!(dispatch_completion(
+            app(),
+            &request(
+                session_id,
+                "resp-1",
+                PROVIDER,
+                vec![message_with_image(session_id, "u1")]
+            ),
+            deliver_to(&sink),
+        )
+        .await
+        .unwrap());
+        wait_for("turn one", || !sink.responses.lock().unwrap().is_empty()).await;
+    }
+    assert_eq!(first.requests.lock().unwrap().len(), 2);
+
+    // Turn 2 (same provider+model route, new endpoint): the image is stripped
+    // before the first call, so a single request answers it.
+    let second = mock_provider(vec![text_reply("two")]).await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(second.endpoint.clone()));
+    assert!(dispatch_completion(
+        app(),
+        &request(
+            session_id,
+            "resp-2",
+            PROVIDER,
+            vec![message_with_image(session_id, "u2")]
+        ),
+        deliver_to(&sink),
+    )
+    .await
+    .unwrap());
+    wait_for("turn two", || !sink.responses.lock().unwrap().is_empty()).await;
+
+    let requests = second.requests.lock().unwrap();
+    assert_eq!(
+        requests.len(),
+        1,
+        "the remembered route must not send media first"
+    );
+    assert!(!body_has_media(&requests[0]));
+    drop(requests);
+    assert_eq!(text_of(&sink.responses.lock().unwrap()[0]), "two");
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+}
+
+/// Context-limit, rate-limit, and opaque 5xx failures must not trigger the
+/// fallback even with media in the request.
+#[tokio::test]
+async fn media_fallback_ignores_context_limit_rate_limit_and_opaque_5xx() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    let cases: [(&str, u16, &str); 3] = [
+        (
+            "context",
+            400,
+            "maximum context length exceeded for this request",
+        ),
+        ("rate-limit", 429, "rate limit exceeded"),
+        ("opaque-5xx", 500, "internal server error"),
+    ];
+    for (name, status, body) in cases {
+        tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory();
+        let session_id = format!("rust-executor-media-skip-{name}");
+        let (endpoint, requests) = failing_provider_with_body(status, body).await;
+        let sink = Arc::new(RecordingSink::default());
+        let _config = configure(config(endpoint));
+
+        assert!(dispatch_completion(
+            app(),
+            &request(
+                &session_id,
+                "resp-1",
+                PROVIDER,
+                vec![message_with_image(&session_id, "u1")]
+            ),
+            deliver_to(&sink),
+        )
+        .await
+        .unwrap());
+        wait_for(&format!("the {name} error"), || {
+            !sink.llm_errors.lock().unwrap().is_empty()
+        })
+        .await;
+
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            1,
+            "{name}: the fallback must not retry this error"
+        );
+        assert!(sink.responses.lock().unwrap().is_empty());
+    }
+}
+
+/// Compaction goes through the same fallback (#3090 G1.2): a history with
+/// rejected media recovers with a stripped retry instead of failing.
+#[tokio::test]
+async fn a_compaction_with_rejected_media_retries_once_stripped() {
+    let _guard = TEST_GUARD.lock().await;
+    let _settings = install_settings(&[("advancedSettings", json!({ "maxRetries": 0 }))]).await;
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+    let session_id = "rust-executor-compaction-media";
+    let provider = fail_body_then_sse(
+        1,
+        415,
+        "unsupported media type for this model",
+        text_reply("A tidy summary."),
+    )
+    .await;
+    let sink = Arc::new(RecordingSink::default());
+    let _config = configure(config(provider.endpoint.clone()));
+
+    let mut compact = compact_request(session_id);
+    compact
+        .messages
+        .push(message_with_image(session_id, "u-media"));
+
+    assert!(dispatch_compaction(app(), &compact, deliver_to(&sink))
+        .await
+        .unwrap());
+    wait_for("the compaction summary", || {
+        !sink.compactions.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(
+        requests.len(),
+        2,
+        "compaction must retry once via the fallback"
+    );
+    assert!(body_has_media(&requests[0]));
+    assert!(!body_has_media(&requests[1]));
+    drop(requests);
+    assert_eq!(sink.compactions.lock().unwrap()[0].0, "A tidy summary.");
+    tauri_mcp_agent_lib::agent::llm::rust_executor::media_assist_fallback::clear_strip_route_memory(
+    );
+}

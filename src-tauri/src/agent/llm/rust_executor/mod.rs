@@ -35,6 +35,9 @@ mod completion;
 mod config;
 mod convert;
 mod events;
+// Public so the integration tests can reset and inspect the process-wide
+// strip-route memory while driving the real executor path.
+pub mod media_assist_fallback;
 mod settings;
 mod tasks;
 
