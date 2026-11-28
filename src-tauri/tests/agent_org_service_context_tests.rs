@@ -4,15 +4,17 @@
 //! - consolidated `tests/integration/` (AppHandle/WebView link → STATUS_ENTRYPOINT_NOT_FOUND)
 //! - `common::setup_test_db*` / `reset_state()` (same crash on Windows)
 //!
-//! Uses `InMemorySessionRepository` and the same composition order as
-//! `AgentServer::get_service_context` without constructing AgentServer.
+//! Uses `InMemorySessionRepository` and the production
+//! `compose_service_context` (the same function `AgentServer::get_service_context`
+//! calls) without constructing AgentServer.
 
 use tauri_mcp_agent_lib::agent::ExecutionMode;
-use tauri_mcp_agent_lib::mcp::builtin::agent::AGENT_DELEGATION_SHORT;
+use tauri_mcp_agent_lib::mcp::builtin::agent::{compose_service_context, AGENT_DELEGATION_SHORT};
+use tauri_mcp_agent_lib::mcp::types::ContextVolatility;
 use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{
-    build_child_sessions_context, build_explicit_org_layer_context, format_active_sessions_notice,
-    InMemorySessionRepository, SessionMetadata, SessionRepository, SessionStatus,
+    build_child_sessions_context, build_explicit_org_layer_context, InMemorySessionRepository,
+    SessionMetadata, SessionRepository, SessionStatus,
 };
 
 fn build_session(
@@ -55,39 +57,6 @@ fn build_session(
         status_reason: None,
         forked_from: None,
     }
-}
-
-/// Mirrors `AgentServer::get_service_context` without constructing AgentServer.
-async fn compose_service_context_prompt(
-    repo: &InMemorySessionRepository,
-    session_id: &str,
-) -> String {
-    let mut live_parts: Vec<String> = Vec::new();
-
-    if let Ok(Some(session)) = repo.get_session(session_id).await {
-        if let Ok(children) = repo.get_child_sessions(session_id).await {
-            if let Some(active_notice) = format_active_sessions_notice(&children) {
-                live_parts.push(active_notice);
-            }
-        }
-
-        if session.org_id.is_some() {
-            if let Ok(Some(org_layer_context)) =
-                build_explicit_org_layer_context(repo, &session).await
-            {
-                live_parts.push(org_layer_context);
-            }
-        }
-    }
-
-    if live_parts.is_empty() {
-        return AGENT_DELEGATION_SHORT.to_string();
-    }
-
-    let mut context_prompt = String::from("## Agent Delegation\n");
-    context_prompt.push('\n');
-    context_prompt.push_str(&live_parts.join("\n\n"));
-    context_prompt
 }
 
 #[tokio::test]
@@ -309,7 +278,13 @@ async fn service_context_composes_child_and_org_context() {
     .await
     .expect("child session should persist");
 
-    let prompt = compose_service_context_prompt(&repo, "parent-org-session").await;
+    let context = compose_service_context(&repo, "parent-org-session").await;
+    assert_eq!(
+        context.volatility,
+        ContextVolatility::Volatile,
+        "the live child/org block must be Volatile"
+    );
+    let prompt = context.context_prompt;
 
     // Agent-facing ids match storage ids exactly.
     assert!(prompt.contains("### Sub-Agents (1)"));
@@ -426,7 +401,13 @@ async fn service_context_includes_active_sessions_notice() {
         .await
         .expect("child-error should persist");
 
-    let prompt = compose_service_context_prompt(&repo, "parent-active-test").await;
+    let context = compose_service_context(&repo, "parent-active-test").await;
+    assert_eq!(
+        context.volatility,
+        ContextVolatility::Volatile,
+        "the live child/org block must be Volatile"
+    );
+    let prompt = context.context_prompt;
 
     // `get_service_context` only appends the active-sessions notice (no ## Child Sessions).
     assert!(!prompt.contains("## Child Sessions"));
@@ -461,7 +442,13 @@ async fn service_context_zero_child_is_brief_short_delegation_block() {
     .await
     .expect("solo session should persist");
 
-    let prompt = compose_service_context_prompt(&repo, "solo-zero-child").await;
+    let context = compose_service_context(&repo, "solo-zero-child").await;
+    assert_eq!(
+        context.volatility,
+        ContextVolatility::Volatile,
+        "the zero-child short block must also be Volatile (#3084)"
+    );
+    let prompt = context.context_prompt;
 
     assert_eq!(
         prompt, AGENT_DELEGATION_SHORT,

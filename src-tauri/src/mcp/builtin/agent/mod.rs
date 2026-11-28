@@ -71,6 +71,48 @@ pub const AGENT_DELEGATION_SHORT: &str = "## Agent Delegation\n\nNo child sessio
 /// Tool names live in the MCP tool list — do not restate them here.
 const AGENT_DELEGATION_LIVE_PREFIX: &str = "## Agent Delegation\n";
 
+/// Builds this agent's service-context block from the session repository.
+///
+/// The whole block is `Volatile`: it carries live child/org state, so it goes
+/// to the end of the prompt in the synthetic session-context user message. The
+/// static tool catalogue lives in the MCP tool list, not here.
+///
+/// Generic over `SessionRepository` so the composition is testable without
+/// constructing `AgentServer` (and its DB / Windows link constraints).
+pub async fn compose_service_context(
+    repo: &dyn SessionRepository,
+    session_id: &str,
+) -> ServiceContext {
+    let mut live_parts: Vec<String> = Vec::new();
+
+    if let Ok(Some(session)) = repo.get_session(session_id).await {
+        if let Ok(children) = repo.get_child_sessions(session_id).await {
+            if let Some(active_notice) = format_active_sessions_notice(&children) {
+                live_parts.push(active_notice);
+            }
+        }
+
+        if session.org_id.is_some() {
+            if let Ok(Some(org_layer_context)) =
+                build_explicit_org_layer_context(repo, &session).await
+            {
+                live_parts.push(org_layer_context);
+            }
+        }
+    }
+
+    if live_parts.is_empty() {
+        return ServiceContext::new(AGENT_DELEGATION_SHORT.to_string())
+            .with_volatility(ContextVolatility::Volatile);
+    }
+
+    let mut context_prompt = AGENT_DELEGATION_LIVE_PREFIX.to_string();
+    context_prompt.push('\n');
+    context_prompt.push_str(&live_parts.join("\n\n"));
+
+    ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Volatile)
+}
+
 #[async_trait]
 impl BuiltinMCPServer for AgentServer {
     fn name(&self) -> &str {
@@ -122,36 +164,7 @@ impl BuiltinMCPServer for AgentServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Static tool catalogue → Stable (cacheable prefix). Live child/org inventory →
-        // Volatile so it only appears in the synthetic session-context user message.
-        let mut live_parts: Vec<String> = Vec::new();
-
         let repo = SqliteSessionRepository::new(self.get_db().clone());
-        if let Ok(Some(session)) = repo.get_session(&self.session_id).await {
-            if let Ok(children) = repo.get_child_sessions(&self.session_id).await {
-                if let Some(active_notice) = format_active_sessions_notice(&children) {
-                    live_parts.push(active_notice);
-                }
-            }
-
-            if session.org_id.is_some() {
-                if let Ok(Some(org_layer_context)) =
-                    build_explicit_org_layer_context(&repo, &session).await
-                {
-                    live_parts.push(org_layer_context);
-                }
-            }
-        }
-
-        if live_parts.is_empty() {
-            return ServiceContext::new(AGENT_DELEGATION_SHORT.to_string())
-                .with_volatility(ContextVolatility::Volatile);
-        }
-
-        let mut context_prompt = AGENT_DELEGATION_LIVE_PREFIX.to_string();
-        context_prompt.push('\n');
-        context_prompt.push_str(&live_parts.join("\n\n"));
-
-        ServiceContext::new(context_prompt).with_volatility(ContextVolatility::Volatile)
+        compose_service_context(&repo, &self.session_id).await
     }
 }
