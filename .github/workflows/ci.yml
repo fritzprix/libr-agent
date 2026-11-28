@@ -12,6 +12,7 @@ on:
 # gatekeeper:review-clean runs jobs. opened, reopened, synchronize, and other
 # labels produce all-skipped runs, which the loop scripts ignore.
 # Pushes to main, master, and dev/* always run on every OS.
+# The build job (Tauri bundles) runs only on push, never on PRs.
 #
 # Concurrency:
 # - push: one group per SHA, so a later push never cancels a pending run.
@@ -189,6 +190,9 @@ jobs:
   build:
     name: Build
     needs: test
+    # Skip on PRs: CI is the bottleneck, and the test job already compiles and
+    # links on every OS. Pushes to main, master, and dev/* still build bundles.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
