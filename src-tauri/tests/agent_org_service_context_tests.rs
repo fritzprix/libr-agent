@@ -8,7 +8,7 @@
 //! `AgentServer::get_service_context` without constructing AgentServer.
 
 use tauri_mcp_agent_lib::agent::ExecutionMode;
-use tauri_mcp_agent_lib::mcp::builtin::agent::AGENT_DELEGATION_HEADER;
+use tauri_mcp_agent_lib::mcp::builtin::agent::AGENT_DELEGATION_SHORT;
 use tauri_mcp_agent_lib::models::workspace_isolation::WorkspaceIsolationMode;
 use tauri_mcp_agent_lib::repositories::{
     build_child_sessions_context, build_explicit_org_layer_context, format_active_sessions_notice,
@@ -81,7 +81,7 @@ async fn compose_service_context_prompt(
     }
 
     if live_parts.is_empty() {
-        return AGENT_DELEGATION_HEADER.to_string();
+        return AGENT_DELEGATION_SHORT.to_string();
     }
 
     let mut context_prompt = String::from("## Agent Delegation\n");
@@ -445,10 +445,48 @@ async fn service_context_includes_active_sessions_notice() {
     assert!(prompt.contains("- Error: `child-error` [config:assistant-test] \"Error Child\""));
 }
 
+#[tokio::test]
+async fn service_context_zero_child_is_brief_short_delegation_block() {
+    let repo = InMemorySessionRepository::new();
+
+    repo.upsert_session(&build_session(
+        "solo-zero-child",
+        "Solo Session",
+        None,
+        Some(0),
+        None,
+        None,
+        None,
+    ))
+    .await
+    .expect("solo session should persist");
+
+    let prompt = compose_service_context_prompt(&repo, "solo-zero-child").await;
+
+    assert_eq!(
+        prompt, AGENT_DELEGATION_SHORT,
+        "zero-child sessions must get the brief short delegation block, not the full tool guide"
+    );
+    assert!(prompt.contains("No child sessions"));
+    assert!(!prompt.contains("### Sub-Agents"));
+    assert!(!prompt.contains("agent__spawnSession"));
+    assert!(!prompt.contains("agent__messageToSession"));
+}
+
 #[test]
-fn static_agent_delegation_header_describes_reuse_and_new_session_boundaries() {
-    assert!(AGENT_DELEGATION_HEADER.contains("agent__messageToSession"));
-    assert!(AGENT_DELEGATION_HEADER.contains("same assistant configuration"));
-    assert!(AGENT_DELEGATION_HEADER.contains("agent__spawnSession"));
-    assert!(AGENT_DELEGATION_HEADER.contains("parallel"));
+fn static_agent_delegation_short_header_is_brief_and_tool_free() {
+    assert!(AGENT_DELEGATION_SHORT.contains("## Agent Delegation"));
+    assert!(AGENT_DELEGATION_SHORT.contains("No child sessions"));
+    assert!(
+        !AGENT_DELEGATION_SHORT.contains("agent__messageToSession"),
+        "the short zero-child block must not restate tool guidance"
+    );
+    assert!(
+        !AGENT_DELEGATION_SHORT.contains("agent__spawnSession"),
+        "the short zero-child block must not restate tool guidance"
+    );
+    assert!(
+        AGENT_DELEGATION_SHORT.lines().count() <= 4,
+        "the short zero-child block must stay brief"
+    );
 }

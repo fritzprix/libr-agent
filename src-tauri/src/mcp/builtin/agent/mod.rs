@@ -62,14 +62,10 @@ impl AgentServer {
 
 pub const NAME: &str = "agent";
 
-pub const AGENT_DELEGATION_HEADER: &str = concat!(
-    "## Agent Delegation\n\n",
-    "- `agent__prepareTeamworkWorkspace` returns an app-local teamwork artifact directory for orchestration files without changing the current session workspace.\n",
-    "- `agent__messageToSession` delegates new work or follow-up tasks to an existing session (sessionId); always pass complexity (low|normal|high) and reuse a suitable idle session with the same assistant configuration when possible.\n",
-    "- `agent__spawnSession` spawns a brand-new sub-agent session from a configuration template (configId); always pass complexity (low|normal|high); use when no suitable session exists or separate role, parallel, or workspace isolation is needed (do NOT pass a sessionId here).\n",
-    "- Choose the minimum sufficient complexity so sub-agents use the cheapest suitable model.\n",
-    "- `agent__compactSessionContext` refreshes another session's stored compact summary before more work.\n",
-);
+/// Short header used when the session has no live child/org inventory.
+/// Sent in the session context on each turn, so it must stay brief.
+/// Tool names live in the MCP tool list — do not restate them here.
+pub const AGENT_DELEGATION_SHORT: &str = "## Agent Delegation\n\nNo child sessions yet.\n";
 
 /// Compact header used with live child/org inventory (Volatile path).
 /// Tool names live in the MCP tool list — do not restate them here.
@@ -148,8 +144,8 @@ impl BuiltinMCPServer for AgentServer {
         }
 
         if live_parts.is_empty() {
-            return ServiceContext::new(AGENT_DELEGATION_HEADER.to_string())
-                .with_volatility(ContextVolatility::Stable);
+            return ServiceContext::new(AGENT_DELEGATION_SHORT.to_string())
+                .with_volatility(ContextVolatility::Volatile);
         }
 
         let mut context_prompt = AGENT_DELEGATION_LIVE_PREFIX.to_string();
