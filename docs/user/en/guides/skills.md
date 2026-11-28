@@ -158,7 +158,7 @@ How to split work across child sessions: [Sub-agents & orchestration](sub-agents
 
 LibrAgent supports installing Claude Code plugins globally from **Skills** or for a single session directly in chat:
 
-- **Install in chat**: Type `/plugin install <source>` to add a plugin to the current session.
+- **Install in chat**: Type `/plugin install <source>` to add a plugin to the current session. The source can be a GitHub URL, any other git URL (for example a company GitLab), or a local folder path.
 - **Update plugins**: Type `/plugin update` or use the update indicator in **Skills**.
 - **What plugins can provide**:
   - **Skills** (automatically namespaced if a skill name collides)

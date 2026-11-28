@@ -54,20 +54,20 @@ pub async fn import_user_skills(
 }
 
 #[tauri::command]
-pub async fn preview_github_skill_install(repo_url: String) -> Result<SkillImportPreview, String> {
-    skill_service::preview_github_skill_install(repo_url).await
+pub async fn preview_github_skill_install(source: String) -> Result<SkillImportPreview, String> {
+    skill_service::preview_github_skill_install(source).await
 }
 
 #[tauri::command]
 pub async fn install_github_skills(
-    repo_url: String,
+    source: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
     plugin_options: Option<std::collections::BTreeMap<String, String>>,
 ) -> Result<SkillImportResult, String> {
     skill_service::install_github_skills(
-        repo_url,
+        source,
         overwrite_existing,
         excluded_skill_names,
         approve_hooks,
@@ -96,21 +96,22 @@ pub async fn reset_user_skills() -> Result<String, String> {
     skill_service::reset_user_skills().await
 }
 
-/// Preview a git plugin for a session-scoped install (#2825).
+/// Preview a plugin for a session-scoped install: a github.com URL, any
+/// other git URL, or a local path (#2825, #2928).
 #[tauri::command]
 pub async fn preview_session_plugin_install(
     session_id: String,
-    repo_url: String,
+    source: String,
 ) -> Result<SkillImportPreview, String> {
-    skill_service::preview_session_plugin_install(session_id, repo_url).await
+    skill_service::preview_session_plugin_install(session_id, source).await
 }
 
-/// Install a git plugin for one session only, then fire SessionStart
-/// (`source=resume`) so its hooks apply immediately (#2825).
+/// Install a plugin for one session only, then fire SessionStart
+/// (`source=resume`) so its hooks apply immediately (#2825, #2928).
 #[tauri::command]
 pub async fn install_session_plugin(
     session_id: String,
-    repo_url: String,
+    source: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
@@ -118,7 +119,7 @@ pub async fn install_session_plugin(
 ) -> Result<SkillImportResult, String> {
     skill_service::install_session_plugin(
         session_id,
-        repo_url,
+        source,
         overwrite_existing,
         excluded_skill_names,
         approve_hooks,

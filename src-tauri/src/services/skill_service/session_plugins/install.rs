@@ -14,7 +14,7 @@ use crate::services::skill_service::contracts::{
 };
 use crate::services::skill_service::directories::get_system_skills_directory;
 use crate::services::skill_service::importing::{
-    build_import_preview, install_prepared_import, plugin_source_id, prepare_github_skill_import,
+    build_import_preview, install_prepared_import, plugin_source_id, prepare_plugin_source_import,
     prepare_plugin_user_config, save_plugin_user_config, ImportTarget,
 };
 use std::collections::BTreeMap;
@@ -31,10 +31,10 @@ fn session_same_source_skill_names(plugins_dir: &Path, source_key: &str) -> Vec<
 
 pub async fn preview_session_plugin_install(
     session_id: String,
-    repo_url: String,
+    source: String,
 ) -> Result<SkillImportPreview, String> {
     let dirs = session_dirs(&session_id)?;
-    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let mut prepared = prepare_plugin_source_import(source).await?;
     let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
     build_import_preview(
         &mut prepared,
@@ -54,7 +54,7 @@ pub async fn preview_session_plugin_install(
 /// `source=resume` so its hooks take effect immediately.
 pub async fn install_session_plugin(
     session_id: String,
-    repo_url: String,
+    source: String,
     overwrite_existing: bool,
     excluded_skill_names: Option<Vec<String>>,
     approve_hooks: Option<bool>,
@@ -62,7 +62,7 @@ pub async fn install_session_plugin(
 ) -> Result<SkillImportResult, String> {
     let plugin_options = plugin_options.unwrap_or_default();
     let dirs = session_dirs(&session_id)?;
-    let mut prepared = prepare_github_skill_import(repo_url).await?;
+    let mut prepared = prepare_plugin_source_import(source).await?;
     let same_source = session_same_source_skill_names(&dirs.plugins, &prepared.source_key);
     let preview = build_import_preview(
         &mut prepared,
