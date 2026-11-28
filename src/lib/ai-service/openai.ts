@@ -357,98 +357,95 @@ export class OpenAIService extends BaseAIService<
         return;
       }
 
-      yield* this.streamChatWithTTFT(
-        (async function* (
-          service: OpenAIService,
-        ): AsyncGenerator<string, void, void> {
-          for await (const chunk of completion) {
-            if (abortSignal?.aborted) {
-              service.logger.info('Stream aborted during iteration');
-              break;
-            }
-
-            const rawUsage = chunk.usage;
-            if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
-              const u = rawUsage as OpenAIStreamUsage;
-              service.promptDiagnostics.logPromptCacheMetadata({
-                mode: 'stream',
-                model: modelName,
-                request,
-                usage: u,
-              });
-              const cachedPromptTokens =
-                u.prompt_tokens_details?.cached_tokens ??
-                u.prompt_cache_hit_tokens;
-
-              const usage: TokenUsage = {
-                promptTokens: u.prompt_tokens || 0,
-                completionTokens: u.completion_tokens || 0,
-                totalTokens: u.total_tokens || 0,
-                cachedPromptTokens,
-                details: {
-                  reasoningTokens:
-                    u.completion_tokens_details?.reasoning_tokens,
-                },
-              };
-              yield JSON.stringify({ usage });
-            }
-
-            const finishReason = chunk.choices[0]?.finish_reason;
-            if (finishReason) {
-              yield JSON.stringify({ finishReason });
-            }
-
-            const delta = chunk.choices[0]
-              ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
-              reasoning_content?: string;
-              reasoning?: string;
-            };
-            if (delta?.reasoning_content) {
-              yield JSON.stringify({
-                thinking: delta.reasoning_content || '',
-              });
-            } else if (delta?.reasoning) {
-              // vLLM-compatible Qwen models may emit reasoning via `reasoning` instead
-              yield JSON.stringify({
-                thinking: delta.reasoning || '',
-              });
-            }
-
-            if (delta?.tool_calls) {
-              const toolCalls = delta.tool_calls
-                .map((toolCall) => {
-                  if (typeof toolCall.index !== 'number') {
-                    return null;
-                  }
-
-                  return createSerializableToolCallArgumentDelta(
-                    toolCall.index,
-                    toolCall.function?.arguments || '',
-                    {
-                      id: toolCall.id,
-                      name: toolCall.function?.name,
-                    },
-                  );
-                })
-                .filter(
-                  (
-                    toolCall,
-                  ): toolCall is ReturnType<
-                    typeof createSerializableToolCallArgumentDelta
-                  > => toolCall !== null,
-                );
-
-              if (toolCalls.length > 0) {
-                yield serializeToolCallArgumentDeltas(toolCalls);
-              }
-            } else if (delta?.content) {
-              yield JSON.stringify({
-                content: delta.content || '',
-              });
-            }
+      yield* (async function* (
+        service: OpenAIService,
+      ): AsyncGenerator<string, void, void> {
+        for await (const chunk of completion) {
+          if (abortSignal?.aborted) {
+            service.logger.info('Stream aborted during iteration');
+            break;
           }
-        })(this),
-      );
+
+          const rawUsage = chunk.usage;
+          if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
+            const u = rawUsage as OpenAIStreamUsage;
+            service.promptDiagnostics.logPromptCacheMetadata({
+              mode: 'stream',
+              model: modelName,
+              request,
+              usage: u,
+            });
+            const cachedPromptTokens =
+              u.prompt_tokens_details?.cached_tokens ??
+              u.prompt_cache_hit_tokens;
+
+            const usage: TokenUsage = {
+              promptTokens: u.prompt_tokens || 0,
+              completionTokens: u.completion_tokens || 0,
+              totalTokens: u.total_tokens || 0,
+              cachedPromptTokens,
+              details: {
+                reasoningTokens: u.completion_tokens_details?.reasoning_tokens,
+              },
+            };
+            yield JSON.stringify({ usage });
+          }
+
+          const finishReason = chunk.choices[0]?.finish_reason;
+          if (finishReason) {
+            yield JSON.stringify({ finishReason });
+          }
+
+          const delta = chunk.choices[0]
+            ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
+            reasoning_content?: string;
+            reasoning?: string;
+          };
+          if (delta?.reasoning_content) {
+            yield JSON.stringify({
+              thinking: delta.reasoning_content || '',
+            });
+          } else if (delta?.reasoning) {
+            // vLLM-compatible Qwen models may emit reasoning via `reasoning` instead
+            yield JSON.stringify({
+              thinking: delta.reasoning || '',
+            });
+          }
+
+          if (delta?.tool_calls) {
+            const toolCalls = delta.tool_calls
+              .map((toolCall) => {
+                if (typeof toolCall.index !== 'number') {
+                  return null;
+                }
+
+                return createSerializableToolCallArgumentDelta(
+                  toolCall.index,
+                  toolCall.function?.arguments || '',
+                  {
+                    id: toolCall.id,
+                    name: toolCall.function?.name,
+                  },
+                );
+              })
+              .filter(
+                (
+                  toolCall,
+                ): toolCall is ReturnType<
+                  typeof createSerializableToolCallArgumentDelta
+                > => toolCall !== null,
+              );
+
+            if (toolCalls.length > 0) {
+              yield serializeToolCallArgumentDeltas(toolCalls);
+            }
+          } else if (delta?.content) {
+            yield JSON.stringify({
+              content: delta.content || '',
+            });
+          }
+        }
+      })(this);
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }

@@ -187,12 +187,10 @@ export function useExecuteCompletion({
           return next;
         });
 
-        const startTime = performance.now();
         const accumulator = new StreamAccumulator(
           sessionId,
           responseMessageId,
           settingsRef,
-          startTime,
           providerSupportsReasoningBudgetCap(provider)
             ? {
                 reasoningBudgetMaxTokens: resolvedMaxTokens,
@@ -324,7 +322,6 @@ export function useExecuteCompletion({
           abortController.signal,
         );
 
-        const endTime = performance.now();
         const finalMessage = validateAndFinalizeMessage({
           sessionId,
           responseMessageId,
@@ -334,9 +331,6 @@ export function useExecuteCompletion({
           thinkingSignature: accumulator.thinkingSignature,
           thinkingStartTime: accumulator.thinkingStartTime,
           finalUsage: accumulator.finalUsage,
-          startTime,
-          endTime,
-          firstChunkTime: accumulator.firstChunkTime,
         });
 
         tracker.ensureRequestStillActive(
