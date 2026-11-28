@@ -1733,7 +1733,7 @@ P1:
 
 > **Archived 2026-11 (#2862 / epic #2852).** Items **B-01–B-11** assumed exactly one Session API backend per profile and that a later GUI or TUI **attached** to it. Since **#2855**, each `libragent` process hosts its own backend (distinct `http_port.<pid>` and `.backend.<pid>.json`); a second GUI is a second backend, not an attach client. Do **not** use this matrix for release gates. Keep it only as historical context for #2756–#2761. Replacement ownership work: **#2856**.
 
-All on one scratch profile, with `LIBRAGENT_LLM_EXECUTOR` unset (the phase-1 WebView path) unless the scenario says otherwise. "One backend" means one live descriptor file, one HTTP server answering `/api/health` with `ready: true`, and one scheduler.
+All on one scratch profile. (When these items ran, the LLM turn went to the frontend; since #3094 every LLM turn runs in the Rust executor, with no env switch.) "One backend" means one live descriptor file, one HTTP server answering `/api/health` with `ready: true`, and one scheduler.
 
 - [x] **B-01 The TUI starts first** (#2756, #2761) — All · `[auto]` — *obsolete*
   - With no backend running, `libragent --tui` brings the backend up and attaches. One backend, and no GUI window.
@@ -1804,7 +1804,7 @@ Per `docs/specs/liblet-cli-interface.md` §3.2–§3.6, on the headless binary f
 
 ### 4.6 LLM client provider parity
 
-The Rust LLM client (`src-tauri/llm-client`, #2754 and #2755) is compared with the GUI's frontend providers for `openai`, `custom:<id>` (vLLM or LM Studio), `fireworks`, `openrouter`, `anthropic`, and `gemini`. Run each scenario once with `LIBRAGENT_LLM_EXECUTOR=rust` and once without it, on the same prompt, in the GUI or the TUI. In phase 2 (#2772) also run it through liblet. Each scenario runs per provider.
+The Rust LLM client (`src-tauri/llm-client`, #2754 and #2755) is compared with the GUI's frontend providers for `openai`, `custom:<id>` (vLLM or LM Studio), `fireworks`, `openrouter`, `anthropic`, and `gemini`. Since #3094 every LLM turn runs in the Rust executor — there is no frontend LLM path left to switch between — so each scenario runs once, on the same prompt, in the GUI or the TUI. In phase 2 (#2772) also run it through liblet. Each scenario runs per provider.
 
 - [ ] **L-01 Text and reasoning stream** — All · `[auto]`
   - The final text, the thinking text, and the finish reason match.
@@ -1825,8 +1825,8 @@ The Rust LLM client (`src-tauri/llm-client`, #2754 and #2755) is compared with t
   - OpenAI receives the same prompt cache key for the same session. Anthropic marks the system prompt, the last tool, and the message breakpoints for caching.
   - On a second turn, cached prompt tokens are reported for OpenAI, Anthropic, and Gemini.
 - [ ] **L-07 Routing** — All · `[auto]`
-  - With the Rust executor on, the six providers above are answered in Rust: no `llm:completion-request` event is sent to the WebView. Other providers go to the WebView.
-  - When no WebView is available, other providers fail at once with `RUST_EXECUTOR_NO_WEBVIEW`.
+  - The providers above are answered in the Rust executor: no `llm:completion-request` event is sent to the WebView. There is no WebView route anymore.
+  - A provider the executor does not support fails at once with `RUST_EXECUTOR_UNSUPPORTED_PROVIDER`, naming the provider.
 
 Not covered in this checklist:
 

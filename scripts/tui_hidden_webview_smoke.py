@@ -10,9 +10,9 @@ call + result + final reply. That is bring-up evidence only (owner note on
 
 What full #2784 evidence still requires
 ---------------------------------------
-1. Force the WebView LLM path (`LIBRAGENT_LLM_EXECUTOR=webview` is set here)
-   and confirm logs show the turn on the frontend, not
-   `Rust LLM executor: running completion`.
+1. Confirm the LLM turn runs on the Rust LLM executor
+   (`Rust LLM executor: running completion` in the logs). There is no
+   WebView LLM path anymore (#3094), so nothing can force one.
 2. Start the **prod GUI first**, then attach TUI on the **same profile**
    (B-02/B-03) — no second HTTP server, no port fallback, no killing a
    pre-existing `libragent` by name. That path is blocked until coexistence
@@ -221,9 +221,8 @@ def spawn_tui(binary: Path, scratch: Path, log_path: Path):
         env["WEBVIEW2_USER_DATA_FOLDER"] = str(webview_dir)
     elif sys.platform == "linux":
         env["XDG_CACHE_HOME"] = str(webview_dir)
-    # Force the phase-1 frontend LLM path (#2760 / #2804 otherwise route
-    # gemini/openai to Rust and the smoke would not touch the WebView).
-    env["LIBRAGENT_LLM_EXECUTOR"] = "webview"
+    # The LLM turn is answered by the Rust executor (#3094); the hidden
+    # WebView only hosts the frontend here.
     # The terminal TUI is a developer-only mode after #2861 (#2852 S9): every
     # TUI entry point refuses to start without this hidden flag, so a smoke run
     # sets it explicitly. This script is the developer path this flag exists
@@ -334,7 +333,8 @@ def tauri_app_log_path() -> Path | None:
 
 
 def wait_for_frontend_ready(log_path: Path, timeout: float) -> None:
-    """Session API calls before this hang; completions find no WebView listener.
+    """Session API calls before this hang. The LLM turn itself is answered by
+    the Rust executor (#3094), not the frontend.
 
     macOS/Linux live notes for #2784: wait for \"Frontend signaled readiness\".
     On Windows the smoke redirects stdout, so also watch the Tauri file log.
@@ -504,7 +504,7 @@ def main() -> None:
         if final_status is None or final_status == "busy":
             fail(
                 f"turn still {final_status or 'unknown'} after {turn_secs:.0f}s "
-                f"(hidden WebView likely did not answer)",
+                f"(Rust LLM executor likely did not answer)",
                 tail(),
             )
         if final_status == "error":
@@ -563,18 +563,16 @@ def main() -> None:
             combined_log = tail(200)
         rust_hits = combined_log.count("Rust LLM executor: running completion")
         webview_hits = combined_log.count("[webview]")
-        if rust_hits:
+        if rust_hits == 0:
             problems.append(
-                f"Rust LLM executor handled the turn ({rust_hits} hit(s)); "
-                "expected LIBRAGENT_LLM_EXECUTOR=webview"
+                "no \"Rust LLM executor: running completion\" log lines — "
+                "the Rust LLM executor path was not observed (#3094)"
             )
-        if webview_hits == 0:
-            problems.append("no [webview] log lines — frontend LLM path not observed")
 
         evidence = {
             "issue": 2784,
             "evidenceKind": "tui-standalone-bring-up",
-            "llmExecutor": "webview",
+            "llmExecutor": "rust",
             "coexistence": False,
             "platform": sys.platform,
             "binary": str(binary),
@@ -604,7 +602,7 @@ def main() -> None:
         print(json.dumps(evidence, indent=2))
         if problems:
             fail("; ".join(problems), tail())
-        print("PASS: hidden WebView answered an LLM turn (tool call + result + final reply persisted)")
+        print("PASS: TUI-hosted turn answered by the Rust LLM executor (tool call + result + final reply persisted)")
     finally:
         stop = locals().get("stop")
         if isinstance(stop, threading.Event):

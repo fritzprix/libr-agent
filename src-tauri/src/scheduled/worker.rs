@@ -30,10 +30,8 @@ impl SchedulerWorker {
 }
 
 async fn worker_loop(app_handle: AppHandle, check_interval: Duration) {
-    // Wait until LLM requests can be answered, so startup events are not lost:
-    // the WebView, or nothing when the Rust executor runs without one (#2704).
-    crate::lifecycle::frontend_ready::wait_until_llm_executor_ready(&app_handle).await;
-
+    // No frontend-ready wait: LLM requests are answered by the Rust executor
+    // or fail with an explicit error (#3094), so a WebView is never required.
     log::info!(
         "⏰ Scheduled task worker started (interval: {:?})",
         check_interval

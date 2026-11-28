@@ -81,15 +81,11 @@ pub async fn emit_compact_request(
     app_handle: &AppHandle,
     event: CompactRequest,
 ) -> Result<(), String> {
-    if crate::agent::llm::rust_executor::try_dispatch_compaction(app_handle, &event)
+    // Every compaction is answered in this process (#3094); there is no
+    // WebView route to emit to.
+    crate::agent::llm::rust_executor::try_dispatch_compaction(app_handle, &event)
         .await
-        .map_err(|e| e.display_message)?
-    {
-        return Ok(());
-    }
-    app_handle
-        .emit("llm:compact-request", event)
-        .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))
+        .map_err(|e| e.display_message)
 }
 
 /// Emit a resource update event (convenience wrapper)
