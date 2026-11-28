@@ -24,6 +24,10 @@ import { isCompactSummaryMessage } from '../base-service-context';
 import { reportListModelsFallback } from '../list-models-errors';
 import type { MCPContent } from '@/lib/mcp';
 import { mapThinkingEffort } from '../thinking-effort-mapping';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from '../model-capability-rules';
 
 function summarizeLibrAgentMessages(messages: Message[]): {
   count: number;
@@ -124,10 +128,6 @@ function summarizeGeminiContents(contents: Content[]): {
     functionCallPartCount,
     functionResponsePartCount,
   };
-}
-
-function supportsGeminiToolsForModel(modelName: string): boolean {
-  return /gemini-(1\.[5-9]|[2-9])/.test(modelName.toLowerCase());
 }
 
 /**
@@ -453,15 +453,11 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    return supportsGeminiToolsForModel(modelName);
+    return supportsToolsForModel(AIServiceProvider.Gemini, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('gemini-1.5-pro')) return 2000000;
-    if (lowerName.includes('gemini-1.5-flash')) return 1000000;
-    if (lowerName.includes('gemini-2.0-flash')) return 1000000;
-    return 1000000;
+    return estimateContextWindowForModel(AIServiceProvider.Gemini, modelName);
   }
 
   /**

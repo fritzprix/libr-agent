@@ -216,7 +216,6 @@ describe('useGroupedAgentModels', () => {
       await result.current.refreshModels();
     });
 
-    expect(mockedFactory.invalidateService).toHaveBeenCalled();
     expect(mockState.mutate).toHaveBeenCalledWith(expect.any(Function), {
       revalidate: false,
     });
@@ -236,6 +235,66 @@ describe('useGroupedAgentModels', () => {
         notifyUser: true,
       }),
     );
+  });
+
+  it('refreshModels invalidates the cached service before listing', async () => {
+    // Without the refresh option the factory returns the service that cached
+    // the model list for an hour, so the user refresh shows a stale list.
+    mockedFactory.getService.mockReturnValue({
+      listModels: vi.fn().mockResolvedValue([
+        { id: 'fresh-model', name: 'fresh-model' },
+      ]),
+    });
+
+    const { result } = renderHook(() =>
+      useGroupedAgentModels({ currentProvider: AIServiceProvider.Ollama }),
+    );
+
+    await act(async () => {
+      await result.current.refreshModels();
+    });
+
+    const updater = mockState.mutate.mock.calls[0]?.[0] as (
+      current: Record<string, unknown>,
+    ) => Promise<Record<string, unknown>>;
+
+    await act(async () => {
+      await updater({});
+    });
+
+    expect(
+      mockedFactory.invalidateService.mock.calls.some(
+        ([provider]) => provider === AIServiceProvider.Ollama,
+      ),
+    ).toBe(true);
+  });
+
+  it('background fetcher keeps the cached service', async () => {
+    mockedFactory.getService.mockReturnValue({
+      listModels: vi.fn().mockResolvedValue([
+        { id: 'm1', name: 'm1' },
+      ]),
+    });
+
+    renderHook(() =>
+      useGroupedAgentModels({ currentProvider: AIServiceProvider.Ollama }),
+    );
+
+    const segment = buildProviderModelsSwrSegment({
+      providerId: 'ollama',
+      apiKey: '',
+      baseUrl: 'http://127.0.0.1:11434',
+      use3rdParty: false,
+      customModelId: '',
+    });
+
+    await act(async () => {
+      await mockState.fetcher?.(['grouped-models', segment]);
+    });
+
+    // Only a user refresh may drop the cached service; the background
+    // revalidation must not invalidate it.
+    expect(mockedFactory.invalidateService).not.toHaveBeenCalled();
   });
 
   it('background fetcher reports failures without notifyUser', async () => {

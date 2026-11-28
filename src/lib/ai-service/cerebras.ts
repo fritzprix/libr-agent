@@ -7,6 +7,10 @@ import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { mapThinkingEffort } from './thinking-effort-mapping';
 import { ensureSchemaTypeField, formatToolResultForLlm } from './utils';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 
 const logger = getLogger('CerebrasService');
 
@@ -103,15 +107,11 @@ export class CerebrasService extends BaseAIService<
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    return lowerName.includes('llama3.1') || lowerName.includes('llama-3.1');
+    return supportsToolsForModel(AIServiceProvider.Cerebras, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('llama3.1-70b')) return 131072;
-    if (lowerName.includes('llama3.1-8b')) return 131072;
-    return 8192;
+    return estimateContextWindowForModel(AIServiceProvider.Cerebras, modelName);
   }
 
   /**

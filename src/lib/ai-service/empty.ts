@@ -2,6 +2,10 @@ import { AIServiceProvider, AIServiceError } from './types';
 import { MCPTool } from '@/lib/mcp';
 import { Message } from '@/models/chat';
 import { BaseAIService } from './base-service';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 
 /**
  * A placeholder AI service that does nothing. It can be used for testing
@@ -76,13 +80,11 @@ export class EmptyAIService extends BaseAIService<unknown, never> {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    void modelName;
-    return false;
+    return supportsToolsForModel(AIServiceProvider.Empty, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    void modelName;
-    return 0;
+    return estimateContextWindowForModel(AIServiceProvider.Empty, modelName);
   }
 
   /**

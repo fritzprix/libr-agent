@@ -33,6 +33,14 @@ export type ProviderModelsSettingsSlice = Pick<
 export interface FetchDynamicProviderModelsOptions {
   timeoutMs: number;
   notifyUser: boolean;
+  /**
+   * Explicit user Refresh: drop the factory-cached service first so the
+   * provider's list is fetched anew. Both the factory and each service cache
+   * their instance / model list for 1 hour, so without this a second refresh
+   * returns the old list. Required until #3091 moves model listing to Rust
+   * (`list_models`); then this can go away with the services.
+   */
+  refresh?: boolean;
 }
 
 /**
@@ -89,6 +97,17 @@ export async function fetchDynamicProviderModels(
   }
 
   const effectiveApiKey = resolved.apiKey || 'no-api-key';
+
+  if (options.refresh) {
+    // The factory and the service behind it cache the model list for an hour.
+    // A user Refresh must see the provider's current list, so drop the cached
+    // service here — the one place that does it — before getting a fresh one.
+    AIServiceFactory.invalidateService(
+      providerId,
+      effectiveApiKey,
+      resolved.serviceConfig,
+    );
+  }
 
   try {
     const service: AIModelLookupService = AIServiceFactory.getService(

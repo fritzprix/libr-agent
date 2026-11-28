@@ -7,6 +7,10 @@ import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { createLlmFetch } from './desktop-fetch';
 import { reportListModelsFallback } from './list-models-errors';
+import {
+  supportsToolsForModel,
+  estimateContextWindowForModel,
+} from './model-capability-rules';
 
 const logger = getLogger('OpenRouterService');
 
@@ -59,13 +63,14 @@ export class OpenRouterService extends OpenAIService {
    * @inheritdoc
    */
   static supportsToolsForModel(modelName: string): boolean {
-    void modelName;
-    return true;
+    return supportsToolsForModel(AIServiceProvider.OpenRouter, modelName);
   }
 
   static estimateContextWindowForModel(modelName: string): number {
-    void modelName;
-    return 128000;
+    return estimateContextWindowForModel(
+      AIServiceProvider.OpenRouter,
+      modelName,
+    );
   }
 
   /**
