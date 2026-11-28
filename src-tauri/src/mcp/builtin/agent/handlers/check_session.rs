@@ -13,7 +13,8 @@ use crate::mcp::types::MCPResult;
 
 use super::super::AgentServer;
 use super::check_session_results::{
-    build_paused_check_session_result, build_terminal_check_session_result,
+    build_cancelled_wait_check_session_result, build_paused_check_session_result,
+    build_terminal_check_session_result,
 };
 use super::delegation::load_accessible_delegated_session;
 use super::enrichment::{
@@ -107,6 +108,16 @@ async fn check_session_inner(
                     return Err(error);
                 }
             };
+            let caller_cancel_token =
+                if let Some(sessions) = crate::state::try_get_active_sessions() {
+                    let active = sessions.read().await;
+                    active
+                        .get(caller_session_id)
+                        .map(|s| s.cancellation_token.clone())
+                        .unwrap_or_default()
+                } else {
+                    tokio_util::sync::CancellationToken::new()
+                };
             let res = wait_until_session_terminal(
                 manager,
                 &session_id,
@@ -114,10 +125,25 @@ async fn check_session_inner(
                 Some(caller_session_id),
             )
             .await;
-            let resumed = suspended.resume().await?;
-            manager
-                .restore_active_session_permit(caller_session_id, resumed)
-                .await?;
+            let skip_blocking_resume = res.is_err()
+                || caller_cancel_token.is_cancelled()
+                || matches!(
+                    &res,
+                    Ok((session_data, _))
+                        if extract_session_status(session_data).eq_ignore_ascii_case("paused")
+                );
+            if skip_blocking_resume {
+                if let Some(resumed) = suspended.try_resume() {
+                    let _ = manager
+                        .restore_active_session_permit(caller_session_id, resumed)
+                        .await;
+                }
+            } else {
+                let resumed = suspended.resume_cancellable(&caller_cancel_token).await?;
+                manager
+                    .restore_active_session_permit(caller_session_id, resumed)
+                    .await?;
+            }
             res
         };
 
@@ -138,8 +164,12 @@ async fn check_session_inner(
         let status = extract_session_status(&session_data);
         let turn_count = count_session_turns(&session_id).await;
         if status.eq_ignore_ascii_case("paused") {
-            return build_paused_check_session_result(&storage_session_id, turn_count, &enrichment)
-                .await;
+            return build_cancelled_wait_check_session_result(
+                &storage_session_id,
+                turn_count,
+                &enrichment,
+            )
+            .await;
         }
         return build_terminal_check_session_result(
             &storage_session_id,

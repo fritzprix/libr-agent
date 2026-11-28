@@ -228,3 +228,40 @@ pub(super) async fn build_paused_check_session_result(
         Some(enrichment),
     ))
 }
+
+pub fn build_cancelled_wait_check_session_result_from_messages(
+    session_id: &str,
+    turn_count: usize,
+    messages_value: &[Value],
+    enrichment: Option<&CheckSessionEnrichment>,
+) -> MCPResult {
+    let mut result = build_paused_check_session_result_from_messages(
+        session_id,
+        turn_count,
+        messages_value,
+        enrichment,
+    );
+    result.is_error = Some(true);
+    if let Some(Value::Object(ref mut data)) = result.structured_content {
+        data.insert("status".to_string(), Value::String("cancelled".to_string()));
+        data.insert("abnormalTermination".to_string(), Value::Bool(true));
+    }
+    result
+}
+
+pub(super) async fn build_cancelled_wait_check_session_result(
+    storage_session_id: &crate::utils::session_id::StorageSessionId,
+    turn_count: usize,
+    enrichment: &CheckSessionEnrichment,
+) -> Result<MCPResult, String> {
+    let messages_value =
+        fetch_session_messages_for_result(storage_session_id, CHECK_SESSION_RESULT_MESSAGE_LIMIT)
+            .await?;
+
+    Ok(build_cancelled_wait_check_session_result_from_messages(
+        storage_session_id.as_str(),
+        turn_count,
+        &messages_value,
+        Some(enrichment),
+    ))
+}
